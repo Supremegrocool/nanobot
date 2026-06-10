@@ -1,4 +1,21 @@
-"""Anthropic provider — direct SDK integration for Claude models."""
+"""Anthropic Claude Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+
+【中文名称】Provider 实现：nanobot/providers/anthropic_provider.py
+
+【功能说明】
+本文件属于 P1 学习范围，重点帮助初学者理解“外部系统 ↔ nanobot 后端”之间的适配层。
+阅读时可以先看类和函数的中文说明，再沿着消息、配置、异常和返回值四条线索跟代码。
+
+【主要职责】
+1. 接收配置或输入数据，整理成后端内部统一使用的结构。
+2. 调用第三方 SDK、HTTP API 或公共工具函数完成实际工作。
+3. 把外部返回值、错误和流式事件转换成 nanobot 可继续处理的数据。
+4. 在边界处处理鉴权、限流、媒体文件、重试和日志，避免复杂度泄漏到核心 Agent。
+
+【学习提示】
+如果你是 Agent 或后端初学者，可以把本文件看成“翻译器”：它不改变核心 Agent 思路，
+而是负责理解某个平台或服务商的协议，并把它翻译成项目内部约定的数据形状。
+"""
 
 from __future__ import annotations
 
@@ -21,14 +38,37 @@ _ALNUM = string.ascii_letters + string.digits
 
 
 def _gen_tool_id() -> str:
+    """执行辅助逻辑（_gen_tool_id = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。Anthropic Claude Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_gen_tool_id` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    无显式参数。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     return "toolu_" + "".join(secrets.choice(_ALNUM) for _ in range(22))
 
 
 class AnthropicProvider(LLMProvider):
-    """LLM provider using the native Anthropic SDK for Claude models.
+    """AnthropicProvider 类，封装 Provider 实现 的核心状态和行为。
 
-    Handles message format conversion (OpenAI → Anthropic Messages API),
-    prompt caching, extended thinking, tool calls, and streaming.
+    【中文名称】AnthropicProvider
+
+    【功能说明】
+    Anthropic Claude Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    LLMProvider。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
     """
 
     def __init__(
@@ -38,6 +78,24 @@ class AnthropicProvider(LLMProvider):
         default_model: str = "claude-sonnet-4-20250514",
         extra_headers: dict[str, str] | None = None,
     ):
+        """初始化对象（__init__ = 原函数名）。
+
+        【中文名称】初始化对象
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。Anthropic Claude Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `AnthropicProvider.__init__` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        api_key: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        api_base: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        default_model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        extra_headers: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         super().__init__(api_key, api_base)
         self.default_model = default_model
         self.extra_headers = extra_headers or {}
@@ -51,13 +109,26 @@ class AnthropicProvider(LLMProvider):
             client_kw["base_url"] = self._normalize_base_url(api_base)
         if extra_headers:
             client_kw["default_headers"] = extra_headers
-        # Keep retries centralized in LLMProvider._run_with_retry to avoid retry amplification.
+        # 中文说明：这一段围绕Provider、重试处理，注意输入、输出和异常路径。
         client_kw["max_retries"] = 0
         self._client = AsyncAnthropic(**client_kw)
 
     @staticmethod
     def _normalize_base_url(api_base: str) -> str:
-        """Anthropic SDK appends /v1 to request paths internally."""
+        """标准化数据（_normalize_base_url = 原函数名）。
+
+        【中文名称】标准化数据
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。Anthropic Claude Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `AnthropicProvider._normalize_base_url` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        api_base: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         normalized = api_base.rstrip("/")
         if normalized.endswith("/v1"):
             return normalized[: -len("/v1")]
@@ -65,6 +136,21 @@ class AnthropicProvider(LLMProvider):
 
     @classmethod
     def _handle_error(cls, e: Exception) -> LLMResponse:
+        """处理事件（_handle_error = 原函数名）。
+
+        【中文名称】处理事件
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。Anthropic Claude Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `AnthropicProvider._handle_error` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        e: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         response = getattr(e, "response", None)
         headers = getattr(response, "headers", None)
         payload = (
@@ -121,18 +207,46 @@ class AnthropicProvider(LLMProvider):
 
     @staticmethod
     def _strip_prefix(model: str) -> str:
+        """执行辅助逻辑（_strip_prefix = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。Anthropic Claude Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `AnthropicProvider._strip_prefix` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if model.startswith("anthropic/"):
             return model[len("anthropic/"):]
         return model
 
-    # ------------------------------------------------------------------
-    # Message conversion: OpenAI chat format → Anthropic Messages API
-    # ------------------------------------------------------------------
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
+    # 中文说明：消息格式转换。
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
     def _convert_messages(
         self, messages: list[dict[str, Any]],
     ) -> tuple[str | list[dict[str, Any]], list[dict[str, Any]]]:
-        """Return ``(system, anthropic_messages)``."""
+        """转换格式（_convert_messages = 原函数名）。
+
+        【中文名称】转换格式
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。Anthropic Claude Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `AnthropicProvider._convert_messages` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        messages: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         system: str | list[dict[str, Any]] = ""
         raw: list[dict[str, Any]] = []
 
@@ -173,6 +287,20 @@ class AnthropicProvider(LLMProvider):
 
     @staticmethod
     def _tool_result_block(msg: dict[str, Any]) -> dict[str, Any]:
+        """执行辅助逻辑（_tool_result_block = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。Anthropic Claude Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `AnthropicProvider._tool_result_block` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        msg: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         content = msg.get("content")
         block: dict[str, Any] = {
             "type": "tool_result",
@@ -188,6 +316,20 @@ class AnthropicProvider(LLMProvider):
 
     @staticmethod
     def _assistant_blocks(msg: dict[str, Any]) -> list[dict[str, Any]]:
+        """执行辅助逻辑（_assistant_blocks = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。Anthropic Claude Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `AnthropicProvider._assistant_blocks` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        msg: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         blocks: list[dict[str, Any]] = []
         content = msg.get("content")
 
@@ -221,7 +363,20 @@ class AnthropicProvider(LLMProvider):
 
     @staticmethod
     def _convert_user_content(content: Any) -> Any:
-        """Convert user message content, translating image_url blocks."""
+        """转换格式（_convert_user_content = 原函数名）。
+
+        【中文名称】转换格式
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。Anthropic Claude Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `AnthropicProvider._convert_user_content` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        content: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if isinstance(content, str) or content is None:
             return content or "(empty)"
         if not isinstance(content, list):
@@ -238,10 +393,10 @@ class AnthropicProvider(LLMProvider):
                     result.append(converted)
                 continue
             if not item.get("type"):
-                # Anthropic requires every content block to declare a "type".
-                # A tool that returned a bare dict (or a list of dicts) lands
-                # here; coerce it to a text block instead of emitting a block
-                # the API rejects with "content.0.type: Field required".
+                # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+                # 中文说明：这一段围绕工具处理，注意输入、输出和异常路径。
+                # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+                # 中文说明：这一段围绕API处理，注意输入、输出和异常路径。
                 result.append({"type": "text", "text": str(item)})
                 continue
             result.append(item)
@@ -249,7 +404,20 @@ class AnthropicProvider(LLMProvider):
 
     @staticmethod
     def _convert_image_block(block: dict[str, Any]) -> dict[str, Any] | None:
-        """Convert OpenAI image_url block to Anthropic image block."""
+        """转换格式（_convert_image_block = 原函数名）。
+
+        【中文名称】转换格式
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。Anthropic Claude Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `AnthropicProvider._convert_image_block` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        block: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         url = (block.get("image_url") or {}).get("url", "")
         if not url:
             return None
@@ -266,10 +434,19 @@ class AnthropicProvider(LLMProvider):
 
     @staticmethod
     def _has_tool_use(msg: dict[str, Any]) -> bool:
-        """True if ``msg.content`` carries any ``tool_use`` block.
+        """执行辅助逻辑（_has_tool_use = 原函数名）。
 
-        Anthropic forbids ``tool_use`` inside ``user`` turns, so messages that
-        issued a tool call cannot be safely rerouted when we patch the role.
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。Anthropic Claude Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `AnthropicProvider._has_tool_use` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        msg: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         content = msg.get("content")
         if not isinstance(content, list):
@@ -281,23 +458,19 @@ class AnthropicProvider(LLMProvider):
 
     @staticmethod
     def _merge_consecutive(msgs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Normalize a message sequence for Anthropic's ``/messages`` endpoint.
+        """合并内容（_merge_consecutive = 原函数名）。
 
-        Anthropic's contract is stricter than OpenAI's:
+        【中文名称】合并内容
 
-        1. Consecutive same-role turns must be collapsed into one.
-        2. The conversation cannot end with an ``assistant`` turn — Anthropic
-           does not support assistant-message prefill and returns 400.
-        3. The conversation cannot start with an ``assistant`` turn — the
-           first message must be ``user``.
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。Anthropic Claude Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `AnthropicProvider._merge_consecutive` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
 
-        Rules 2 and 3 mirror ``LLMProvider._enforce_role_alternation`` in
-        ``base.py``, which applies the equivalent invariants to OpenAI-compat
-        providers.  The only Anthropic-specific wrinkle: ``tool_use`` blocks
-        live inside ``content`` (not a separate ``tool_calls`` field) and are
-        invalid inside ``user`` turns, so the recovery paths below must skip
-        any message carrying them rather than silently producing a malformed
-        request.
+        【参数说明】
+        msgs: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         merged: list[dict[str, Any]] = []
         for msg in msgs:
@@ -314,15 +487,15 @@ class AnthropicProvider(LLMProvider):
             else:
                 merged.append(msg)
 
-        # Rule 2: strip trailing assistant turns — Anthropic rejects prefill.
+        # 中文说明：这一段围绕助手处理，注意输入、输出和异常路径。
         last_popped: dict[str, Any] | None = None
         while merged and merged[-1].get("role") == "assistant":
             last_popped = merged.pop()
 
-        # Recovery for rule 2: if stripping removed every turn, reroute the
-        # last popped assistant as a user turn so upstream code still gets a
-        # valid request instead of a secondary "messages array empty" 400.
-        # Skip when the message carried ``tool_use`` blocks (see _has_tool_use).
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+        # 中文说明：这一段围绕流式输出、用户、助手处理，注意输入、输出和异常路径。
+        # 中文说明：这一段围绕消息、请求处理，注意输入、输出和异常路径。
+        # 中文说明：这一段围绕消息、工具处理，注意输入、输出和异常路径。
         if (
             not merged
             and last_popped is not None
@@ -330,12 +503,12 @@ class AnthropicProvider(LLMProvider):
         ):
             merged.append({"role": "user", "content": last_popped.get("content")})
 
-        # Rule 3: prepend a synthetic opener if the first surviving turn is an
-        # assistant (e.g. upstream history truncation dropped the original
-        # user request).  ``tool_use``-carrying assistants are left alone —
-        # that message will still fail validation, but injecting an opener
-        # before it would orphan the tool_use/tool_result pair that follows,
-        # turning a recoverable 400 into a harder-to-diagnose one.
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+        # 中文说明：这一段围绕流式输出、助手、历史记录处理，注意输入、输出和异常路径。
+        # 中文说明：这一段围绕工具、用户、助手、请求处理，注意输入、输出和异常路径。
+        # 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
+        # 中文说明：这一段围绕工具处理，注意输入、输出和异常路径。
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         if (
             merged
             and merged[0].get("role") == "assistant"
@@ -345,12 +518,26 @@ class AnthropicProvider(LLMProvider):
 
         return merged
 
-    # ------------------------------------------------------------------
-    # Tool definition conversion
-    # ------------------------------------------------------------------
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
+    # 中文说明：这一段围绕工具处理，注意输入、输出和异常路径。
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
     @staticmethod
     def _convert_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
+        """转换格式（_convert_tools = 原函数名）。
+
+        【中文名称】转换格式
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。Anthropic Claude Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `AnthropicProvider._convert_tools` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        tools: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not tools:
             return None
         result = []
@@ -373,6 +560,21 @@ class AnthropicProvider(LLMProvider):
         tool_choice: str | dict[str, Any] | None,
         thinking_enabled: bool = False,
     ) -> dict[str, Any] | None:
+        """转换格式（_convert_tool_choice = 原函数名）。
+
+        【中文名称】转换格式
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。Anthropic Claude Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `AnthropicProvider._convert_tool_choice` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        tool_choice: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        thinking_enabled: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if thinking_enabled:
             return {"type": "auto"}
         if tool_choice is None or tool_choice == "auto":
@@ -387,9 +589,9 @@ class AnthropicProvider(LLMProvider):
                 return {"type": "tool", "name": name}
         return {"type": "auto"}
 
-    # ------------------------------------------------------------------
-    # Prompt caching
-    # ------------------------------------------------------------------
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
+    # 中文说明：提示词缓存。
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
     @classmethod
     def _apply_cache_control(
@@ -398,6 +600,23 @@ class AnthropicProvider(LLMProvider):
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None,
     ) -> tuple[str | list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]] | None]:
+        """执行辅助逻辑（_apply_cache_control = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。Anthropic Claude Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `AnthropicProvider._apply_cache_control` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        system: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        messages: 消息数据，可能来自用户、频道、模型或工具调用。
+        tools: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         marker = {"type": "ephemeral"}
 
         if isinstance(system, str) and system:
@@ -425,9 +644,9 @@ class AnthropicProvider(LLMProvider):
 
         return system, new_msgs, new_tools
 
-    # ------------------------------------------------------------------
-    # Build API kwargs
-    # ------------------------------------------------------------------
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
+    # 中文说明：这一段围绕API处理，注意输入、输出和异常路径。
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
     def _build_kwargs(
         self,
@@ -440,6 +659,28 @@ class AnthropicProvider(LLMProvider):
         tool_choice: str | dict[str, Any] | None,
         supports_caching: bool = True,
     ) -> dict[str, Any]:
+        """构建对象（_build_kwargs = 原函数名）。
+
+        【中文名称】构建对象
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。Anthropic Claude Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `AnthropicProvider._build_kwargs` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        messages: 消息数据，可能来自用户、频道、模型或工具调用。
+        tools: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        max_tokens: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        temperature: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        reasoning_effort: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        tool_choice: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        supports_caching: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         model_name = self._strip_prefix(model or self.default_model)
         system, anthropic_msgs = self._convert_messages(self._sanitize_empty_content(messages))
         anthropic_tools = self._convert_tools(tools)
@@ -452,8 +693,8 @@ class AnthropicProvider(LLMProvider):
         max_tokens = max(1, max_tokens)
         thinking_enabled = bool(reasoning_effort) and reasoning_effort.lower() != "none"
 
-        # claude-opus-4-7 deprecated the `temperature` parameter entirely — the
-        # API returns 400 if it is present, on any code path.
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+        # 中文说明：这一段围绕API、路径处理，注意输入、输出和异常路径。
         omit_temperature = "opus-4-7" in model_name
 
         kwargs: dict[str, Any] = {
@@ -466,9 +707,9 @@ class AnthropicProvider(LLMProvider):
             kwargs["system"] = system
 
         if reasoning_effort == "adaptive":
-            # Adaptive thinking: model decides when and how much to think
-            # Supported on claude-sonnet-4-6 and claude-opus-4-6.
-            # Also auto-enables interleaved thinking between tool calls.
+            # 中文说明：这一段围绕模型处理，注意输入、输出和异常路径。
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+            # 中文说明：工具调用。
             kwargs["thinking"] = {"type": "adaptive"}
             if not omit_temperature:
                 kwargs["temperature"] = 1.0
@@ -493,12 +734,26 @@ class AnthropicProvider(LLMProvider):
 
         return kwargs
 
-    # ------------------------------------------------------------------
-    # Response parsing
-    # ------------------------------------------------------------------
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
+    # 中文说明：这一段围绕响应处理，注意输入、输出和异常路径。
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
     @staticmethod
     def _parse_response(response: Any) -> LLMResponse:
+        """解析数据（_parse_response = 原函数名）。
+
+        【中文名称】解析数据
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。Anthropic Claude Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `AnthropicProvider._parse_response` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        response: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         content_parts: list[str] = []
         tool_calls: list[ToolCallRequest] = []
         thinking_blocks: list[dict[str, Any]] = []
@@ -537,7 +792,7 @@ class AnthropicProvider(LLMProvider):
                 val = getattr(response.usage, attr, 0)
                 if val:
                     usage[attr] = val
-            # Normalize to cached_tokens for downstream consistency.
+            # 中文说明：这一段围绕流式输出、令牌、缓存处理，注意输入、输出和异常路径。
             if cache_read:
                 usage["cached_tokens"] = cache_read
 
@@ -549,15 +804,26 @@ class AnthropicProvider(LLMProvider):
             thinking_blocks=thinking_blocks or None,
         )
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
+    # 中文说明：这一段围绕API处理，注意输入、输出和异常路径。
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
     @staticmethod
     def _is_streaming_required_error(e: Exception) -> bool:
-        """Anthropic SDK rejects long non-stream requests with a ValueError
-        whose message starts with 'Streaming is required'. Match defensively
-        on substring so a future SDK message tweak doesn't break detection."""
+        """判断条件是否成立（_is_streaming_required_error = 原函数名）。
+
+        【中文名称】判断条件是否成立
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。Anthropic Claude Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `AnthropicProvider._is_streaming_required_error` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        e: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return isinstance(e, ValueError) and "streaming is required" in str(e).lower()
 
     async def chat(
@@ -570,6 +836,27 @@ class AnthropicProvider(LLMProvider):
         reasoning_effort: str | None = None,
         tool_choice: str | dict[str, Any] | None = None,
     ) -> LLMResponse:
+        """异步执行辅助逻辑（chat = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。Anthropic Claude Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `AnthropicProvider.chat` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        messages: 消息数据，可能来自用户、频道、模型或工具调用。
+        tools: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        max_tokens: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        temperature: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        reasoning_effort: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        tool_choice: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         kwargs = self._build_kwargs(
             messages, tools, model, max_tokens, temperature,
             reasoning_effort, tool_choice,
@@ -579,11 +866,11 @@ class AnthropicProvider(LLMProvider):
             return self._parse_response(response)
         except Exception as e:
             if self._is_streaming_required_error(e):
-                # Anthropic SDK refuses non-stream calls when max_tokens (plus
-                # extended thinking budget) could push the request past the
-                # 10-minute server-side timeout (#2709). Transparently retry
-                # via the streaming path so callers don't need to know the
-                # provider-specific limit.
+                # 中文说明：这一段围绕调用、流式输出、令牌处理，注意输入、输出和异常路径。
+                # 中文说明：这一段围绕请求处理，注意输入、输出和异常路径。
+                # 中文说明：这一段围绕重试、超时处理，注意输入、输出和异常路径。
+                # 中文说明：流式输出。
+                # 中文说明：这一段围绕Provider处理，注意输入、输出和异常路径。
                 return await self.chat_stream(
                     messages=messages,
                     tools=tools,
@@ -608,6 +895,30 @@ class AnthropicProvider(LLMProvider):
         on_thinking_delta: Callable[[str], Awaitable[None]] | None = None,
         on_tool_call_delta: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> LLMResponse:
+        """异步流式处理（chat_stream = 原函数名）。
+
+        【中文名称】流式处理
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。Anthropic Claude Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `AnthropicProvider.chat_stream` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        messages: 消息数据，可能来自用户、频道、模型或工具调用。
+        tools: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        max_tokens: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        temperature: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        reasoning_effort: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        tool_choice: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        on_content_delta: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        on_thinking_delta: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        on_tool_call_delta: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         kwargs = self._build_kwargs(
             messages, tools, model, max_tokens, temperature,
             reasoning_effort, tool_choice,
@@ -616,10 +927,10 @@ class AnthropicProvider(LLMProvider):
         try:
             async with self._client.messages.stream(**kwargs) as stream:
                 if on_content_delta or on_thinking_delta or on_tool_call_delta:
-                    # Idle timeout must track *any* SSE chunk (thinking_delta,
-                    # tool JSON deltas, etc.), not only text_stream tokens.
-                    # Otherwise extended thinking can stall text_stream for minutes
-                    # while the connection is healthy (e.g. MiniMax Anthropic).
+                    # 中文说明：这一段围绕超时处理，注意输入、输出和异常路径。
+                    # 中文说明：这一段围绕工具、流式输出、令牌、JSON处理，注意输入、输出和异常路径。
+                    # 中文说明：这一段围绕流式输出处理，注意输入、输出和异常路径。
+                    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
                     tool_blocks: dict[int, dict[str, str]] = {}
                     while True:
                         try:
@@ -690,4 +1001,19 @@ class AnthropicProvider(LLMProvider):
             return self._handle_error(e)
 
     def get_default_model(self) -> str:
+        """执行辅助逻辑（get_default_model = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。Anthropic Claude Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `AnthropicProvider.get_default_model` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return self.default_model
+

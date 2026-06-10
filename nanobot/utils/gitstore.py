@@ -1,4 +1,21 @@
-"""Git-backed version control for memory files, using dulwich."""
+"""用 Git 仓库保存轻量键值数据，方便配置和历史记录持久化。
+
+【中文名称】工具模块：nanobot/utils/gitstore.py
+
+【功能说明】
+本文件属于 P1 学习范围，重点帮助初学者理解“外部系统 ↔ nanobot 后端”之间的适配层。
+阅读时可以先看类和函数的中文说明，再沿着消息、配置、异常和返回值四条线索跟代码。
+
+【主要职责】
+1. 接收配置或输入数据，整理成后端内部统一使用的结构。
+2. 调用第三方 SDK、HTTP API 或公共工具函数完成实际工作。
+3. 把外部返回值、错误和流式事件转换成 nanobot 可继续处理的数据。
+4. 在边界处处理鉴权、限流、媒体文件、重试和日志，避免复杂度泄漏到核心 Agent。
+
+【学习提示】
+如果你是 Agent 或后端初学者，可以把本文件看成“翻译器”：它不改变核心 Agent 思路，
+而是负责理解某个平台或服务商的协议，并把它翻译成项目内部约定的数据形状。
+"""
 
 from __future__ import annotations
 
@@ -13,12 +30,40 @@ from loguru import logger
 
 @dataclass
 class CommitInfo:
-    sha: str  # Short SHA (8 chars)
+    """CommitInfo 类，封装 工具模块 的核心状态和行为。
+
+    【中文名称】CommitInfo
+
+    【功能说明】
+    用 Git 仓库保存轻量键值数据，方便配置和历史记录持久化。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    普通 Python 类。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
+    sha: str  # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
     message: str
-    timestamp: str  # Formatted datetime
+    timestamp: str  # 中文说明：这一段围绕格式处理，注意输入、输出和异常路径。
 
     def format(self, diff: str = "") -> str:
-        """Format this commit for display, optionally with a diff."""
+        """格式化内容（format = 原函数名）。
+
+        【中文名称】格式化内容
+
+        【功能说明】
+        这是 工具模块 中的一个关键步骤。用 Git 仓库保存轻量键值数据，方便配置和历史记录持久化。
+        在阅读 `CommitInfo.format` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        diff: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         header = f"## {self.message.splitlines()[0]}\n`{self.sha}` — {self.timestamp}\n"
         if diff:
             return f"{header}\n```diff\n{diff}\n```"
@@ -27,13 +72,39 @@ class CommitInfo:
 
 @dataclass
 class LineAge:
-    """Age of a single line based on git blame."""
+    """LineAge 类，封装 工具模块 的核心状态和行为。
 
-    age_days: int  # days since last modification
+    【中文名称】LineAge
+
+    【功能说明】
+    用 Git 仓库保存轻量键值数据，方便配置和历史记录持久化。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    普通 Python 类。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
+
+    age_days: int  # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
 
 
 def _compute_line_ages(annotated) -> list[LineAge]:
-    """Convert annotate results to per-line ages."""
+    """执行辅助逻辑（_compute_line_ages = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。用 Git 仓库保存轻量键值数据，方便配置和历史记录持久化。
+    在阅读 `_compute_line_ages` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    annotated: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     now = datetime.now(tz=timezone.utc).date()
     ages: list[LineAge] = []
     for (commit, _tree_entry), _line_bytes in annotated:
@@ -43,23 +114,74 @@ def _compute_line_ages(annotated) -> list[LineAge]:
 
 
 class GitStore:
-    """Git-backed version control for memory files."""
+    """GitStore 类，封装 工具模块 的核心状态和行为。
+
+    【中文名称】GitStore
+
+    【功能说明】
+    用 Git 仓库保存轻量键值数据，方便配置和历史记录持久化。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    普通 Python 类。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     def __init__(self, workspace: Path, tracked_files: list[str]):
+        """初始化对象（__init__ = 原函数名）。
+
+        【中文名称】初始化对象
+
+        【功能说明】
+        这是 工具模块 中的一个关键步骤。用 Git 仓库保存轻量键值数据，方便配置和历史记录持久化。
+        在阅读 `GitStore.__init__` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        workspace: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        tracked_files: 文件或路径信息，代码会按安全边界读取或写入。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         self._workspace = workspace
         self._tracked_files = tracked_files
 
     def is_initialized(self) -> bool:
-        """Check if the git repo has been initialized."""
+        """判断条件是否成立（is_initialized = 原函数名）。
+
+        【中文名称】判断条件是否成立
+
+        【功能说明】
+        这是 工具模块 中的一个关键步骤。用 Git 仓库保存轻量键值数据，方便配置和历史记录持久化。
+        在阅读 `GitStore.is_initialized` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return (self._workspace / ".git").is_dir()
 
-    # -- init ------------------------------------------------------------------
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
 
     def init(self) -> bool:
-        """Initialize a git repo if not already initialized.
+        """执行辅助逻辑（init = 原函数名）。
 
-        Creates .gitignore and makes an initial commit.
-        Returns True if a new repo was created, False if already exists.
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 工具模块 中的一个关键步骤。用 Git 仓库保存轻量键值数据，方便配置和历史记录持久化。
+        在阅读 `GitStore.init` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         if self.is_initialized():
             return False
@@ -77,7 +199,7 @@ class GitStore:
 
             porcelain.init(str(self._workspace))
 
-            # Write .gitignore (merge with existing if present)
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
             gitignore = self._workspace / ".gitignore"
             dream_entries = self._build_gitignore()
             if gitignore.exists():
@@ -94,15 +216,15 @@ class GitStore:
             else:
                 gitignore.write_text(dream_entries, encoding="utf-8")
 
-            # Ensure tracked files exist (touch them if missing) so the initial
-            # commit has something to track.
+            # 中文说明：这一段围绕文件处理，注意输入、输出和异常路径。
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
             for rel in self._tracked_files:
                 p = self._workspace / rel
                 p.parent.mkdir(parents=True, exist_ok=True)
                 if not p.exists():
                     p.write_text("", encoding="utf-8")
 
-            # Initial commit
+            # 中文说明：Initial commit 相关逻辑。
             porcelain.add(str(self._workspace), paths=[".gitignore"] + self._tracked_files)
             porcelain.commit(
                 str(self._workspace),
@@ -116,12 +238,23 @@ class GitStore:
             logger.exception("Git store init failed for {}", self._workspace)
             return False
 
-    # -- daily operations ------------------------------------------------------
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
 
     def auto_commit(self, message: str) -> str | None:
-        """Stage tracked memory files and commit if there are changes.
+        """执行辅助逻辑（auto_commit = 原函数名）。
 
-        Returns the short commit SHA, or None if nothing to commit.
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 工具模块 中的一个关键步骤。用 Git 仓库保存轻量键值数据，方便配置和历史记录持久化。
+        在阅读 `GitStore.auto_commit` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        message: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         if not self.is_initialized():
             return None
@@ -129,8 +262,8 @@ class GitStore:
         try:
             from dulwich import porcelain
 
-            # .gitignore excludes everything except tracked files,
-            # so any staged/unstaged change must be in our files.
+            # 中文说明：这一段围绕文件处理，注意输入、输出和异常路径。
+            # 中文说明：这一段围绕文件处理，注意输入、输出和异常路径。
             st = porcelain.status(str(self._workspace))
             if not st.unstaged and not any(st.staged.values()):
                 return None
@@ -152,10 +285,24 @@ class GitStore:
             logger.exception("Git auto-commit failed: {}", message)
             return None
 
-    # -- internal helpers ------------------------------------------------------
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
 
     def _resolve_sha(self, short_sha: str) -> bytes | None:
-        """Resolve a short SHA prefix to the full SHA bytes."""
+        """解析目标（_resolve_sha = 原函数名）。
+
+        【中文名称】解析目标
+
+        【功能说明】
+        这是 工具模块 中的一个关键步骤。用 Git 仓库保存轻量键值数据，方便配置和历史记录持久化。
+        在阅读 `GitStore._resolve_sha` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        short_sha: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         try:
             from dulwich.repo import Repo
 
@@ -177,13 +324,19 @@ class GitStore:
             return None
 
     def _is_inside_git_repo(self) -> bool:
-        """Check if self._workspace is already inside a git repository.
+        """判断条件是否成立（_is_inside_git_repo = 原函数名）。
 
-        Walks up from self._workspace to the filesystem root, returning True
-        if any parent directory contains a .git entry.
+        【中文名称】判断条件是否成立
 
-        Git worktrees and submodules can use a ``.git`` file instead of a
-        directory, so we must treat either form as "already inside a repo".
+        【功能说明】
+        这是 工具模块 中的一个关键步骤。用 Git 仓库保存轻量键值数据，方便配置和历史记录持久化。
+        在阅读 `GitStore._is_inside_git_repo` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         current = self._workspace.resolve()
         while current != current.parent:
@@ -193,7 +346,20 @@ class GitStore:
         return False
 
     def _build_gitignore(self) -> str:
-        """Generate .gitignore content from tracked files."""
+        """构建对象（_build_gitignore = 原函数名）。
+
+        【中文名称】构建对象
+
+        【功能说明】
+        这是 工具模块 中的一个关键步骤。用 Git 仓库保存轻量键值数据，方便配置和历史记录持久化。
+        在阅读 `GitStore._build_gitignore` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         dirs: set[str] = set()
         for f in self._tracked_files:
             parent = str(Path(f).parent)
@@ -207,10 +373,24 @@ class GitStore:
         lines.append("!.gitignore")
         return "\n".join(lines) + "\n"
 
-    # -- query -----------------------------------------------------------------
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
 
     def log(self, max_entries: int = 20) -> list[CommitInfo]:
-        """Return simplified commit log."""
+        """执行辅助逻辑（log = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 工具模块 中的一个关键步骤。用 Git 仓库保存轻量键值数据，方便配置和历史记录持久化。
+        在阅读 `GitStore.log` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        max_entries: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self.is_initialized():
             return []
 
@@ -247,11 +427,20 @@ class GitStore:
             return []
 
     def line_ages(self, file_path: str) -> list[LineAge]:
-        """Compute the age of each line in a tracked file via git blame.
+        """执行辅助逻辑（line_ages = 原函数名）。
 
-        Returns one LineAge per line, in order.
-        Returns an empty list if the repo is not initialized, the file is
-        empty, or annotation fails.
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 工具模块 中的一个关键步骤。用 Git 仓库保存轻量键值数据，方便配置和历史记录持久化。
+        在阅读 `GitStore.line_ages` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        file_path: 文件或路径信息，代码会按安全边界读取或写入。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
 
         if not self.is_initialized():
@@ -275,7 +464,22 @@ class GitStore:
         return _compute_line_ages(annotated)
 
     def diff_commits(self, sha1: str, sha2: str) -> str:
-        """Show diff between two commits."""
+        """执行辅助逻辑（diff_commits = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 工具模块 中的一个关键步骤。用 Git 仓库保存轻量键值数据，方便配置和历史记录持久化。
+        在阅读 `GitStore.diff_commits` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        sha1: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        sha2: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self.is_initialized():
             return ""
 
@@ -300,14 +504,44 @@ class GitStore:
             return ""
 
     def find_commit(self, short_sha: str, max_entries: int = 20) -> CommitInfo | None:
-        """Find a commit by short SHA prefix match."""
+        """执行辅助逻辑（find_commit = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 工具模块 中的一个关键步骤。用 Git 仓库保存轻量键值数据，方便配置和历史记录持久化。
+        在阅读 `GitStore.find_commit` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        short_sha: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        max_entries: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         for c in self.log(max_entries=max_entries):
             if c.sha.startswith(short_sha):
                 return c
         return None
 
     def show_commit_diff(self, short_sha: str, max_entries: int = 20) -> tuple[CommitInfo, str] | None:
-        """Find a commit and return it with its diff vs the parent."""
+        """执行辅助逻辑（show_commit_diff = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 工具模块 中的一个关键步骤。用 Git 仓库保存轻量键值数据，方便配置和历史记录持久化。
+        在阅读 `GitStore.show_commit_diff` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        short_sha: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        max_entries: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         commits = self.log(max_entries=max_entries)
         for i, c in enumerate(commits):
             if c.sha.startswith(short_sha):
@@ -318,15 +552,23 @@ class GitStore:
                 return c, diff
         return None
 
-    # -- restore ---------------------------------------------------------------
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
 
     def revert(self, commit: str) -> str | None:
-        """Revert (undo) the changes introduced by the given commit.
+        """执行辅助逻辑（revert = 原函数名）。
 
-        Restores all tracked memory files to the state at the commit's parent,
-        then creates a new commit recording the revert.
+        【中文名称】执行辅助逻辑
 
-        Returns the new commit SHA, or None on failure.
+        【功能说明】
+        这是 工具模块 中的一个关键步骤。用 Git 仓库保存轻量键值数据，方便配置和历史记录持久化。
+        在阅读 `GitStore.revert` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        commit: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         if not self.is_initialized():
             return None
@@ -348,7 +590,7 @@ class GitStore:
                     logger.warning("Git revert: cannot revert root commit {}", commit)
                     return None
 
-                # Use the parent's tree — this undoes the commit's changes
+                # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
                 parent_obj = repo[commit_obj.parents[0]]
                 tree = repo[parent_obj.tree]
 
@@ -363,7 +605,7 @@ class GitStore:
             if not restored:
                 return None
 
-            # Commit the restored state
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
             msg = f"revert: undo {commit}"
             return self.auto_commit(msg)
         except Exception:
@@ -372,7 +614,22 @@ class GitStore:
 
     @staticmethod
     def _read_blob_from_tree(repo, tree, filepath: str) -> str | None:
-        """Read a blob's content from a tree object by walking path parts."""
+        """执行辅助逻辑（_read_blob_from_tree = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 工具模块 中的一个关键步骤。用 Git 仓库保存轻量键值数据，方便配置和历史记录持久化。
+        在阅读 `GitStore._read_blob_from_tree` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        repo: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        tree: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        filepath: 文件或路径信息，代码会按安全边界读取或写入。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         parts = Path(filepath).parts
         current = tree
         for part in parts:
@@ -388,3 +645,4 @@ class GitStore:
             else:
                 return None
         return None
+

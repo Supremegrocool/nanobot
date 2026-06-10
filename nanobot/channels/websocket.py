@@ -1,4 +1,21 @@
-"""WebSocket server channel: nanobot acts as a WebSocket server and serves connected clients."""
+"""WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+
+【中文名称】渠道适配器：nanobot/channels/websocket.py
+
+【功能说明】
+本文件属于 P1 学习范围，重点帮助初学者理解“外部系统 ↔ nanobot 后端”之间的适配层。
+阅读时可以先看类和函数的中文说明，再沿着消息、配置、异常和返回值四条线索跟代码。
+
+【主要职责】
+1. 接收配置或输入数据，整理成后端内部统一使用的结构。
+2. 调用第三方 SDK、HTTP API 或公共工具函数完成实际工作。
+3. 把外部返回值、错误和流式事件转换成 nanobot 可继续处理的数据。
+4. 在边界处处理鉴权、限流、媒体文件、重试和日志，避免复杂度泄漏到核心 Agent。
+
+【学习提示】
+如果你是 Agent 或后端初学者，可以把本文件看成“翻译器”：它不改变核心 Agent 思路，
+而是负责理解某个平台或服务商的协议，并把它翻译成项目内部约定的数据形状。
+"""
 
 from __future__ import annotations
 
@@ -51,23 +68,19 @@ from nanobot.webui.websocket_logging import websockets_server_logger
 
 
 class WebSocketConfig(Base):
-    """WebSocket server channel configuration.
+    """WebSocketConfig 类，封装 渠道适配器 的核心状态和行为。
 
-    Clients connect with URLs like ``ws://{host}:{port}{path}?client_id=...&token=...``.
-    - ``client_id``: Used for ``allow_from`` authorization; if omitted, a value is generated and logged.
-    - ``token``: If non-empty, the ``token`` query param may match this static secret; short-lived tokens
-      from ``token_issue_path`` are also accepted.
-    - ``token_issue_path``: If non-empty, **GET** (HTTP/1.1) to this path returns JSON
-      ``{"token": "...", "expires_in": <seconds>}``; use ``?token=...`` when opening the WebSocket.
-      Must differ from ``path`` (the WS upgrade path). If the client runs in the **same process** as
-      nanobot and shares the asyncio loop, use a thread or async HTTP client for GET—do not call
-      blocking ``urllib`` or synchronous ``httpx`` from inside a coroutine.
-    - ``token_issue_secret``: If non-empty, token requests must send ``Authorization: Bearer <secret>`` or
-      ``X-Nanobot-Auth: <secret>``.
-    - ``websocket_requires_token``: If True, the handshake must include a valid token (static or issued and not expired).
-    - Each connection has its own session: a unique ``chat_id`` maps to the agent session internally.
-    - ``media`` field in outbound messages contains local filesystem paths; remote clients need a
-      shared filesystem or an HTTP file server to access these files.
+    【中文名称】WebSocketConfig
+
+    【功能说明】
+    WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    Base。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
     """
 
     enabled: bool = False
@@ -82,10 +95,10 @@ class WebSocketConfig(Base):
     websocket_requires_token: bool = True
     allow_from: list[str] = Field(default_factory=lambda: ["*"])
     streaming: bool = True
-    # Default 36 MB, upper 40 MB: supports up to 4 images at ~6 MB each after
-    # client-side Worker normalization (see webui Composer). 4 × 6 MB × 1.37
-    # (base64 overhead) + envelope framing stays under 36 MB; the 40 MB ceiling
-    # leaves a small margin for sender slop without opening a DoS avenue.
+    # 中文说明：这一段围绕图片处理，注意输入、输出和异常路径。
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
     max_message_bytes: int = Field(default=37_748_736, ge=1024, le=41_943_040)
     ping_interval_s: float = Field(default=20.0, ge=5.0, le=300.0)
     ping_timeout_s: float = Field(default=20.0, ge=5.0, le=300.0)
@@ -95,6 +108,21 @@ class WebSocketConfig(Base):
     @field_validator("unix_socket_path")
     @classmethod
     def unix_socket_path_format(cls, value: str) -> str:
+        """格式化内容（unix_socket_path_format = 原函数名）。
+
+        【中文名称】格式化内容
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketConfig.unix_socket_path_format` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         value = value.strip()
         if not value:
             return ""
@@ -108,6 +136,21 @@ class WebSocketConfig(Base):
     @field_validator("path")
     @classmethod
     def path_must_start_with_slash(cls, value: str) -> str:
+        """启动流程（path_must_start_with_slash = 原函数名）。
+
+        【中文名称】启动流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketConfig.path_must_start_with_slash` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not value.startswith("/"):
             raise ValueError('path must start with "/"')
         return _normalize_config_path(value)
@@ -115,6 +158,21 @@ class WebSocketConfig(Base):
     @field_validator("token_issue_path")
     @classmethod
     def token_issue_path_format(cls, value: str) -> str:
+        """格式化内容（token_issue_path_format = 原函数名）。
+
+        【中文名称】格式化内容
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketConfig.token_issue_path_format` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         value = value.strip()
         if not value:
             return ""
@@ -124,6 +182,20 @@ class WebSocketConfig(Base):
 
     @model_validator(mode="after")
     def token_issue_path_differs_from_ws_path(self) -> Self:
+        """执行辅助逻辑（token_issue_path_differs_from_ws_path = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketConfig.token_issue_path_differs_from_ws_path` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self.token_issue_path:
             return self
         if _normalize_config_path(self.token_issue_path) == _normalize_config_path(self.path):
@@ -132,6 +204,20 @@ class WebSocketConfig(Base):
 
     @model_validator(mode="after")
     def wildcard_host_requires_auth(self) -> Self:
+        """执行辅助逻辑（wildcard_host_requires_auth = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketConfig.wildcard_host_requires_auth` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if self.host not in ("0.0.0.0", "::"):
             return self
         if self.token.strip() or self.token_issue_secret.strip():
@@ -147,7 +233,22 @@ def publish_runtime_model_update(
     model: str,
     model_preset: str | None,
 ) -> None:
-    """Enqueue a runtime model snapshot for websocket subscribers (fan-out in-channel)."""
+    """执行辅助逻辑（publish_runtime_model_update = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `publish_runtime_model_update` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    bus: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    model: 模型名称或模型配置，用于选择具体 LLM 能力。
+    model_preset: 模型名称或模型配置，用于选择具体 LLM 能力。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     bus.outbound.put_nowait(OutboundMessage(
         channel="websocket",
         chat_id="*",
@@ -161,7 +262,20 @@ def publish_runtime_model_update(
 
 
 def _parse_inbound_payload(raw: str) -> str | None:
-    """Parse a client frame into text; return None for empty or unrecognized content."""
+    """解析数据（_parse_inbound_payload = 原函数名）。
+
+    【中文名称】解析数据
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `_parse_inbound_payload` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    raw: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     text = raw.strip()
     if not text:
         return None
@@ -180,21 +294,43 @@ def _parse_inbound_payload(raw: str) -> str | None:
     return text
 
 
-# Accept UUIDs and short scoped keys like "unified:default". Keeps the capability
-# namespace small enough to rule out path traversal / quote injection tricks.
+# 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+# 中文说明：这一段围绕路径处理，注意输入、输出和异常路径。
 _CHAT_ID_RE = re.compile(r"^[A-Za-z0-9_:-]{1,64}$")
 
 
 def _is_valid_chat_id(value: Any) -> bool:
+    """判断条件是否成立（_is_valid_chat_id = 原函数名）。
+
+    【中文名称】判断条件是否成立
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `_is_valid_chat_id` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     return isinstance(value, str) and _CHAT_ID_RE.match(value) is not None
 
 
 def _parse_envelope(raw: str) -> dict[str, Any] | None:
-    """Return a typed envelope dict if the frame is a new-style JSON envelope, else None.
+    """解析数据（_parse_envelope = 原函数名）。
 
-    A frame qualifies when it parses as a JSON object with a string ``type`` field.
-    Legacy frames (plain text, or ``{"content": ...}`` without ``type``) return None;
-    callers should fall back to :func:`_parse_inbound_payload` for those.
+    【中文名称】解析数据
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `_parse_envelope` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    raw: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
     """
     text = raw.strip()
     if not text.startswith("{"):
@@ -211,17 +347,17 @@ def _parse_envelope(raw: str) -> dict[str, Any] | None:
     return data
 
 
-# Per-message media limits. The server-side guard is a touch looser than the
-# client's ``Worker`` normalization target (6 MB) — tolerate client slop, but
-# still cap total ingress at ``_MAX_IMAGES_PER_MESSAGE * _MAX_IMAGE_BYTES``
-# which fits comfortably inside ``max_message_bytes``.
+# 中文说明：这一段围绕消息、媒体处理，注意输入、输出和异常路径。
+# 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+# 中文说明：这一段围绕消息、图片处理，注意输入、输出和异常路径。
+# 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
 _MAX_IMAGES_PER_MESSAGE = 4
 _MAX_IMAGE_BYTES = 8 * 1024 * 1024
 _MAX_VIDEOS_PER_MESSAGE = 1
 _MAX_VIDEO_BYTES = 20 * 1024 * 1024
 
-# Image MIME whitelist — matches the Composer's ``accept`` list. SVG is
-# explicitly excluded to avoid the XSS surface inside embedded scripts.
+# 中文说明：这一段围绕图片处理，注意输入、输出和异常路径。
+# 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
 _IMAGE_MIME_ALLOWED: frozenset[str] = frozenset({
     "image/png",
     "image/jpeg",
@@ -241,7 +377,20 @@ _DATA_URL_MIME_RE = re.compile(r"^data:([^;,]+)(?:;[^,]*)*;base64,", re.DOTALL)
 
 
 def _extract_data_url_mime(url: str) -> str | None:
-    """Return the MIME type of a ``data:<mime>;base64,...`` URL, else ``None``."""
+    """提取信息（_extract_data_url_mime = 原函数名）。
+
+    【中文名称】提取信息
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `_extract_data_url_mime` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    url: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     if not isinstance(url, str):
         return None
     m = _DATA_URL_MIME_RE.match(url)
@@ -251,7 +400,20 @@ def _extract_data_url_mime(url: str) -> str | None:
 
 
 def _is_websocket_upgrade(request: WsRequest) -> bool:
-    """Detect an actual WS upgrade; plain HTTP GETs to the same path should fall through."""
+    """判断条件是否成立（_is_websocket_upgrade = 原函数名）。
+
+    【中文名称】判断条件是否成立
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `_is_websocket_upgrade` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    request: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     upgrade = request.headers.get("Upgrade") or request.headers.get("upgrade")
     connection = request.headers.get("Connection") or request.headers.get("connection")
     if not upgrade or "websocket" not in upgrade.lower():
@@ -262,7 +424,20 @@ def _is_websocket_upgrade(request: WsRequest) -> bool:
 
 
 class WebSocketChannel(BaseChannel):
-    """Run a local WebSocket server; forward text/JSON messages to the message bus."""
+    """WebSocketChannel 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】WebSocketChannel
+
+    【功能说明】
+    WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    BaseChannel。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     name = "websocket"
     display_name = "WebSocket"
@@ -274,15 +449,32 @@ class WebSocketChannel(BaseChannel):
         *,
         gateway: GatewayServices,
     ):
+        """初始化对象（__init__ = 原函数名）。
+
+        【中文名称】初始化对象
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel.__init__` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        config: 配置对象或配置片段，决定该逻辑如何连接外部服务。
+        bus: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        gateway: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if isinstance(config, dict):
             config = WebSocketConfig.model_validate(config)
         super().__init__(config, bus)
         self.config: WebSocketConfig = config
-        # chat_id -> connections subscribed to it (fan-out target).
+        # 中文说明：这里描述一次数据形态转换，左边是输入形态，右边是输出形态。
         self._subs: dict[str, set[Any]] = {}
-        # connection -> chat_ids it is subscribed to (O(1) cleanup on disconnect).
+        # 中文说明：这里描述一次数据形态转换，左边是输入形态，右边是输出形态。
         self._conn_chats: dict[Any, set[str]] = {}
-        # connection -> default chat_id for legacy frames that omit routing.
+        # 中文说明：这里描述一次数据形态转换，左边是输入形态，右边是输出形态。
         self._conn_default: dict[Any, str] = {}
         self._stop_event: asyncio.Event | None = None
         self._server_task: asyncio.Task[None] | None = None
@@ -296,18 +488,62 @@ class WebSocketChannel(BaseChannel):
 
         self._stream_text_buffers: dict[tuple[str, str], list[str]] = {}
 
-    # -- Subscription bookkeeping -------------------------------------------
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
 
     def _workspace_controls_available(self, connection: Any) -> bool:
+        """执行辅助逻辑（_workspace_controls_available = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel._workspace_controls_available` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        connection: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return self._http_router.workspace_controls_available(connection)
 
     def _attach(self, connection: Any, chat_id: str) -> None:
-        """Idempotently subscribe *connection* to *chat_id*."""
+        """执行辅助逻辑（_attach = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel._attach` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        connection: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         self._subs.setdefault(chat_id, set()).add(connection)
         self._conn_chats.setdefault(connection, set()).add(chat_id)
 
     def _cleanup_connection(self, connection: Any) -> None:
-        """Remove *connection* from every subscription set; safe to call multiple times."""
+        """清理资源（_cleanup_connection = 原函数名）。
+
+        【中文名称】清理资源
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel._cleanup_connection` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        connection: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         chat_ids = self._conn_chats.pop(connection, set())
         for cid in chat_ids:
             subs = self._subs.get(cid)
@@ -319,11 +555,20 @@ class WebSocketChannel(BaseChannel):
         self._conn_default.pop(connection, None)
 
     async def _maybe_push_active_goal_state(self, chat_id: str) -> None:
-        """Replay an active sustained goal from session metadata after *chat_id* is subscribed.
+        """异步执行辅助逻辑（_maybe_push_active_goal_state = 原函数名）。
 
-        Goal metadata lives on the session JSONL and survives gateway restarts, but
-        connected clients normally see it via ``goal_state`` / ``turn_end`` frames.
-        Pushing here makes refresh + reconnect restore the strip without a new model turn.
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel._maybe_push_active_goal_state` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         if self.gateway.session_manager is None:
             return
@@ -337,19 +582,63 @@ class WebSocketChannel(BaseChannel):
         await self.send_goal_state(chat_id, blob)
 
     async def _maybe_push_turn_run_wall_clock(self, chat_id: str) -> None:
-        """Replay ``goal_status: running`` when a turn is still active (same-process refresh)."""
+        """异步运行流程（_maybe_push_turn_run_wall_clock = 原函数名）。
+
+        【中文名称】运行流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel._maybe_push_turn_run_wall_clock` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         t0 = websocket_turn_wall_started_at(chat_id)
         if t0 is None:
             return
         await self.send_goal_status(chat_id, "running", started_at=t0)
 
     async def _hydrate_after_subscribe(self, chat_id: str) -> None:
-        """Replay goal/run strip state after subscribe (same-process refresh)."""
+        """异步执行辅助逻辑（_hydrate_after_subscribe = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel._hydrate_after_subscribe` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         await self._maybe_push_active_goal_state(chat_id)
         await self._maybe_push_turn_run_wall_clock(chat_id)
 
     async def _send_event(self, connection: Any, event: str, **fields: Any) -> None:
-        """Send a control event (attached, error, ...) to a single connection."""
+        """异步发送消息（_send_event = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel._send_event` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        connection: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        event: 外部平台事件对象，包含用户输入和平台元数据。
+        **fields: 额外关键字参数，通常向下透传给 SDK 或工具函数。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         payload: dict[str, Any] = {"event": event}
         payload.update(fields)
         raw = json.dumps(payload, ensure_ascii=False)
@@ -362,12 +651,54 @@ class WebSocketChannel(BaseChannel):
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
+        """执行辅助逻辑（default_config = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel.default_config` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return WebSocketConfig().model_dump(by_alias=True)
 
     def _expected_path(self) -> str:
+        """执行辅助逻辑（_expected_path = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel._expected_path` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return _normalize_config_path(self.config.path)
 
     def _build_ssl_context(self) -> ssl.SSLContext | None:
+        """构建对象（_build_ssl_context = 原函数名）。
+
+        【中文名称】构建对象
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel._build_ssl_context` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         cert = self.config.ssl_certfile.strip()
         key = self.config.ssl_keyfile.strip()
         if not cert and not key:
@@ -381,13 +712,28 @@ class WebSocketChannel(BaseChannel):
         ctx.load_cert_chain(certfile=cert, keyfile=key)
         return ctx
 
-    # -- HTTP dispatch ------------------------------------------------------
+    # 中文说明：这一段围绕HTTP处理，注意输入、输出和异常路径。
 
     async def _dispatch_http(self, connection: Any, request: WsRequest) -> Any:
-        """Route an inbound HTTP request to the HTTP handler or WS upgrade."""
+        """异步执行辅助逻辑（_dispatch_http = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel._dispatch_http` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        connection: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        request: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         got, query = _parse_request_path(request.path)
 
-        # WebSocket upgrade — channel handles this itself
+        # 中文说明：这一段围绕WebSocket处理，注意输入、输出和异常路径。
         expected_ws = self._expected_path()
         if got == expected_ws and _is_websocket_upgrade(request):
             client_id = _query_first(query, "client_id") or ""
@@ -397,10 +743,26 @@ class WebSocketChannel(BaseChannel):
                 return connection.respond(403, "Forbidden")
             return self._authorize_websocket_handshake(connection, query)
 
-        # Everything else goes to the HTTP handler
+        # 中文说明：这一段围绕HTTP处理，注意输入、输出和异常路径。
         return await self._http_router.dispatch(connection, request)
 
     def _authorize_websocket_handshake(self, connection: Any, query: dict[str, list[str]]) -> Any:
+        """执行辅助逻辑（_authorize_websocket_handshake = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel._authorize_websocket_handshake` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        connection: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        query: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         supplied = _query_first(query, "token")
         static_token = self.config.token.strip()
 
@@ -420,9 +782,23 @@ class WebSocketChannel(BaseChannel):
             self._tokens.take_issued_token_if_valid(supplied)
         return None
 
-    # -- Server lifecycle and connection ingress ---------------------------
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
 
     async def start(self) -> None:
+        """异步启动流程（start = 原函数名）。
+
+        【中文名称】启动流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel.start` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         from nanobot.utils.logging_bridge import redirect_lib_logging
 
         redirect_lib_logging("websockets", level="WARNING")
@@ -438,9 +814,38 @@ class WebSocketChannel(BaseChannel):
             connection: ServerConnection,
             request: WsRequest,
         ) -> Any:
+            """异步执行辅助逻辑（process_request = 原函数名）。
+
+            【中文名称】执行辅助逻辑
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `WebSocketChannel.process_request` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            connection: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+            request: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             return await self._dispatch_http(connection, request)
 
         async def handler(connection: ServerConnection) -> None:
+            """异步执行辅助逻辑（handler = 原函数名）。
+
+            【中文名称】执行辅助逻辑
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `WebSocketChannel.handler` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            connection: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             await self._connection_loop(connection)
 
         self.logger.info(
@@ -465,6 +870,20 @@ class WebSocketChannel(BaseChannel):
             )
 
         async def runner() -> None:
+            """异步执行辅助逻辑（runner = 原函数名）。
+
+            【中文名称】执行辅助逻辑
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `WebSocketChannel.runner` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            无显式参数。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             socket_path = self.config.unix_socket_path
             if socket_path:
                 path_obj = Path(socket_path)
@@ -508,6 +927,21 @@ class WebSocketChannel(BaseChannel):
         await self._server_task
 
     async def _connection_loop(self, connection: Any) -> None:
+        """异步执行辅助逻辑（_connection_loop = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel._connection_loop` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        connection: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         request = connection.request
         path_part = request.path if request else "/"
         _, query = _parse_request_path(path_part)
@@ -532,7 +966,7 @@ class WebSocketChannel(BaseChannel):
                     ensure_ascii=False,
                 )
             )
-            # Register only after ready is successfully sent to avoid out-of-order sends
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
             self._conn_default[connection] = default_chat_id
             self._attach(connection, default_chat_id)
             await self._hydrate_after_subscribe(default_chat_id)
@@ -553,9 +987,9 @@ class WebSocketChannel(BaseChannel):
                 content = _parse_inbound_payload(raw)
                 if content is None:
                     continue
-                # WebSocket already authenticates at handshake time (token),
-                # so pairing is not applicable. Treat as non-DM to avoid
-                # sending pairing codes to an already-authenticated client.
+                # 中文说明：这一段围绕WebSocket、令牌处理，注意输入、输出和异常路径。
+                # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+                # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
                 await self._handle_message(
                     sender_id=client_id,
                     chat_id=default_chat_id,
@@ -568,22 +1002,26 @@ class WebSocketChannel(BaseChannel):
         finally:
             self._cleanup_connection(connection)
 
-    # -- Inbound WebSocket envelopes ---------------------------------------
+    # 中文说明：这一段围绕WebSocket处理，注意输入、输出和异常路径。
 
     def _save_envelope_media(
         self,
         media: list[Any],
     ) -> tuple[list[str], str | None]:
-        """Decode and persist ``media`` items from a ``message`` envelope.
+        """保存数据（_save_envelope_media = 原函数名）。
 
-        Returns ``(paths, None)`` on success or ``([], reason)`` on the first
-        failure — the caller is expected to surface ``reason`` to the client
-        and skip publishing so no half-formed message ever reaches the agent.
-        On failure, any files already written to disk earlier in the same
-        call are unlinked so partial ingress doesn't leak orphan files.
-        ``reason`` is a short, stable token suitable for UI localization.
+        【中文名称】保存数据
 
-        Shape: ``list[{"data_url": str, "name"?: str | None}]``.
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel._save_envelope_media` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        media: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         image_count = 0
         video_count = 0
@@ -602,6 +1040,20 @@ class WebSocketChannel(BaseChannel):
         paths: list[str] = []
 
         def _abort(reason: str) -> tuple[list[str], str]:
+            """执行辅助逻辑（_abort = 原函数名）。
+
+            【中文名称】执行辅助逻辑
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `WebSocketChannel._abort` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            reason: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             for p in paths:
                 try:
                     Path(p).unlink(missing_ok=True)
@@ -644,7 +1096,23 @@ class WebSocketChannel(BaseChannel):
         client_id: str,
         envelope: dict[str, Any],
     ) -> None:
-        """Route one typed inbound envelope (``new_chat`` / ``attach`` / ``message``)."""
+        """异步执行辅助逻辑（_dispatch_envelope = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel._dispatch_envelope` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        connection: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        client_id: 第三方 SDK 或 HTTP 客户端实例。
+        envelope: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         t = envelope.get("type")
         if t == "new_chat":
             new_id = str(uuid.uuid4())
@@ -738,7 +1206,7 @@ class WebSocketChannel(BaseChannel):
                     )
                     return
 
-            # Allow image-only turns (content may be empty when media is attached).
+            # 中文说明：这一段围绕媒体、图片处理，注意输入、输出和异常路径。
             if not content.strip() and not media_paths:
                 await self._send_event(connection, "error", detail="missing content")
                 return
@@ -755,7 +1223,7 @@ class WebSocketChannel(BaseChannel):
             if scope is None:
                 return
 
-            # Auto-attach on first use so clients can one-shot without a separate attach.
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
             self._attach(connection, cid)
             await self._hydrate_after_subscribe(cid)
             metadata: dict[str, Any] = {"remote": getattr(connection, "remote_address", None)}
@@ -804,6 +1272,23 @@ class WebSocketChannel(BaseChannel):
         *,
         chat_id: str | None = None,
     ) -> Any | None:
+        """异步执行辅助逻辑（_workspace_scope_or_error = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel._workspace_scope_or_error` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        connection: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        resolver: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         try:
             return resolver()
         except WorkspaceScopeError as exc:
@@ -816,9 +1301,23 @@ class WebSocketChannel(BaseChannel):
             )
             return None
 
-    # -- Outbound WebSocket events -----------------------------------------
+    # 中文说明：这一段围绕WebSocket、事件处理，注意输入、输出和异常路径。
 
     async def stop(self) -> None:
+        """异步停止流程（stop = 原函数名）。
+
+        【中文名称】停止流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel.stop` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self._running:
             return
         self._running = False
@@ -836,7 +1335,23 @@ class WebSocketChannel(BaseChannel):
         self._tokens.clear()
 
     async def _safe_send_to(self, connection: Any, raw: str, *, label: str = "") -> None:
-        """Send a raw frame to one connection, cleaning up on ConnectionClosed."""
+        """异步发送消息（_safe_send_to = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel._safe_send_to` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        connection: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        raw: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        label: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         try:
             await connection.send(raw)
         except ConnectionClosed:
@@ -847,6 +1362,21 @@ class WebSocketChannel(BaseChannel):
             raise
 
     async def send(self, msg: OutboundMessage) -> None:
+        """异步发送消息（send = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel.send` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        msg: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if msg.metadata.get("_runtime_model_updated"):
             await self.send_runtime_model_updated(
                 model_name=msg.metadata.get("model"),
@@ -854,7 +1384,7 @@ class WebSocketChannel(BaseChannel):
             )
             return
 
-        # Snapshot the subscriber set so ConnectionClosed cleanups mid-iteration are safe.
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         conns = list(self._subs.get(msg.chat_id, ()))
         if not conns:
             if (
@@ -884,7 +1414,7 @@ class WebSocketChannel(BaseChannel):
                         started_at=float(started_raw) if isinstance(started_raw, int | float) else None,
                     )
             return
-        # Signal that the agent has fully finished processing the current turn.
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         if msg.metadata.get("_turn_end"):
             lat = msg.metadata.get("latency_ms")
             lat_i = int(lat) if isinstance(lat, (int, float)) else None
@@ -939,9 +1469,9 @@ class WebSocketChannel(BaseChannel):
         agent_ui = msg.metadata.get(OUTBOUND_META_AGENT_UI)
         if agent_ui is not None:
             payload["agent_ui"] = agent_ui
-        # Mark intermediate agent breadcrumbs (tool-call hints, generic
-        # progress strings) so WS clients can render them as subordinate
-        # trace rows rather than conversational replies.
+        # 中文说明：这一段围绕工具、调用、媒体处理，注意输入、输出和异常路径。
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         if msg.metadata.get("_tool_hint"):
             payload["kind"] = "tool_hint"
         elif msg.metadata.get("_progress"):
@@ -967,10 +1497,22 @@ class WebSocketChannel(BaseChannel):
         delta: str,
         metadata: dict[str, Any] | None = None,
     ) -> None:
-        """Push one chunk of model reasoning. Mirrors ``send_delta`` shape so
-        clients receive a stream that opens, updates in place, and closes —
-        rendered above the active assistant bubble with a shimmer header
-        until the matching ``reasoning_end`` arrives.
+        """异步发送消息（send_reasoning_delta = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel.send_reasoning_delta` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        delta: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        metadata: 结构化数据负载，后续会被解析或转发。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         conns = list(self._subs.get(chat_id, ()))
         if not delta:
@@ -1001,7 +1543,22 @@ class WebSocketChannel(BaseChannel):
         chat_id: str,
         metadata: dict[str, Any] | None = None,
     ) -> None:
-        """Close the current reasoning stream segment for in-place renderers."""
+        """异步发送消息（send_reasoning_end = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel.send_reasoning_end` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        metadata: 结构化数据负载，后续会被解析或转发。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         conns = list(self._subs.get(chat_id, ()))
         meta = metadata or {}
         body: dict[str, Any] = {
@@ -1029,6 +1586,23 @@ class WebSocketChannel(BaseChannel):
         edits: list[dict[str, Any]],
         metadata: dict[str, Any] | None = None,
     ) -> None:
+        """异步发送消息（send_file_edit_events = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel.send_file_edit_events` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        edits: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        metadata: 结构化数据负载，后续会被解析或转发。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         conns = list(self._subs.get(chat_id, ()))
         payload: dict[str, Any] = {
             "event": "file_edit",
@@ -1053,6 +1627,23 @@ class WebSocketChannel(BaseChannel):
         delta: str,
         metadata: dict[str, Any] | None = None,
     ) -> None:
+        """异步发送消息（send_delta = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel.send_delta` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        delta: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        metadata: 结构化数据负载，后续会被解析或转发。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         conns = list(self._subs.get(chat_id, ()))
         meta = metadata or {}
         stream_key = (chat_id, str(meta.get("_stream_id") or ""))
@@ -1094,7 +1685,24 @@ class WebSocketChannel(BaseChannel):
         goal_state: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> None:
-        """Signal that the agent has fully finished processing the current turn."""
+        """异步发送消息（send_turn_end = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel.send_turn_end` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        latency_ms: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        goal_state: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        metadata: 结构化数据负载，后续会被解析或转发。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         conns = list(self._subs.get(chat_id, ()))
         body: dict[str, Any] = {"event": "turn_end", "chat_id": chat_id}
         if latency_ms is not None:
@@ -1114,7 +1722,22 @@ class WebSocketChannel(BaseChannel):
             await self._safe_send_to(connection, raw, label=" turn_end ")
 
     async def send_goal_state(self, chat_id: str, blob: dict[str, Any]) -> None:
-        """Push persisted goal-state snapshot for *chat_id* (multi-chat isolation)."""
+        """异步发送消息（send_goal_state = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel.send_goal_state` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        blob: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         conns = list(self._subs.get(chat_id, ()))
         if not conns:
             return
@@ -1130,7 +1753,23 @@ class WebSocketChannel(BaseChannel):
         *,
         started_at: float | None = None,
     ) -> None:
-        """Notify subscribed clients that a turn started or finished (wall-clock hint)."""
+        """异步发送消息（send_goal_status = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel.send_goal_status` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        status: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        started_at: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         conns = list(self._subs.get(chat_id, ()))
         if not conns:
             return
@@ -1146,7 +1785,22 @@ class WebSocketChannel(BaseChannel):
             await self._safe_send_to(connection, raw, label=" goal_status ")
 
     async def send_session_updated(self, chat_id: str, *, scope: str | None = None) -> None:
-        """Notify clients that session metadata changed outside the main turn."""
+        """异步发送消息（send_session_updated = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel.send_session_updated` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        scope: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         conns = list(self._subs.get(chat_id, ()))
         if not conns:
             return
@@ -1163,7 +1817,22 @@ class WebSocketChannel(BaseChannel):
         model_name: Any,
         model_preset: Any = None,
     ) -> None:
-        """Broadcast runtime model changes to every open websocket connection."""
+        """异步发送消息（send_runtime_model_updated = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WebSocket 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WebSocketChannel.send_runtime_model_updated` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        model_name: 模型名称或模型配置，用于选择具体 LLM 能力。
+        model_preset: 模型名称或模型配置，用于选择具体 LLM 能力。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         conns = list(self._conn_chats)
         if not conns or not isinstance(model_name, str) or not model_name.strip():
             return
@@ -1176,3 +1845,4 @@ class WebSocketChannel(BaseChannel):
         raw = json.dumps(body, ensure_ascii=False)
         for connection in conns:
             await self._safe_send_to(connection, raw, label=" runtime_model_updated ")
+

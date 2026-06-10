@@ -1,4 +1,21 @@
-"""WhatsApp channel implementation using Node.js bridge."""
+"""WhatsApp 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+
+【中文名称】渠道适配器：nanobot/channels/whatsapp.py
+
+【功能说明】
+本文件属于 P1 学习范围，重点帮助初学者理解“外部系统 ↔ nanobot 后端”之间的适配层。
+阅读时可以先看类和函数的中文说明，再沿着消息、配置、异常和返回值四条线索跟代码。
+
+【主要职责】
+1. 接收配置或输入数据，整理成后端内部统一使用的结构。
+2. 调用第三方 SDK、HTTP API 或公共工具函数完成实际工作。
+3. 把外部返回值、错误和流式事件转换成 nanobot 可继续处理的数据。
+4. 在边界处处理鉴权、限流、媒体文件、重试和日志，避免复杂度泄漏到核心 Agent。
+
+【学习提示】
+如果你是 Agent 或后端初学者，可以把本文件看成“翻译器”：它不改变核心 Agent 思路，
+而是负责理解某个平台或服务商的协议，并把它翻译成项目内部约定的数据形状。
+"""
 
 import asyncio
 import hashlib
@@ -23,23 +40,63 @@ from nanobot.config.schema import Base
 
 
 class WhatsAppConfig(Base):
-    """WhatsApp channel configuration."""
+    """WhatsAppConfig 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】WhatsAppConfig
+
+    【功能说明】
+    WhatsApp 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    Base。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     enabled: bool = False
     bridge_url: str = "ws://localhost:3001"
     bridge_token: str = ""
     allow_from: list[str] = Field(default_factory=list)
-    group_policy: Literal["open", "mention"] = "open"  # "open" responds to all, "mention" only when @mentioned
+    group_policy: Literal["open", "mention"] = "open"  # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
 
 
 def _bridge_token_path() -> Path:
+    """执行辅助逻辑（_bridge_token_path = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。WhatsApp 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `_bridge_token_path` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    无显式参数。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     from nanobot.config.paths import get_runtime_subdir
 
     return get_runtime_subdir("whatsapp-auth") / "bridge-token"
 
 
 def _load_or_create_bridge_token(path: Path) -> str:
-    """Load a persisted bridge token or create one on first use."""
+    """加载数据（_load_or_create_bridge_token = 原函数名）。
+
+    【中文名称】加载数据
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。WhatsApp 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `_load_or_create_bridge_token` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    path: 文件或路径信息，代码会按安全边界读取或写入。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     if path.exists():
         token = path.read_text(encoding="utf-8").strip()
         if token:
@@ -54,11 +111,19 @@ def _load_or_create_bridge_token(path: Path) -> str:
 
 
 class WhatsAppChannel(BaseChannel):
-    """
-    WhatsApp channel that connects to a Node.js bridge.
+    """WhatsAppChannel 类，封装 渠道适配器 的核心状态和行为。
 
-    The bridge uses @whiskeysockets/baileys to handle the WhatsApp Web protocol.
-    Communication between Python and Node.js is via WebSocket.
+    【中文名称】WhatsAppChannel
+
+    【功能说明】
+    WhatsApp 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    BaseChannel。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
     """
 
     name = "whatsapp"
@@ -66,9 +131,39 @@ class WhatsAppChannel(BaseChannel):
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
+        """执行辅助逻辑（default_config = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WhatsApp 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WhatsAppChannel.default_config` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return WhatsAppConfig().model_dump(by_alias=True)
 
     def __init__(self, config: Any, bus: MessageBus):
+        """初始化对象（__init__ = 原函数名）。
+
+        【中文名称】初始化对象
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WhatsApp 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WhatsAppChannel.__init__` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        config: 配置对象或配置片段，决定该逻辑如何连接外部服务。
+        bus: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if isinstance(config, dict):
             config = WhatsAppConfig.model_validate(config)
         super().__init__(config, bus)
@@ -79,7 +174,20 @@ class WhatsAppChannel(BaseChannel):
         self._bridge_token: str | None = None
 
     def _effective_bridge_token(self) -> str:
-        """Resolve the bridge token, generating a local secret when needed."""
+        """执行辅助逻辑（_effective_bridge_token = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WhatsApp 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WhatsAppChannel._effective_bridge_token` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if self._bridge_token is not None:
             return self._bridge_token
         configured = self.config.bridge_token.strip()
@@ -90,12 +198,20 @@ class WhatsAppChannel(BaseChannel):
         return self._bridge_token
 
     async def login(self, force: bool = False) -> bool:
-        """
-        Set up and run the WhatsApp bridge for QR code login.
+        """异步执行辅助逻辑（login = 原函数名）。
 
-        This spawns the Node.js bridge process which handles the WhatsApp
-        authentication flow. The process blocks until the user scans the QR code
-        or interrupts with Ctrl+C.
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WhatsApp 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WhatsAppChannel.login` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        force: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         try:
             bridge_dir = _ensure_bridge_setup()
@@ -118,7 +234,20 @@ class WhatsAppChannel(BaseChannel):
         return True
 
     async def start(self) -> None:
-        """Start the WhatsApp channel by connecting to the bridge."""
+        """异步启动流程（start = 原函数名）。
+
+        【中文名称】启动流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WhatsApp 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WhatsAppChannel.start` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         import websockets
 
         bridge_url = self.config.bridge_url
@@ -137,7 +266,7 @@ class WhatsAppChannel(BaseChannel):
                     self._connected = True
                     self.logger.info("Connected to WhatsApp bridge")
 
-                    # Listen for messages
+                    # 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
                     async for message in ws:
                         try:
                             await self._handle_bridge_message(message)
@@ -156,7 +285,20 @@ class WhatsAppChannel(BaseChannel):
                     await asyncio.sleep(5)
 
     async def stop(self) -> None:
-        """Stop the WhatsApp channel."""
+        """异步停止流程（stop = 原函数名）。
+
+        【中文名称】停止流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WhatsApp 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WhatsAppChannel.stop` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         self._running = False
         self._connected = False
 
@@ -165,7 +307,21 @@ class WhatsAppChannel(BaseChannel):
             self._ws = None
 
     async def send(self, msg: OutboundMessage) -> None:
-        """Send a message through WhatsApp."""
+        """异步发送消息（send = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WhatsApp 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WhatsAppChannel.send` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        msg: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self._ws or not self._connected:
             self.logger.warning("WhatsApp bridge not connected")
             return
@@ -196,7 +352,21 @@ class WhatsAppChannel(BaseChannel):
                 raise
 
     async def _handle_bridge_message(self, raw: str) -> None:
-        """Handle a message from the bridge."""
+        """异步处理事件（_handle_bridge_message = 原函数名）。
+
+        【中文名称】处理事件
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WhatsApp 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `WhatsAppChannel._handle_bridge_message` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        raw: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         try:
             data = json.loads(raw)
         except json.JSONDecodeError:
@@ -206,15 +376,15 @@ class WhatsAppChannel(BaseChannel):
         msg_type = data.get("type")
 
         if msg_type == "message":
-            # Incoming message from WhatsApp
-            # Deprecated by whatsapp: old phone number style typically: <phone>@s.whatspp.net
+            # 中文说明：这一段围绕WhatsApp、消息处理，注意输入、输出和异常路径。
+            # 中文说明：这一段围绕WhatsApp、调用处理，注意输入、输出和异常路径。
             pn = data.get("pn", "")
-            # New LID sytle typically:
+            # 中文说明：这一段围绕调用处理，注意输入、输出和异常路径。
             sender = data.get("sender", "")
             content = data.get("content", "")
             message_id = data.get("id", "")
 
-            # Extract just the phone number or lid as chat_id
+            # 中文说明：提取。
             is_group = data.get("isGroup", False)
             was_mentioned = bool(data.get("wasMentioned", False) or data.get("isReplyToBot", False))
 
@@ -222,8 +392,8 @@ class WhatsAppChannel(BaseChannel):
                 if not was_mentioned:
                     return
 
-            # Classify by JID suffix: @s.whatsapp.net = phone, @lid.whatsapp.net = LID
-            # The bridge's pn/sender fields don't consistently map to phone/LID across versions.
+            # 中文说明：这一段围绕WhatsApp处理，注意输入、输出和异常路径。
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
             raw_a = pn or ""
             participant = data.get("participant", "")
             raw_b = participant or sender or ""
@@ -238,7 +408,7 @@ class WhatsAppChannel(BaseChannel):
                 elif "@lid.whatsapp.net" in raw:
                     lid_id = extracted
                 elif extracted and not phone_id:
-                    phone_id = extracted  # best guess for bare values
+                    phone_id = extracted  # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
 
             sender_id = phone_id or self._lid_to_phone.get(lid_id, "") or lid_id or id_a or id_b
             if not self.is_allowed(sender_id):
@@ -256,10 +426,10 @@ class WhatsAppChannel(BaseChannel):
 
             self.logger.info("Sender phone={} lid={} → sender_id={}", phone_id or "(empty)", lid_id or "(empty)", sender_id)
 
-            # Extract media paths (images/documents/videos downloaded by the bridge)
+            # 中文说明：提取。
             media_paths = data.get("media") or []
 
-            # Handle voice transcription if it's a voice message
+            # 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
             if content == "[Voice Message]":
                 if media_paths:
                     self.logger.info("Transcribing voice message from {}...", sender_id)
@@ -273,7 +443,7 @@ class WhatsAppChannel(BaseChannel):
                 else:
                     content = "[Voice Message: Audio not available]"
 
-            # Build content tags matching Telegram's pattern: [image: /path] or [file: /path]
+            # 中文说明：这一段围绕Telegram、图片、文件、路径处理，注意输入、输出和异常路径。
             if media_paths:
                 for p in media_paths:
                     mime, _ = mimetypes.guess_type(p)
@@ -283,7 +453,7 @@ class WhatsAppChannel(BaseChannel):
 
             await self._handle_message(
                 sender_id=sender_id,
-                chat_id=sender,  # Use full LID for replies
+                chat_id=sender,  # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
                 content=content,
                 media=media_paths,
                 metadata={
@@ -296,7 +466,7 @@ class WhatsAppChannel(BaseChannel):
             )
 
         elif msg_type == "status":
-            # Connection status update
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
             status = data.get("status")
             self.logger.info("Status: {}", status)
 
@@ -306,7 +476,7 @@ class WhatsAppChannel(BaseChannel):
                 self._connected = False
 
         elif msg_type == "qr":
-            # QR code for authentication
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
             self.logger.info("Scan QR code in the bridge terminal to connect WhatsApp")
 
         elif msg_type == "error":
@@ -314,18 +484,26 @@ class WhatsAppChannel(BaseChannel):
 
 
 def _ensure_bridge_setup() -> Path:
-    """
-    Ensure the WhatsApp bridge is set up and built.
+    """确保前置条件成立（_ensure_bridge_setup = 原函数名）。
 
-    Returns the bridge directory. Raises RuntimeError if npm is not found
-    or bridge cannot be built.
+    【中文名称】确保前置条件成立
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。WhatsApp 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `_ensure_bridge_setup` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    无显式参数。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
     """
     from nanobot.config.paths import get_bridge_install_dir
 
     user_bridge = get_bridge_install_dir()
     stamp_file = user_bridge / ".nanobot-bridge-source-hash"
 
-    # Find source bridge
+    # 中文说明：Find source bridge 相关逻辑。
     current_file = Path(__file__)
     pkg_bridge = current_file.parent.parent / "bridge"
     src_bridge = current_file.parent.parent.parent / "bridge"
@@ -343,6 +521,20 @@ def _ensure_bridge_setup() -> Path:
         )
 
     def source_hash(root: Path) -> str:
+        """执行辅助逻辑（source_hash = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。WhatsApp 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `source_hash` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        root: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         digest = hashlib.sha256()
         for path in sorted(root.rglob("*")):
             if not path.is_file():
@@ -384,3 +576,4 @@ def _ensure_bridge_setup() -> Path:
 
     logger.info("Bridge ready")
     return user_bridge
+

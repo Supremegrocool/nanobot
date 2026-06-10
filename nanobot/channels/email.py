@@ -1,4 +1,21 @@
-"""Email channel implementation using IMAP polling + SMTP replies."""
+"""邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+
+【中文名称】渠道适配器：nanobot/channels/email.py
+
+【功能说明】
+本文件属于 P1 学习范围，重点帮助初学者理解“外部系统 ↔ nanobot 后端”之间的适配层。
+阅读时可以先看类和函数的中文说明，再沿着消息、配置、异常和返回值四条线索跟代码。
+
+【主要职责】
+1. 接收配置或输入数据，整理成后端内部统一使用的结构。
+2. 调用第三方 SDK、HTTP API 或公共工具函数完成实际工作。
+3. 把外部返回值、错误和流式事件转换成 nanobot 可继续处理的数据。
+4. 在边界处处理鉴权、限流、媒体文件、重试和日志，避免复杂度泄漏到核心 Agent。
+
+【学习提示】
+如果你是 Agent 或后端初学者，可以把本文件看成“翻译器”：它不改变核心 Agent 思路，
+而是负责理解某个平台或服务商的协议，并把它翻译成项目内部约定的数据形状。
+"""
 
 import asyncio
 import html
@@ -31,7 +48,20 @@ from nanobot.utils.helpers import safe_filename
 
 
 class EmailConfig(Base):
-    """Email channel configuration (IMAP inbound + SMTP outbound)."""
+    """EmailConfig 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】EmailConfig
+
+    【功能说明】
+    邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    Base。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     enabled: bool = False
     consent_granted: bool = False
@@ -62,33 +92,51 @@ class EmailConfig(Base):
     subject_prefix: str = "Re: "
     allow_from: list[str] = Field(default_factory=list)
 
-    # Email authentication verification (anti-spoofing)
-    verify_dkim: bool = True   # Require Authentication-Results with dkim=pass
-    verify_spf: bool = True    # Require Authentication-Results with spf=pass
+    # 中文说明：这一段围绕邮件处理，注意输入、输出和异常路径。
+    verify_dkim: bool = True   # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+    verify_spf: bool = True    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
 
-    # Attachment handling — set allowed types to enable (e.g. ["application/pdf", "image/*"], or ["*"] for all)
+    # 中文说明：这一段围绕图片处理，注意输入、输出和异常路径。
     allowed_attachment_types: list[str] = Field(default_factory=list)
-    max_attachment_size: int = 2_000_000  # 2MB per attachment
+    max_attachment_size: int = 2_000_000  # 中文说明：2MB per attachment 相关逻辑。
     max_attachments_per_email: int = 5
 
 
 @dataclass
 class _ServerFeatures:
+    """_ServerFeatures 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】_ServerFeatures
+
+    【功能说明】
+    邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    普通 Python 类。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
     move: bool
     uidplus: bool
     uid_store: bool | None = None
 
 
 class EmailChannel(BaseChannel):
-    """
-    Email channel.
+    """EmailChannel 类，封装 渠道适配器 的核心状态和行为。
 
-    Inbound:
-    - Poll IMAP mailbox for unread messages.
-    - Convert each message into an inbound event.
+    【中文名称】EmailChannel
 
-    Outbound:
-    - Send responses via SMTP back to the sender address.
+    【功能说明】
+    邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    BaseChannel。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
     """
 
     name = "email"
@@ -125,9 +173,39 @@ class EmailChannel(BaseChannel):
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
+        """执行辅助逻辑（default_config = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel.default_config` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return EmailConfig().model_dump(by_alias=True)
 
     def __init__(self, config: Any, bus: MessageBus):
+        """初始化对象（__init__ = 原函数名）。
+
+        【中文名称】初始化对象
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel.__init__` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        config: 配置对象或配置片段，决定该逻辑如何连接外部服务。
+        bus: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if isinstance(config, dict):
             config = EmailConfig.model_validate(config)
         super().__init__(config, bus)
@@ -135,11 +213,24 @@ class EmailChannel(BaseChannel):
         self._self_addresses = self._collect_self_addresses()
         self._last_subject_by_chat: dict[str, str] = {}
         self._last_message_id_by_chat: dict[str, str] = {}
-        self._processed_uids: set[str] = set()  # Capped to prevent unbounded growth
+        self._processed_uids: set[str] = set()  # 中文说明：这一段围绕事件处理，注意输入、输出和异常路径。
         self._MAX_PROCESSED_UIDS = 100000
 
     async def start(self) -> None:
-        """Start polling IMAP for inbound emails."""
+        """异步启动流程（start = 原函数名）。
+
+        【中文名称】启动流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel.start` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self.config.consent_granted:
             self.logger.warning(
                 "Email channel disabled: consent_granted is false. "
@@ -202,11 +293,38 @@ class EmailChannel(BaseChannel):
             await asyncio.sleep(poll_seconds)
 
     async def stop(self) -> None:
-        """Stop polling loop."""
+        """异步停止流程（stop = 原函数名）。
+
+        【中文名称】停止流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel.stop` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         self._running = False
 
     async def send(self, msg: OutboundMessage) -> None:
-        """Send email via SMTP."""
+        """异步发送消息（send = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel.send` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        msg: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self.config.consent_granted:
             self.logger.warning("Skip email send: consent_granted is false")
             return
@@ -215,7 +333,7 @@ class EmailChannel(BaseChannel):
             self.logger.warning("SMTP host not configured")
             return
 
-        # Skip progress messages to prevent sending an empty email after each tool call
+        # 中文说明：工具调用。
         if (msg.metadata or {}).get("_progress"):
             self.logger.debug("Skip progress message to {}", msg.chat_id)
             return
@@ -225,11 +343,11 @@ class EmailChannel(BaseChannel):
             self.logger.warning("Missing recipient address")
             return
 
-        # Determine if this is a reply (recipient has sent us an email before)
+        # 中文说明：这一段围绕邮件处理，注意输入、输出和异常路径。
         is_reply = to_addr in self._last_subject_by_chat
         force_send = bool((msg.metadata or {}).get("force_send"))
 
-        # autoReplyEnabled only controls automatic replies, not proactive sends
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         if is_reply and not self.config.auto_reply_enabled and not force_send:
             self.logger.info("Skip automatic reply to {}: auto_reply_enabled is false", to_addr)
             return
@@ -309,6 +427,20 @@ class EmailChannel(BaseChannel):
             raise
 
     def _validate_config(self) -> bool:
+        """校验输入（_validate_config = 原函数名）。
+
+        【中文名称】校验输入
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel._validate_config` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         missing = []
         if not self.config.imap_host:
             missing.append("imap_host")
@@ -332,6 +464,21 @@ class EmailChannel(BaseChannel):
         return True
 
     def _smtp_send(self, msg: EmailMessage) -> None:
+        """发送消息（_smtp_send = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel._smtp_send` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        msg: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         timeout = 30
         if self.config.smtp_use_ssl:
             with smtplib.SMTP_SSL(
@@ -350,7 +497,20 @@ class EmailChannel(BaseChannel):
             smtp.send_message(msg)
 
     def _fetch_new_messages(self) -> tuple[list[dict[str, Any]], set[str]]:
-        """Poll IMAP and return parsed unread messages plus skipped message UIDs."""
+        """执行辅助逻辑（_fetch_new_messages = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel._fetch_new_messages` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return self._fetch_messages(
             search_criteria=("UNSEEN",),
             mark_seen=self.config.mark_seen,
@@ -364,10 +524,22 @@ class EmailChannel(BaseChannel):
         end_date: date,
         limit: int = 20,
     ) -> list[dict[str, Any]]:
-        """
-        Fetch messages in [start_date, end_date) by IMAP date search.
+        """执行辅助逻辑（fetch_messages_between_dates = 原函数名）。
 
-        This is used for historical summarization tasks (e.g. "yesterday").
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel.fetch_messages_between_dates` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        start_date: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        end_date: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        limit: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         if end_date <= start_date:
             return []
@@ -392,6 +564,24 @@ class EmailChannel(BaseChannel):
         dedupe: bool,
         limit: int,
     ) -> tuple[list[dict[str, Any]], set[str]]:
+        """执行辅助逻辑（_fetch_messages = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel._fetch_messages` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        search_criteria: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        mark_seen: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        dedupe: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        limit: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         messages: list[dict[str, Any]] = []
         skipped_uids: set[str] = set()
         cycle_uids: set[str] = set()
@@ -425,7 +615,27 @@ class EmailChannel(BaseChannel):
         skipped_uids: set[str],
         cycle_uids: set[str],
     ) -> None:
-        """Fetch messages by arbitrary IMAP search criteria."""
+        """执行辅助逻辑（_fetch_messages_once = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel._fetch_messages_once` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        search_criteria: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        mark_seen: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        dedupe: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        limit: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        messages: 消息数据，可能来自用户、频道、模型或工具调用。
+        skipped_uids: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        cycle_uids: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         mailbox = self.config.imap_mailbox or "INBOX"
 
         client = self._open_imap_client(mailbox=mailbox, missing_mailbox_ok=True)
@@ -468,7 +678,7 @@ class EmailChannel(BaseChannel):
                         skipped_uids.add(uid)
                     continue
 
-                # --- Anti-spoofing: verify Authentication-Results ---
+                # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
                 spf_pass, dkim_pass = self._check_authentication_results(parsed)
                 if self.config.verify_spf and not spf_pass:
                     self.logger.warning(
@@ -516,7 +726,7 @@ class EmailChannel(BaseChannel):
                     f"{body}"
                 )
 
-                # --- Attachment extraction ---
+                # 中文说明：提取。
                 attachment_paths: list[str] = []
                 if self.config.allowed_attachment_types:
                     saved = self._extract_attachments(
@@ -556,6 +766,22 @@ class EmailChannel(BaseChannel):
             self._close_imap_client(client)
 
     def _open_imap_client(self, mailbox: str, *, missing_mailbox_ok: bool = False) -> Any | None:
+        """执行辅助逻辑（_open_imap_client = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel._open_imap_client` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        mailbox: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        missing_mailbox_ok: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if self.config.imap_use_ssl:
             client: Any = imaplib.IMAP4_SSL(self.config.imap_host, self.config.imap_port)
         else:
@@ -584,11 +810,38 @@ class EmailChannel(BaseChannel):
 
     @staticmethod
     def _close_imap_client(client: Any) -> None:
+        """执行辅助逻辑（_close_imap_client = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel._close_imap_client` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        client: 第三方 SDK 或 HTTP 客户端实例。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         with suppress(Exception):
             client.logout()
 
     def _collect_self_addresses(self) -> set[str]:
-        """Return normalized email addresses owned by this channel instance."""
+        """执行辅助逻辑（_collect_self_addresses = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel._collect_self_addresses` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         candidates = (
             self.config.from_address,
             self.config.smtp_username,
@@ -603,7 +856,20 @@ class EmailChannel(BaseChannel):
 
     @staticmethod
     def _normalize_address(value: str) -> str:
-        """Normalize an address or mailbox-like identifier for comparisons."""
+        """标准化数据（_normalize_address = 原函数名）。
+
+        【中文名称】标准化数据
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel._normalize_address` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         raw = (value or "").strip()
         if not raw:
             return ""
@@ -615,26 +881,85 @@ class EmailChannel(BaseChannel):
         return ""
 
     def _is_self_address(self, sender: str) -> bool:
-        """Return True when an inbound sender belongs to the bot itself."""
+        """判断条件是否成立（_is_self_address = 原函数名）。
+
+        【中文名称】判断条件是否成立
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel._is_self_address` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        sender: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         normalized_sender = self._normalize_address(sender)
         return bool(normalized_sender) and normalized_sender in self._self_addresses
 
     def _remember_processed_uid(self, uid: str, dedupe: bool, cycle_uids: set[str]) -> None:
-        """Track a fetched UID so skipped messages are not reprocessed forever."""
+        """执行辅助逻辑（_remember_processed_uid = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel._remember_processed_uid` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        uid: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        dedupe: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        cycle_uids: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not uid:
             return
         cycle_uids.add(uid)
         if dedupe:
             self._processed_uids.add(uid)
-            # mark_seen is the primary dedup; this set is a safety net
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
             if len(self._processed_uids) > self._MAX_PROCESSED_UIDS:
-                # Evict a random half to cap memory; mark_seen is the primary dedup
+                # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
                 self._processed_uids = set(list(self._processed_uids)[len(self._processed_uids) // 2:])
 
     def _should_apply_post_action(self) -> bool:
+        """执行辅助逻辑（_should_apply_post_action = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel._should_apply_post_action` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return self.config.post_action in {"delete", "move"}
 
     def _apply_post_actions_batch(self, post_actions_uids: list[str]) -> None:
+        """执行辅助逻辑（_apply_post_actions_batch = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel._apply_post_actions_batch` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        post_actions_uids: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self._should_apply_post_action() or not post_actions_uids:
             return
 
@@ -645,9 +970,9 @@ class EmailChannel(BaseChannel):
 
         try:
             features = self._server_features(client)
-            # Apply all post-actions in one IMAP session. `features` also carries
-            # session-learned behavior (e.g. UID STORE support) so later UIDs can
-            # skip known-broken paths.
+            # 中文说明：这一段围绕会话处理，注意输入、输出和异常路径。
+            # 中文说明：这一段围绕会话处理，注意输入、输出和异常路径。
+            # 中文说明：这一段围绕路径处理，注意输入、输出和异常路径。
             for uid in post_actions_uids:
                 if uid:
                     self._apply_post_action(client, uid, features)
@@ -660,6 +985,23 @@ class EmailChannel(BaseChannel):
         uid: str,
         features: _ServerFeatures,
     ) -> None:
+        """执行辅助逻辑（_apply_post_action = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel._apply_post_action` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        client: 第三方 SDK 或 HTTP 客户端实例。
+        uid: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        features: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         action = self.config.post_action
 
         if action == "delete":
@@ -686,6 +1028,20 @@ class EmailChannel(BaseChannel):
 
     @staticmethod
     def _server_features(client: Any) -> _ServerFeatures:
+        """执行辅助逻辑（_server_features = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel._server_features` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        client: 第三方 SDK 或 HTTP 客户端实例。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         caps: set[str] = set()
         with suppress(Exception):
             status, data = client.capability()
@@ -699,19 +1055,51 @@ class EmailChannel(BaseChannel):
 
     @staticmethod
     def _lookup_imap_id_by_uid(client: Any, uid: str) -> bytes | None:
-        # IMAP exposes two message identifiers: UID (stable) and sequence number
-        # (session-local). We target by UID first, but some servers may reject
-        # UID STORE. In that case we resolve the current sequence number for the
-        # UID and retry with STORE using that sequence id.
+        # 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
+        # 中文说明：这一段围绕会话处理，注意输入、输出和异常路径。
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+        # 中文说明：这一段围绕重试处理，注意输入、输出和异常路径。
+        """执行辅助逻辑（_lookup_imap_id_by_uid = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel._lookup_imap_id_by_uid` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        client: 第三方 SDK 或 HTTP 客户端实例。
+        uid: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         status, data = client.search(None, "UID", uid)
         if status != "OK" or not data or not data[0]:
             return None
         return data[0].split()[0]
 
     def _uid_store_deleted(self, client: Any, uid: str, features: _ServerFeatures) -> bool:
-        # Optimistic path: try UID STORE first because UID is stable and avoids
-        # sequence-number lookup. If this fails once for the session, remember it
-        # and use the sequence STORE fallback directly for remaining UIDs.
+        # 中文说明：这一段围绕路径处理，注意输入、输出和异常路径。
+        # 中文说明：这一段围绕会话处理，注意输入、输出和异常路径。
+        # 中文说明：兜底。
+        """执行辅助逻辑（_uid_store_deleted = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel._uid_store_deleted` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        client: 第三方 SDK 或 HTTP 客户端实例。
+        uid: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        features: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if features.uid_store is not False:
             status, _ = client.uid("STORE", uid, "+FLAGS", "(\\Deleted)")
             if status == "OK":
@@ -719,8 +1107,8 @@ class EmailChannel(BaseChannel):
                 return True
             features.uid_store = False
 
-        # Compatibility fallback for servers where UID STORE is unavailable or
-        # unreliable: resolve the current sequence number from UID and use STORE.
+        # 中文说明：兜底。
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         imap_id = self._lookup_imap_id_by_uid(client, uid)
         if not imap_id:
             self.logger.warning("Post-action skipped: UID {} not found", uid)
@@ -733,8 +1121,25 @@ class EmailChannel(BaseChannel):
         return True
 
     def _uid_expunge_or_fallback(self, client: Any, uid: str, features: _ServerFeatures) -> None:
-        # Prefer UID-scoped expunge when supported to avoid expunging unrelated
-        # messages already marked \Deleted in the selected mailbox.
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+        # 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
+        """执行辅助逻辑（_uid_expunge_or_fallback = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel._uid_expunge_or_fallback` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        client: 第三方 SDK 或 HTTP 客户端实例。
+        uid: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        features: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if features.uidplus:
             status, _ = client.uid("EXPUNGE", uid)
             if status == "OK":
@@ -745,22 +1150,80 @@ class EmailChannel(BaseChannel):
 
     @classmethod
     def _is_stale_imap_error(cls, exc: Exception) -> bool:
+        """判断条件是否成立（_is_stale_imap_error = 原函数名）。
+
+        【中文名称】判断条件是否成立
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel._is_stale_imap_error` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        exc: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         message = str(exc).lower()
         return any(marker in message for marker in cls._IMAP_RECONNECT_MARKERS)
 
     @classmethod
     def _is_missing_mailbox_error(cls, exc: Exception) -> bool:
+        """判断条件是否成立（_is_missing_mailbox_error = 原函数名）。
+
+        【中文名称】判断条件是否成立
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel._is_missing_mailbox_error` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        exc: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         message = str(exc).lower()
         return any(marker in message for marker in cls._IMAP_MISSING_MAILBOX_MARKERS)
 
     @classmethod
     def _format_imap_date(cls, value: date) -> str:
-        """Format date for IMAP search (always English month abbreviations)."""
+        """格式化内容（_format_imap_date = 原函数名）。
+
+        【中文名称】格式化内容
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel._format_imap_date` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         month = cls._IMAP_MONTHS[value.month - 1]
         return f"{value.day:02d}-{month}-{value.year}"
 
     @staticmethod
     def _extract_message_bytes(fetched: list[Any]) -> bytes | None:
+        """提取信息（_extract_message_bytes = 原函数名）。
+
+        【中文名称】提取信息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel._extract_message_bytes` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        fetched: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         for item in fetched:
             if isinstance(item, tuple) and len(item) >= 2 and isinstance(item[1], (bytes, bytearray)):
                 return bytes(item[1])
@@ -768,6 +1231,20 @@ class EmailChannel(BaseChannel):
 
     @staticmethod
     def _extract_uid(fetched: list[Any]) -> str:
+        """提取信息（_extract_uid = 原函数名）。
+
+        【中文名称】提取信息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel._extract_uid` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        fetched: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         for item in fetched:
             if isinstance(item, tuple) and item and isinstance(item[0], (bytes, bytearray)):
                 head = bytes(item[0]).decode("utf-8", errors="ignore")
@@ -778,6 +1255,20 @@ class EmailChannel(BaseChannel):
 
     @staticmethod
     def _decode_header_value(value: str) -> str:
+        """执行辅助逻辑（_decode_header_value = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel._decode_header_value` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not value:
             return ""
         try:
@@ -787,7 +1278,21 @@ class EmailChannel(BaseChannel):
 
     @classmethod
     def _extract_text_body(cls, msg: Any) -> str:
-        """Best-effort extraction of readable body text."""
+        """提取信息（_extract_text_body = 原函数名）。
+
+        【中文名称】提取信息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel._extract_text_body` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        msg: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if msg.is_multipart():
             plain_parts: list[str] = []
             html_parts: list[str] = []
@@ -827,10 +1332,19 @@ class EmailChannel(BaseChannel):
 
     @staticmethod
     def _check_authentication_results(parsed_msg: Any) -> tuple[bool, bool]:
-        """Parse Authentication-Results headers for SPF and DKIM verdicts.
+        """执行辅助逻辑（_check_authentication_results = 原函数名）。
 
-        Returns:
-            A tuple of (spf_pass, dkim_pass) booleans.
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel._check_authentication_results` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        parsed_msg: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         spf_pass = False
         dkim_pass = False
@@ -852,9 +1366,24 @@ class EmailChannel(BaseChannel):
         max_size: int,
         max_count: int,
     ) -> list[Path]:
-        """Extract and save email attachments to the media directory.
+        """提取信息（_extract_attachments = 原函数名）。
 
-        Returns list of saved file paths.
+        【中文名称】提取信息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel._extract_attachments` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        msg: 消息数据，可能来自用户、频道、模型或工具调用。
+        uid: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        allowed_types: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        max_size: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        max_count: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         if not msg.is_multipart():
             return []
@@ -899,14 +1428,44 @@ class EmailChannel(BaseChannel):
 
     @staticmethod
     def _html_to_text(raw_html: str) -> str:
+        """执行辅助逻辑（_html_to_text = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel._html_to_text` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        raw_html: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         text = re.sub(r"<\s*br\s*/?>", "\n", raw_html, flags=re.IGNORECASE)
         text = re.sub(r"<\s*/\s*p\s*>", "\n", text, flags=re.IGNORECASE)
         text = re.sub(r"<[^>]+>", "", text)
         return html.unescape(text)
 
     def _reply_subject(self, base_subject: str) -> str:
+        """执行辅助逻辑（_reply_subject = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。邮件 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `EmailChannel._reply_subject` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        base_subject: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         subject = (base_subject or "").strip() or "nanobot reply"
         prefix = self.config.subject_prefix or "Re: "
         if subject.lower().startswith("re:"):
             return subject
         return f"{prefix}{subject}"
+

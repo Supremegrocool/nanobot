@@ -1,4 +1,21 @@
-"""Artifact persistence helpers for generated media."""
+"""管理工具执行产物，把文件路径、预览文本和下载信息整理成统一结构。
+
+【中文名称】工具模块：nanobot/utils/artifacts.py
+
+【功能说明】
+本文件属于 P1 学习范围，重点帮助初学者理解“外部系统 ↔ nanobot 后端”之间的适配层。
+阅读时可以先看类和函数的中文说明，再沿着消息、配置、异常和返回值四条线索跟代码。
+
+【主要职责】
+1. 接收配置或输入数据，整理成后端内部统一使用的结构。
+2. 调用第三方 SDK、HTTP API 或公共工具函数完成实际工作。
+3. 把外部返回值、错误和流式事件转换成 nanobot 可继续处理的数据。
+4. 在边界处处理鉴权、限流、媒体文件、重试和日志，避免复杂度泄漏到核心 Agent。
+
+【学习提示】
+如果你是 Agent 或后端初学者，可以把本文件看成“翻译器”：它不改变核心 Agent 思路，
+而是负责理解某个平台或服务商的协议，并把它翻译成项目内部约定的数据形状。
+"""
 
 from __future__ import annotations
 
@@ -23,11 +40,37 @@ _MIME_EXTENSIONS = {
 }
 
 class ArtifactError(ValueError):
-    """Raised when an artifact cannot be safely decoded or stored."""
+    """ArtifactError 类，封装 工具模块 的核心状态和行为。
+
+    【中文名称】ArtifactError
+
+    【功能说明】
+    管理工具执行产物，把文件路径、预览文本和下载信息整理成统一结构。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    ValueError。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
 
 def decode_image_data_url(data_url: str) -> tuple[bytes, str]:
-    """Decode a base64 image data URL and return ``(bytes, mime)``."""
+    """执行辅助逻辑（decode_image_data_url = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。管理工具执行产物，把文件路径、预览文本和下载信息整理成统一结构。
+    在阅读 `decode_image_data_url` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    data_url: 结构化数据负载，后续会被解析或转发。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     match = _DATA_IMAGE_RE.match(data_url.strip())
     if match is None:
         raise ArtifactError("expected a base64 image data URL")
@@ -47,6 +90,20 @@ def decode_image_data_url(data_url: str) -> tuple[bytes, str]:
 
 
 def _safe_relative_dir(save_dir: str) -> Path:
+    """执行辅助逻辑（_safe_relative_dir = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。管理工具执行产物，把文件路径、预览文本和下载信息整理成统一结构。
+    在阅读 `_safe_relative_dir` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    save_dir: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     normalized = save_dir.replace("\\", "/").strip("/")
     if not normalized:
         raise ArtifactError("save_dir must not be empty")
@@ -57,6 +114,20 @@ def _safe_relative_dir(save_dir: str) -> Path:
 
 
 def _artifact_root(save_dir: str) -> Path:
+    """执行辅助逻辑（_artifact_root = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。管理工具执行产物，把文件路径、预览文本和下载信息整理成统一结构。
+    在阅读 `_artifact_root` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    save_dir: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     media_root = get_media_dir().resolve()
     root = (media_root / _safe_relative_dir(save_dir)).resolve()
     try:
@@ -76,7 +147,26 @@ def store_generated_image_artifact(
     provider: str = "openrouter",
     created_at: datetime | None = None,
 ) -> dict[str, Any]:
-    """Persist a generated image and sidecar metadata under the media root."""
+    """执行辅助逻辑（store_generated_image_artifact = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。管理工具执行产物，把文件路径、预览文本和下载信息整理成统一结构。
+    在阅读 `store_generated_image_artifact` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    data_url: 结构化数据负载，后续会被解析或转发。
+    prompt: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    model: 模型名称或模型配置，用于选择具体 LLM 能力。
+    source_images: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    save_dir: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    provider: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    created_at: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     raw, mime = decode_image_data_url(data_url)
     ext = _MIME_EXTENSIONS.get(mime)
     if ext is None:
@@ -107,7 +197,20 @@ def store_generated_image_artifact(
 
 
 def generated_image_tool_result(artifacts: list[dict[str, Any]]) -> str:
-    """Return the compact structured result exposed to the LLM."""
+    """执行辅助逻辑（generated_image_tool_result = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。管理工具执行产物，把文件路径、预览文本和下载信息整理成统一结构。
+    在阅读 `generated_image_tool_result` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    artifacts: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     return json.dumps(
         {
             "artifacts": artifacts,
@@ -120,3 +223,4 @@ def generated_image_tool_result(artifacts: list[dict[str, Any]]) -> str:
         },
         ensure_ascii=False,
     )
+

@@ -1,4 +1,21 @@
-"""Napcat (OneBot v11) channel for QQ, over WebSocket."""
+"""NapCat / QQ 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+
+【中文名称】渠道适配器：nanobot/channels/napcat.py
+
+【功能说明】
+本文件属于 P1 学习范围，重点帮助初学者理解“外部系统 ↔ nanobot 后端”之间的适配层。
+阅读时可以先看类和函数的中文说明，再沿着消息、配置、异常和返回值四条线索跟代码。
+
+【主要职责】
+1. 接收配置或输入数据，整理成后端内部统一使用的结构。
+2. 调用第三方 SDK、HTTP API 或公共工具函数完成实际工作。
+3. 把外部返回值、错误和流式事件转换成 nanobot 可继续处理的数据。
+4. 在边界处处理鉴权、限流、媒体文件、重试和日志，避免复杂度泄漏到核心 Agent。
+
+【学习提示】
+如果你是 Agent 或后端初学者，可以把本文件看成“翻译器”：它不改变核心 Agent 思路，
+而是负责理解某个平台或服务商的协议，并把它翻译成项目内部约定的数据形状。
+"""
 
 from __future__ import annotations
 
@@ -31,39 +48,95 @@ _DOWNLOAD_TIMEOUT = aiohttp.ClientTimeout(total=60)
 _ACTION_TIMEOUT = 20.0
 
 
-# `"mention"` (only @mentions / replies) | `"open"` (every message) | float p
-# in [0, 1]: mentions/replies always reply; other messages reply with probability
-# p. 0.0 ≡ "mention", 1.0 ≡ "open".
+# 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
+# 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
+# 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
 GroupPolicy = Literal["mention", "open"] | Annotated[float, Field(ge=0.0, le=1.0)]
 
 
 class NapcatConfig(Base):
-    """Napcat (OneBot v11) channel configuration."""
+    """NapcatConfig 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】NapcatConfig
+
+    【功能说明】
+    NapCat / QQ 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    Base。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     enabled: bool = False
     ws_url: str = "ws://127.0.0.1:3001"
     access_token: str = ""
     allow_from: list[str] = Field(default_factory=list)
     group_policy: GroupPolicy = "mention"
-    # Per-group overrides keyed by stringified group_id, e.g. {"123456": "open"}.
-    # Falls back to `group_policy` when a group_id isn't listed.
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
     group_policy_overrides: dict[str, GroupPolicy] = Field(default_factory=dict)
     welcome_new_members: bool = True
-    # Hard cap for inbound image downloads. Bigger images are dropped.
+    # 中文说明：这一段围绕图片处理，注意输入、输出和异常路径。
     max_image_bytes: int = Field(default=20 * 1024 * 1024, ge=1)
 
 
 class NapcatChannel(BaseChannel):
-    """Napcat / OneBot v11 channel."""
+    """NapcatChannel 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】NapcatChannel
+
+    【功能说明】
+    NapCat / QQ 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    BaseChannel。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     name = "napcat"
     display_name = "Napcat (QQ)"
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
+        """执行辅助逻辑（default_config = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。NapCat / QQ 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `NapcatChannel.default_config` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return NapcatConfig().model_dump(by_alias=True)
 
     def __init__(self, config: Any, bus: MessageBus):
+        """初始化对象（__init__ = 原函数名）。
+
+        【中文名称】初始化对象
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。NapCat / QQ 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `NapcatChannel.__init__` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        config: 配置对象或配置片段，决定该逻辑如何连接外部服务。
+        bus: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if isinstance(config, dict):
             config = NapcatConfig.model_validate(config)
         super().__init__(config, bus)
@@ -78,11 +151,25 @@ class NapcatChannel(BaseChannel):
         self._bot_outbound_ids: deque[int] = deque(maxlen=2000)
         self._background_tasks: set[asyncio.Task[None]] = set()
 
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
+    # 中文说明：Lifecycle 相关逻辑。
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
     async def start(self) -> None:
+        """异步启动流程（start = 原函数名）。
+
+        【中文名称】启动流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。NapCat / QQ 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `NapcatChannel.start` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self.config.ws_url:
             logger.error("napcat: ws_url not configured")
             return
@@ -90,11 +177,11 @@ class NapcatChannel(BaseChannel):
         self._running = True
         self._http = aiohttp.ClientSession(timeout=_DOWNLOAD_TIMEOUT)
 
-        backoff = iter((5, 10))  # then 30s forever
+        backoff = iter((5, 10))  # 中文说明：then 30s forever 相关逻辑。
         while self._running:
             try:
                 await self._run_once()
-                backoff = iter((5, 10))  # reset after a clean session
+                backoff = iter((5, 10))  # 中文说明：这一段围绕会话处理，注意输入、输出和异常路径。
             except asyncio.CancelledError:
                 raise
             except Exception as e:
@@ -103,6 +190,20 @@ class NapcatChannel(BaseChannel):
                 await asyncio.sleep(next(backoff, 30))
 
     async def _run_once(self) -> None:
+        """异步运行流程（_run_once = 原函数名）。
+
+        【中文名称】运行流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。NapCat / QQ 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `NapcatChannel._run_once` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         headers = []
         if self.config.access_token:
             headers.append(("Authorization", f"Bearer {self.config.access_token}"))
@@ -112,9 +213,9 @@ class NapcatChannel(BaseChannel):
             self._ws = ws
             logger.info("napcat: connected")
             try:
-                # Validate the connection before entering the dispatch loop.
-                # Napcat may interleave meta_event frames before our echo
-                # response, so dispatch any non-matching frames as we go.
+                # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+                # 中文说明：这一段围绕事件处理，注意输入、输出和异常路径。
+                # 中文说明：这一段围绕响应处理，注意输入、输出和异常路径。
                 echo = uuid.uuid4().hex
                 await ws.send(
                     json.dumps(
@@ -149,6 +250,20 @@ class NapcatChannel(BaseChannel):
                 self._fail_pending(RuntimeError("napcat: websocket disconnected"))
 
     async def stop(self) -> None:
+        """异步停止流程（stop = 原函数名）。
+
+        【中文名称】停止流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。NapCat / QQ 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `NapcatChannel.stop` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         self._running = False
         if self._ws is not None:
             try:
@@ -171,17 +286,47 @@ class NapcatChannel(BaseChannel):
         self._background_tasks.clear()
 
     def _fail_pending(self, err: BaseException) -> None:
+        """执行辅助逻辑（_fail_pending = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。NapCat / QQ 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `NapcatChannel._fail_pending` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        err: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         for fut in self._pending.values():
             if not fut.done():
                 fut.set_exception(err)
         self._pending.clear()
 
-    # ------------------------------------------------------------------
-    # Frame dispatch
-    # ------------------------------------------------------------------
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
+    # 中文说明：Frame dispatch 相关逻辑。
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
     async def _dispatch_frame(self, raw: str | bytes) -> None:
-        # logger.debug("dispatch frame {}", raw)
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+        """异步执行辅助逻辑（_dispatch_frame = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。NapCat / QQ 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `NapcatChannel._dispatch_frame` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        raw: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         try:
             payload = json.loads(raw)
         except json.JSONDecodeError:
@@ -190,7 +335,7 @@ class NapcatChannel(BaseChannel):
         if not isinstance(payload, dict):
             return
 
-        # Action response: identified by `echo` and absence of post_type.
+        # 中文说明：这一段围绕响应处理，注意输入、输出和异常路径。
         if "echo" in payload and payload.get("post_type") is None:
             echo = payload.get("echo")
             fut = self._pending.pop(echo, None) if isinstance(echo, str) else None
@@ -211,10 +356,40 @@ class NapcatChannel(BaseChannel):
             self._create_background_task(self._on_notice(payload), "notice")
 
     def _create_background_task(self, coro: Any, kind: str) -> None:
+        """创建对象（_create_background_task = 原函数名）。
+
+        【中文名称】创建对象
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。NapCat / QQ 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `NapcatChannel._create_background_task` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        coro: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        kind: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         task = asyncio.create_task(coro)
         self._background_tasks.add(task)
 
         def _done(done: asyncio.Task[None]) -> None:
+            """执行辅助逻辑（_done = 原函数名）。
+
+            【中文名称】执行辅助逻辑
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。NapCat / QQ 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `NapcatChannel._done` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            done: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             self._background_tasks.discard(done)
             try:
                 done.result()
@@ -225,11 +400,26 @@ class NapcatChannel(BaseChannel):
 
         task.add_done_callback(_done)
 
-    # ------------------------------------------------------------------
-    # Inbound: messages
-    # ------------------------------------------------------------------
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
+    # 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
     async def _on_message(self, ev: dict[str, Any]) -> None:
+        """异步执行辅助逻辑（_on_message = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。NapCat / QQ 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `NapcatChannel._on_message` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        ev: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         msg_id = ev.get("message_id")
         if isinstance(msg_id, int):
             if msg_id in self._processed_ids:
@@ -295,9 +485,23 @@ class NapcatChannel(BaseChannel):
 
     @staticmethod
     def _normalize_segments(message: Any) -> list[dict[str, Any]]:
-        # Napcat defaults to array format. Treat raw strings as a single text
-        # segment rather than parsing CQ codes — that path is fragile and
-        # users can configure napcat to emit arrays.
+        # 中文说明：这一段围绕格式处理，注意输入、输出和异常路径。
+        # 中文说明：这一段围绕路径处理，注意输入、输出和异常路径。
+        # 中文说明：这一段围绕用户、配置处理，注意输入、输出和异常路径。
+        """标准化数据（_normalize_segments = 原函数名）。
+
+        【中文名称】标准化数据
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。NapCat / QQ 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `NapcatChannel._normalize_segments` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        message: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if isinstance(message, list):
             return [seg for seg in message if isinstance(seg, dict)]
         if isinstance(message, str) and message:
@@ -307,6 +511,21 @@ class NapcatChannel(BaseChannel):
     def _parse_segments(
         self, segments: list[dict[str, Any]]
     ) -> tuple[str, list[dict[str, Any]], bool, int | None]:
+        """解析数据（_parse_segments = 原函数名）。
+
+        【中文名称】解析数据
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。NapCat / QQ 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `NapcatChannel._parse_segments` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        segments: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         parts: list[str] = []
         images: list[dict[str, Any]] = []
         mentioned_self = False
@@ -320,9 +539,9 @@ class NapcatChannel(BaseChannel):
                 if txt := data.get("text"):
                     parts.append(str(txt))
             elif stype == "image":
-                # OneBot exposes the downloadable image at `url`. Napcat
-                # additionally provides `file` (e.g. <md5>.png) and
-                # `file_size` (bytes, sometimes a string).
+                # 中文说明：这一段围绕图片处理，注意输入、输出和异常路径。
+                # 中文说明：这一段围绕文件处理，注意输入、输出和异常路径。
+                # 中文说明：这一段围绕文件处理，注意输入、输出和异常路径。
                 url = data.get("url")
                 if isinstance(url, str) and url.startswith(("http://", "https://")):
                     images.append(
@@ -355,6 +574,23 @@ class NapcatChannel(BaseChannel):
     def _should_reply_in_group(
         self, *, group_id: Any, mentioned_self: bool, replying_to_bot: bool
     ) -> bool:
+        """执行辅助逻辑（_should_reply_in_group = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。NapCat / QQ 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `NapcatChannel._should_reply_in_group` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        group_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        mentioned_self: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        replying_to_bot: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if mentioned_self or replying_to_bot:
             return True
         policy = self.config.group_policy_overrides.get(str(group_id), self.config.group_policy)
@@ -362,7 +598,7 @@ class NapcatChannel(BaseChannel):
             return True
         if policy == "mention":
             return False
-        # Probability case: float in [0.0, 1.0].
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         return random.random() < float(policy)
 
     @staticmethod
@@ -372,14 +608,45 @@ class NapcatChannel(BaseChannel):
         nickname: str,
         user_id: Any,
     ) -> str:
+        """格式化内容（_format_group_content = 原函数名）。
+
+        【中文名称】格式化内容
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。NapCat / QQ 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `NapcatChannel._format_group_content` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        text: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        nickname: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        user_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         label = nickname or str(user_id)
         return f"{label}: {text}"
 
-    # ------------------------------------------------------------------
-    # Inbound: notices (member joined etc.)
-    # ------------------------------------------------------------------
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
     async def _on_notice(self, ev: dict[str, Any]) -> None:
+        """异步执行辅助逻辑（_on_notice = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。NapCat / QQ 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `NapcatChannel._on_notice` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        ev: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if ev.get("notice_type") != "group_increase" or not self.config.welcome_new_members:
             return
 
@@ -397,9 +664,9 @@ class NapcatChannel(BaseChannel):
 
         nickname = await self._lookup_member_name(group_id_int, user_id_int)
 
-        # Note: this routes through is_allowed(). For group bots set
-        # `allow_from: ["*"]` (or include the joining user's id) for welcomes
-        # to fire — same trust model as a regular inbound message.
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+        # 中文说明：这一段围绕用户处理，注意输入、输出和异常路径。
+        # 中文说明：这一段围绕模型、消息处理，注意输入、输出和异常路径。
         await self._handle_message(
             sender_id=str(user_id),
             chat_id=f"group:{group_id}",
@@ -411,24 +678,54 @@ class NapcatChannel(BaseChannel):
         )
 
     async def _lookup_member_name(self, group_id: int, user_id: int) -> str:
-        """Lookup group member nickname. Fallback to user id."""
+        """异步执行辅助逻辑（_lookup_member_name = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。NapCat / QQ 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `NapcatChannel._lookup_member_name` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        group_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        user_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         try:
             resp = await self._call_action(
                 "get_group_member_info",
                 {"group_id": group_id, "user_id": user_id, "no_cache": True},
             )
             data = resp.get("data", {})
-            # logger.debug("get_group_member_info: {}", resp)
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
             return data.get("card") or data.get("nickname") or str(user_id)
         except Exception as e:
             logger.warning("napcat: get_group_member_info failed: {}", e)
             return str(user_id)
 
-    # ------------------------------------------------------------------
-    # Outbound
-    # ------------------------------------------------------------------
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
+    # 中文说明：Outbound 相关逻辑。
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
     async def send(self, msg: OutboundMessage) -> None:
+        """异步发送消息（send = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。NapCat / QQ 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `NapcatChannel.send` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        msg: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if self._ws is None:
             logger.warning("napcat: not connected, dropping outbound message")
             return
@@ -461,6 +758,21 @@ class NapcatChannel(BaseChannel):
             self._bot_outbound_ids.append(int(mid))
 
     async def _build_image_segment(self, ref: str) -> dict[str, Any] | None:
+        """异步构建对象（_build_image_segment = 原函数名）。
+
+        【中文名称】构建对象
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。NapCat / QQ 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `NapcatChannel._build_image_segment` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        ref: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         ref = (ref or "").strip()
         if not ref:
             return None
@@ -470,8 +782,8 @@ class NapcatChannel(BaseChannel):
                 logger.warning("napcat: rejected remote image '{}': {}", ref, err)
                 return None
             return {"type": "image", "data": {"file": ref}}
-        # Local path → base64 so it works even when napcat runs on a
-        # different host/container than nanobot.
+        # 中文说明：这里描述一次数据形态转换，左边是输入形态，右边是输出形态。
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         path = Path(os.path.expanduser(ref)).resolve()
         if not path.is_file():
             logger.warning("napcat: local image not found: {}", path)
@@ -485,6 +797,23 @@ class NapcatChannel(BaseChannel):
         params: dict[str, Any],
         timeout: float = _ACTION_TIMEOUT,
     ) -> dict[str, Any]:
+        """异步调用服务（_call_action = 原函数名）。
+
+        【中文名称】调用服务
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。NapCat / QQ 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `NapcatChannel._call_action` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        action: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        params: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        timeout: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if self._ws is None:
             raise RuntimeError("napcat: not connected")
         echo = uuid.uuid4().hex
@@ -506,15 +835,30 @@ class NapcatChannel(BaseChannel):
         finally:
             self._pending.pop(echo, None)
 
-    # ------------------------------------------------------------------
-    # Image download
-    # ------------------------------------------------------------------
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
+    # 中文说明：这一段围绕图片处理，注意输入、输出和异常路径。
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
     async def _download_image(self, info: dict[str, Any]) -> str | None:
+        """异步下载资源（_download_image = 原函数名）。
+
+        【中文名称】下载资源
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。NapCat / QQ 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `NapcatChannel._download_image` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        info: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         url = info.get("url")
         if not isinstance(url, str):
             return None
-        # logger.debug("napcat: downloading image from {}", url)
+        # 中文说明：这一段围绕图片处理，注意输入、输出和异常路径。
         if self._http is None:
             return None
         ok, err = validate_url_target(url)
@@ -523,7 +867,7 @@ class NapcatChannel(BaseChannel):
             return None
         max_bytes = self.config.max_image_bytes
 
-        # Reject upfront when napcat tells us the size and it's too big.
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         try:
             declared_size = int(info["file_size"])
             if declared_size > max_bytes:
@@ -545,9 +889,9 @@ class NapcatChannel(BaseChannel):
                 if resp.status >= 400:
                     logger.warning("napcat: image download status={} url={}", resp.status, url)
                     return None
-                # Stream until EOF, capping memory at max_bytes. Don't use
-                # content.read(max_bytes+1) — it returns only what's currently
-                # buffered, which truncates chunked responses mid-image.
+                # 中文说明：这一段围绕流式输出处理，注意输入、输出和异常路径。
+                # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+                # 中文说明：这一段围绕响应、图片处理，注意输入、输出和异常路径。
                 buf = bytearray()
                 truncated = False
                 async for chunk in resp.content.iter_chunked(64 * 1024):
@@ -577,3 +921,4 @@ class NapcatChannel(BaseChannel):
             logger.warning("napcat: failed to save image: {}", e)
             return None
         return str(path)
+

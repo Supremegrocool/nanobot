@@ -1,4 +1,21 @@
-"""Mochat channel implementation using Socket.IO with HTTP polling fallback."""
+"""MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+
+【中文名称】渠道适配器：nanobot/channels/mochat.py
+
+【功能说明】
+本文件属于 P1 学习范围，重点帮助初学者理解“外部系统 ↔ nanobot 后端”之间的适配层。
+阅读时可以先看类和函数的中文说明，再沿着消息、配置、异常和返回值四条线索跟代码。
+
+【主要职责】
+1. 接收配置或输入数据，整理成后端内部统一使用的结构。
+2. 调用第三方 SDK、HTTP API 或公共工具函数完成实际工作。
+3. 把外部返回值、错误和流式事件转换成 nanobot 可继续处理的数据。
+4. 在边界处处理鉴权、限流、媒体文件、重试和日志，避免复杂度泄漏到核心 Agent。
+
+【学习提示】
+如果你是 Agent 或后端初学者，可以把本文件看成“翻译器”：它不改变核心 Agent 思路，
+而是负责理解某个平台或服务商的协议，并把它翻译成项目内部约定的数据形状。
+"""
 
 from __future__ import annotations
 
@@ -11,13 +28,13 @@ from datetime import datetime
 from typing import Any
 
 import httpx
+from pydantic import Field
 
 from nanobot.bus.events import OutboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.channels.base import BaseChannel
 from nanobot.config.paths import get_runtime_subdir
 from nanobot.config.schema import Base
-from pydantic import Field
 
 try:
     import socketio
@@ -36,13 +53,26 @@ MAX_SEEN_MESSAGE_IDS = 2000
 CURSOR_SAVE_DEBOUNCE_S = 0.5
 
 
-# ---------------------------------------------------------------------------
-# Data classes
-# ---------------------------------------------------------------------------
+# ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
+# 中文说明：Data classes 相关逻辑。
+# ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
 @dataclass
 class MochatBufferedEntry:
-    """Buffered inbound entry for delayed dispatch."""
+    """MochatBufferedEntry 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】MochatBufferedEntry
+
+    【功能说明】
+    MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    普通 Python 类。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
     raw_body: str
     author: str
     sender_name: str = ""
@@ -54,7 +84,20 @@ class MochatBufferedEntry:
 
 @dataclass
 class DelayState:
-    """Per-target delayed message state."""
+    """DelayState 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】DelayState
+
+    【功能说明】
+    MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    普通 Python 类。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
     entries: list[MochatBufferedEntry] = field(default_factory=list)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     timer: asyncio.Task | None = None
@@ -62,22 +105,62 @@ class DelayState:
 
 @dataclass
 class MochatTarget:
-    """Outbound target resolution result."""
+    """MochatTarget 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】MochatTarget
+
+    【功能说明】
+    MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    普通 Python 类。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
     id: str
     is_panel: bool
 
 
-# ---------------------------------------------------------------------------
-# Pure helpers
-# ---------------------------------------------------------------------------
+# ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
+# 中文说明：Pure helpers 相关逻辑。
+# ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
 def _safe_dict(value: Any) -> dict:
-    """Return *value* if it's a dict, else empty dict."""
+    """执行辅助逻辑（_safe_dict = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `_safe_dict` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     return value if isinstance(value, dict) else {}
 
 
 def _str_field(src: dict, *keys: str) -> str:
-    """Return the first non-empty str value found for *keys*, stripped."""
+    """执行辅助逻辑（_str_field = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `_str_field` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    src: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    *keys: 可变位置参数，承载数量不固定的输入。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     for k in keys:
         v = src.get(k)
         if isinstance(v, str) and v.strip():
@@ -90,7 +173,27 @@ def _make_synthetic_event(
     meta: Any, group_id: str, converse_id: str,
     timestamp: Any = None, *, author_info: Any = None,
 ) -> dict[str, Any]:
-    """Build a synthetic ``message.add`` event dict."""
+    """执行辅助逻辑（_make_synthetic_event = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `_make_synthetic_event` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    message_id: 消息数据，可能来自用户、频道、模型或工具调用。
+    author: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    content: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    meta: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    group_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    converse_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    timestamp: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    author_info: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     payload: dict[str, Any] = {
         "messageId": message_id, "author": author,
         "content": content, "meta": _safe_dict(meta),
@@ -106,7 +209,20 @@ def _make_synthetic_event(
 
 
 def normalize_mochat_content(content: Any) -> str:
-    """Normalize content payload to text."""
+    """标准化数据（normalize_mochat_content = 原函数名）。
+
+    【中文名称】标准化数据
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `normalize_mochat_content` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    content: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     if isinstance(content, str):
         return content.strip()
     if content is None:
@@ -118,7 +234,20 @@ def normalize_mochat_content(content: Any) -> str:
 
 
 def resolve_mochat_target(raw: str) -> MochatTarget:
-    """Resolve id and target kind from user-provided target string."""
+    """解析目标（resolve_mochat_target = 原函数名）。
+
+    【中文名称】解析目标
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `resolve_mochat_target` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    raw: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     trimmed = (raw or "").strip()
     if not trimmed:
         return MochatTarget(id="", is_panel=False)
@@ -137,7 +266,20 @@ def resolve_mochat_target(raw: str) -> MochatTarget:
 
 
 def extract_mention_ids(value: Any) -> list[str]:
-    """Extract mention ids from heterogeneous mention payload."""
+    """提取信息（extract_mention_ids = 原函数名）。
+
+    【中文名称】提取信息
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `extract_mention_ids` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     if not isinstance(value, list):
         return []
     ids: list[str] = []
@@ -155,7 +297,21 @@ def extract_mention_ids(value: Any) -> list[str]:
 
 
 def resolve_was_mentioned(payload: dict[str, Any], agent_user_id: str) -> bool:
-    """Resolve mention state from payload metadata and text fallback."""
+    """解析目标（resolve_was_mentioned = 原函数名）。
+
+    【中文名称】解析目标
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `resolve_was_mentioned` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    payload: 结构化数据负载，后续会被解析或转发。
+    agent_user_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     meta = payload.get("meta")
     if isinstance(meta, dict):
         if meta.get("mentioned") is True or meta.get("wasMentioned") is True:
@@ -172,7 +328,22 @@ def resolve_was_mentioned(payload: dict[str, Any], agent_user_id: str) -> bool:
 
 
 def resolve_require_mention(config: MochatConfig, session_id: str, group_id: str) -> bool:
-    """Resolve mention requirement for group/panel conversations."""
+    """解析目标（resolve_require_mention = 原函数名）。
+
+    【中文名称】解析目标
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `resolve_require_mention` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    config: 配置对象或配置片段，决定该逻辑如何连接外部服务。
+    session_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    group_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     groups = config.groups or {}
     for key in (group_id, session_id, "*"):
         if key and key in groups:
@@ -181,7 +352,21 @@ def resolve_require_mention(config: MochatConfig, session_id: str, group_id: str
 
 
 def build_buffered_body(entries: list[MochatBufferedEntry], is_group: bool) -> str:
-    """Build text body from one or more buffered entries."""
+    """构建对象（build_buffered_body = 原函数名）。
+
+    【中文名称】构建对象
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `build_buffered_body` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    entries: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    is_group: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     if not entries:
         return ""
     if len(entries) == 1:
@@ -200,7 +385,20 @@ def build_buffered_body(entries: list[MochatBufferedEntry], is_group: bool) -> s
 
 
 def parse_timestamp(value: Any) -> int | None:
-    """Parse event timestamp to epoch milliseconds."""
+    """解析数据（parse_timestamp = 原函数名）。
+
+    【中文名称】解析数据
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `parse_timestamp` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     if not isinstance(value, str) or not value.strip():
         return None
     try:
@@ -209,24 +407,63 @@ def parse_timestamp(value: Any) -> int | None:
         return None
 
 
-# ---------------------------------------------------------------------------
-# Config classes
-# ---------------------------------------------------------------------------
+# ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
+# 中文说明：这一段围绕配置处理，注意输入、输出和异常路径。
+# ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
 class MochatMentionConfig(Base):
-    """Mochat mention behavior configuration."""
+    """MochatMentionConfig 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】MochatMentionConfig
+
+    【功能说明】
+    MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    Base。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     require_in_groups: bool = False
 
 
 class MochatGroupRule(Base):
-    """Mochat per-group mention requirement."""
+    """MochatGroupRule 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】MochatGroupRule
+
+    【功能说明】
+    MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    Base。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     require_mention: bool = False
 
 
 class MochatConfig(Base):
-    """Mochat channel configuration."""
+    """MochatConfig 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】MochatConfig
+
+    【功能说明】
+    MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    Base。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     enabled: bool = False
     base_url: str = "https://mochat.io"
@@ -252,21 +489,64 @@ class MochatConfig(Base):
     reply_delay_ms: int = 120000
 
 
-# ---------------------------------------------------------------------------
-# Channel
-# ---------------------------------------------------------------------------
+# ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
+# 中文说明：Channel 相关逻辑。
+# ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
 class MochatChannel(BaseChannel):
-    """Mochat channel using socket.io with fallback polling workers."""
+    """MochatChannel 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】MochatChannel
+
+    【功能说明】
+    MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    BaseChannel。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     name = "mochat"
     display_name = "Mochat"
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
+        """执行辅助逻辑（default_config = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel.default_config` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return MochatConfig().model_dump(by_alias=True)
 
     def __init__(self, config: Any, bus: MessageBus):
+        """初始化对象（__init__ = 原函数名）。
+
+        【中文名称】初始化对象
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel.__init__` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        config: 配置对象或配置片段，决定该逻辑如何连接外部服务。
+        bus: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if isinstance(config, dict):
             config = MochatConfig.model_validate(config)
         super().__init__(config, bus)
@@ -297,10 +577,23 @@ class MochatChannel(BaseChannel):
         self._refresh_task: asyncio.Task | None = None
         self._target_locks: dict[str, asyncio.Lock] = {}
 
-    # ---- lifecycle ---------------------------------------------------------
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
 
     async def start(self) -> None:
-        """Start Mochat channel workers and websocket connection."""
+        """异步启动流程（start = 原函数名）。
+
+        【中文名称】启动流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel.start` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self.config.claw_token:
             self.logger.error("claw_token not configured")
             return
@@ -320,7 +613,20 @@ class MochatChannel(BaseChannel):
             await asyncio.sleep(1)
 
     async def stop(self) -> None:
-        """Stop all workers and clean up resources."""
+        """异步停止流程（stop = 原函数名）。
+
+        【中文名称】停止流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel.stop` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         self._running = False
         if self._refresh_task:
             self._refresh_task.cancel()
@@ -345,7 +651,21 @@ class MochatChannel(BaseChannel):
         self._ws_connected = self._ws_ready = False
 
     async def send(self, msg: OutboundMessage) -> None:
-        """Send outbound message to session or panel."""
+        """异步发送消息（send = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel.send` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        msg: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self.config.claw_token:
             self.logger.warning("claw_token missing, skip send")
             return
@@ -374,9 +694,23 @@ class MochatChannel(BaseChannel):
             self.logger.exception("Failed to send message")
             raise
 
-    # ---- config / init helpers ---------------------------------------------
+    # 中文说明：这一段围绕配置处理，注意输入、输出和异常路径。
 
     def _seed_targets_from_config(self) -> None:
+        """执行辅助逻辑（_seed_targets_from_config = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._seed_targets_from_config` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         sessions, self._auto_discover_sessions = self._normalize_id_list(self.config.sessions)
         panels, self._auto_discover_panels = self._normalize_id_list(self.config.panels)
         self._session_set.update(sessions)
@@ -387,12 +721,40 @@ class MochatChannel(BaseChannel):
 
     @staticmethod
     def _normalize_id_list(values: list[str]) -> tuple[list[str], bool]:
+        """标准化数据（_normalize_id_list = 原函数名）。
+
+        【中文名称】标准化数据
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._normalize_id_list` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        values: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         cleaned = [str(v).strip() for v in values if str(v).strip()]
         return sorted({v for v in cleaned if v != "*"}), "*" in cleaned
 
-    # ---- websocket ---------------------------------------------------------
+    # 中文说明：这一段围绕WebSocket处理，注意输入、输出和异常路径。
 
     async def _start_socket_client(self) -> bool:
+        """异步启动流程（_start_socket_client = 原函数名）。
+
+        【中文名称】启动流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._start_socket_client` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not SOCKETIO_AVAILABLE:
             self.logger.warning("python-socketio not installed, using polling fallback")
             return False
@@ -414,6 +776,20 @@ class MochatChannel(BaseChannel):
 
         @client.event
         async def connect() -> None:
+            """异步建立连接（connect = 原函数名）。
+
+            【中文名称】建立连接
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `MochatChannel.connect` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            无显式参数。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             self._ws_connected, self._ws_ready = True, False
             self.logger.info("websocket connected")
             subscribed = await self._subscribe_all()
@@ -422,6 +798,20 @@ class MochatChannel(BaseChannel):
 
         @client.event
         async def disconnect() -> None:
+            """异步断开连接（disconnect = 原函数名）。
+
+            【中文名称】断开连接
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `MochatChannel.disconnect` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            无显式参数。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             if not self._running:
                 return
             self._ws_connected = self._ws_ready = False
@@ -430,14 +820,56 @@ class MochatChannel(BaseChannel):
 
         @client.event
         async def connect_error(data: Any) -> None:
+            """异步建立连接（connect_error = 原函数名）。
+
+            【中文名称】建立连接
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `MochatChannel.connect_error` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            data: 结构化数据负载，后续会被解析或转发。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             self.logger.error("websocket connect error: {}", data)
 
         @client.on("claw.session.events")
         async def on_session_events(payload: dict[str, Any]) -> None:
+            """异步执行辅助逻辑（on_session_events = 原函数名）。
+
+            【中文名称】执行辅助逻辑
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `MochatChannel.on_session_events` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            payload: 结构化数据负载，后续会被解析或转发。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             await self._handle_watch_payload(payload, "session")
 
         @client.on("claw.panel.events")
         async def on_panel_events(payload: dict[str, Any]) -> None:
+            """异步执行辅助逻辑（on_panel_events = 原函数名）。
+
+            【中文名称】执行辅助逻辑
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `MochatChannel.on_panel_events` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            payload: 结构化数据负载，后续会被解析或转发。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             await self._handle_watch_payload(payload, "panel")
 
         for ev in ("notify:chat.inbox.append", "notify:chat.message.add",
@@ -464,16 +896,59 @@ class MochatChannel(BaseChannel):
             return False
 
     def _build_notify_handler(self, event_name: str):
+        """构建对象（_build_notify_handler = 原函数名）。
+
+        【中文名称】构建对象
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._build_notify_handler` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        event_name: 外部平台事件对象，包含用户输入和平台元数据。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         async def handler(payload: Any) -> None:
+            """异步执行辅助逻辑（handler = 原函数名）。
+
+            【中文名称】执行辅助逻辑
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `MochatChannel.handler` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            payload: 结构化数据负载，后续会被解析或转发。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             if event_name == "notify:chat.inbox.append":
                 await self._handle_notify_inbox_append(payload)
             elif event_name.startswith("notify:chat.message."):
                 await self._handle_notify_chat_message(payload)
         return handler
 
-    # ---- subscribe ---------------------------------------------------------
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
 
     async def _subscribe_all(self) -> bool:
+        """异步执行辅助逻辑（_subscribe_all = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._subscribe_all` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         ok = await self._subscribe_sessions(sorted(self._session_set))
         ok = await self._subscribe_panels(sorted(self._panel_set)) and ok
         if self._auto_discover_sessions or self._auto_discover_panels:
@@ -481,6 +956,21 @@ class MochatChannel(BaseChannel):
         return ok
 
     async def _subscribe_sessions(self, session_ids: list[str]) -> bool:
+        """异步执行辅助逻辑（_subscribe_sessions = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._subscribe_sessions` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        session_ids: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not session_ids:
             return True
         for sid in session_ids:
@@ -510,6 +1000,21 @@ class MochatChannel(BaseChannel):
         return True
 
     async def _subscribe_panels(self, panel_ids: list[str]) -> bool:
+        """异步执行辅助逻辑（_subscribe_panels = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._subscribe_panels` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        panel_ids: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self._auto_discover_panels and not panel_ids:
             return True
         ack = await self._socket_call("com.claw.im.subscribePanels", {"panelIds": panel_ids})
@@ -519,6 +1024,22 @@ class MochatChannel(BaseChannel):
         return True
 
     async def _socket_call(self, event_name: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """异步调用服务（_socket_call = 原函数名）。
+
+        【中文名称】调用服务
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._socket_call` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        event_name: 外部平台事件对象，包含用户输入和平台元数据。
+        payload: 结构化数据负载，后续会被解析或转发。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self._socket:
             return {"result": False, "message": "socket not connected"}
         try:
@@ -527,9 +1048,23 @@ class MochatChannel(BaseChannel):
             return {"result": False, "message": str(e)}
         return raw if isinstance(raw, dict) else {"result": True, "data": raw}
 
-    # ---- refresh / discovery -----------------------------------------------
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
 
     async def _refresh_loop(self) -> None:
+        """异步执行辅助逻辑（_refresh_loop = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._refresh_loop` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         interval_s = max(1.0, self.config.refresh_interval_ms / 1000.0)
         while self._running:
             await asyncio.sleep(interval_s)
@@ -541,12 +1076,42 @@ class MochatChannel(BaseChannel):
                 await self._ensure_fallback_workers()
 
     async def _refresh_targets(self, subscribe_new: bool) -> None:
+        """异步执行辅助逻辑（_refresh_targets = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._refresh_targets` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        subscribe_new: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if self._auto_discover_sessions:
             await self._refresh_sessions_directory(subscribe_new)
         if self._auto_discover_panels:
             await self._refresh_panels(subscribe_new)
 
     async def _refresh_sessions_directory(self, subscribe_new: bool) -> None:
+        """异步执行辅助逻辑（_refresh_sessions_directory = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._refresh_sessions_directory` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        subscribe_new: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         try:
             response = await self._post_json("/api/claw/sessions/list", {})
         except Exception as e:
@@ -581,6 +1146,21 @@ class MochatChannel(BaseChannel):
             await self._ensure_fallback_workers()
 
     async def _refresh_panels(self, subscribe_new: bool) -> None:
+        """异步执行辅助逻辑（_refresh_panels = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._refresh_panels` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        subscribe_new: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         try:
             response = await self._post_json("/api/claw/groups/get", {})
         except Exception as e:
@@ -610,9 +1190,23 @@ class MochatChannel(BaseChannel):
         if self._fallback_mode:
             await self._ensure_fallback_workers()
 
-    # ---- fallback workers --------------------------------------------------
+    # 中文说明：兜底。
 
     async def _ensure_fallback_workers(self) -> None:
+        """异步确保前置条件成立（_ensure_fallback_workers = 原函数名）。
+
+        【中文名称】确保前置条件成立
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._ensure_fallback_workers` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self._running:
             return
         self._fallback_mode = True
@@ -626,6 +1220,20 @@ class MochatChannel(BaseChannel):
                 self._panel_fallback_tasks[pid] = asyncio.create_task(self._panel_poll_worker(pid))
 
     async def _stop_fallback_workers(self) -> None:
+        """异步停止流程（_stop_fallback_workers = 原函数名）。
+
+        【中文名称】停止流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._stop_fallback_workers` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         self._fallback_mode = False
         tasks = [*self._session_fallback_tasks.values(), *self._panel_fallback_tasks.values()]
         for t in tasks:
@@ -636,6 +1244,21 @@ class MochatChannel(BaseChannel):
         self._panel_fallback_tasks.clear()
 
     async def _session_watch_worker(self, session_id: str) -> None:
+        """异步执行辅助逻辑（_session_watch_worker = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._session_watch_worker` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        session_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         while self._running and self._fallback_mode:
             try:
                 payload = await self._post_json("/api/claw/sessions/watch", {
@@ -650,6 +1273,21 @@ class MochatChannel(BaseChannel):
                 await asyncio.sleep(max(0.1, self.config.retry_delay_ms / 1000.0))
 
     async def _panel_poll_worker(self, panel_id: str) -> None:
+        """异步执行辅助逻辑（_panel_poll_worker = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._panel_poll_worker` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        panel_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         sleep_s = max(1.0, self.config.refresh_interval_ms / 1000.0)
         while self._running and self._fallback_mode:
             try:
@@ -676,9 +1314,25 @@ class MochatChannel(BaseChannel):
                 self.logger.warning("panel polling error ({}): {}", panel_id, e)
             await asyncio.sleep(sleep_s)
 
-    # ---- inbound event processing ------------------------------------------
+    # 中文说明：这一段围绕事件处理，注意输入、输出和异常路径。
 
     async def _handle_watch_payload(self, payload: dict[str, Any], target_kind: str) -> None:
+        """异步处理事件（_handle_watch_payload = 原函数名）。
+
+        【中文名称】处理事件
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._handle_watch_payload` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        payload: 结构化数据负载，后续会被解析或转发。
+        target_kind: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not isinstance(payload, dict):
             return
         target_id = _str_field(payload, "sessionId")
@@ -709,6 +1363,23 @@ class MochatChannel(BaseChannel):
                     await self._process_inbound_event(target_id, event, target_kind)
 
     async def _process_inbound_event(self, target_id: str, event: dict[str, Any], target_kind: str) -> None:
+        """异步执行辅助逻辑（_process_inbound_event = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._process_inbound_event` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        target_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        event: 外部平台事件对象，包含用户输入和平台元数据。
+        target_kind: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         payload = event.get("payload")
         if not isinstance(payload, dict):
             return
@@ -754,9 +1425,25 @@ class MochatChannel(BaseChannel):
 
         await self._dispatch_entries(target_id, target_kind, [entry], was_mentioned)
 
-    # ---- dedup / buffering -------------------------------------------------
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
 
     def _remember_message_id(self, key: str, message_id: str) -> bool:
+        """执行辅助逻辑（_remember_message_id = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._remember_message_id` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        key: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        message_id: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         seen_set = self._seen_set.setdefault(key, set())
         seen_queue = self._seen_queue.setdefault(key, deque())
         if message_id in seen_set:
@@ -768,6 +1455,24 @@ class MochatChannel(BaseChannel):
         return False
 
     async def _enqueue_delayed_entry(self, key: str, target_id: str, target_kind: str, entry: MochatBufferedEntry) -> None:
+        """异步执行辅助逻辑（_enqueue_delayed_entry = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._enqueue_delayed_entry` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        key: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        target_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        target_kind: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        entry: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         state = self._delay_states.setdefault(key, DelayState())
         async with state.lock:
             state.entries.append(entry)
@@ -776,10 +1481,46 @@ class MochatChannel(BaseChannel):
             state.timer = asyncio.create_task(self._delay_flush_after(key, target_id, target_kind))
 
     async def _delay_flush_after(self, key: str, target_id: str, target_kind: str) -> None:
+        """异步执行辅助逻辑（_delay_flush_after = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._delay_flush_after` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        key: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        target_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        target_kind: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         await asyncio.sleep(max(0, self.config.reply_delay_ms) / 1000.0)
         await self._flush_delayed_entries(key, target_id, target_kind, "timer", None)
 
     async def _flush_delayed_entries(self, key: str, target_id: str, target_kind: str, reason: str, entry: MochatBufferedEntry | None) -> None:
+        """异步执行辅助逻辑（_flush_delayed_entries = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._flush_delayed_entries` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        key: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        target_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        target_kind: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        reason: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        entry: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         state = self._delay_states.setdefault(key, DelayState())
         async with state.lock:
             if entry:
@@ -794,6 +1535,24 @@ class MochatChannel(BaseChannel):
             await self._dispatch_entries(target_id, target_kind, entries, reason == "mention")
 
     async def _dispatch_entries(self, target_id: str, target_kind: str, entries: list[MochatBufferedEntry], was_mentioned: bool) -> None:
+        """异步执行辅助逻辑（_dispatch_entries = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._dispatch_entries` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        target_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        target_kind: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        entries: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        was_mentioned: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not entries:
             return
         last = entries[-1]
@@ -811,14 +1570,43 @@ class MochatChannel(BaseChannel):
         )
 
     async def _cancel_delay_timers(self) -> None:
+        """异步执行辅助逻辑（_cancel_delay_timers = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._cancel_delay_timers` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         for state in self._delay_states.values():
             if state.timer:
                 state.timer.cancel()
         self._delay_states.clear()
 
-    # ---- notify handlers ---------------------------------------------------
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
 
     async def _handle_notify_chat_message(self, payload: Any) -> None:
+        """异步处理事件（_handle_notify_chat_message = 原函数名）。
+
+        【中文名称】处理事件
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._handle_notify_chat_message` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        payload: 结构化数据负载，后续会被解析或转发。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not isinstance(payload, dict):
             return
         group_id = _str_field(payload, "groupId")
@@ -838,6 +1626,21 @@ class MochatChannel(BaseChannel):
         await self._process_inbound_event(panel_id, evt, "panel")
 
     async def _handle_notify_inbox_append(self, payload: Any) -> None:
+        """异步处理事件（_handle_notify_inbox_append = 原函数名）。
+
+        【中文名称】处理事件
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._handle_notify_inbox_append` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        payload: 结构化数据负载，后续会被解析或转发。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not isinstance(payload, dict) or payload.get("type") != "message":
             return
         detail = payload.get("payload")
@@ -865,9 +1668,25 @@ class MochatChannel(BaseChannel):
         )
         await self._process_inbound_event(session_id, evt, "session")
 
-    # ---- cursor persistence ------------------------------------------------
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
 
     def _mark_session_cursor(self, session_id: str, cursor: int) -> None:
+        """执行辅助逻辑（_mark_session_cursor = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._mark_session_cursor` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        session_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        cursor: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if cursor < 0 or cursor < self._session_cursor.get(session_id, 0):
             return
         self._session_cursor[session_id] = cursor
@@ -875,10 +1694,38 @@ class MochatChannel(BaseChannel):
             self._cursor_save_task = asyncio.create_task(self._save_cursor_debounced())
 
     async def _save_cursor_debounced(self) -> None:
+        """异步保存数据（_save_cursor_debounced = 原函数名）。
+
+        【中文名称】保存数据
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._save_cursor_debounced` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         await asyncio.sleep(CURSOR_SAVE_DEBOUNCE_S)
         await self._save_session_cursors()
 
     async def _load_session_cursors(self) -> None:
+        """异步加载数据（_load_session_cursors = 原函数名）。
+
+        【中文名称】加载数据
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._load_session_cursors` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self._cursor_path.exists():
             return
         try:
@@ -893,6 +1740,20 @@ class MochatChannel(BaseChannel):
                     self._session_cursor[sid] = cur
 
     async def _save_session_cursors(self) -> None:
+        """异步保存数据（_save_session_cursors = 原函数名）。
+
+        【中文名称】保存数据
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._save_session_cursors` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         try:
             self._state_dir.mkdir(parents=True, exist_ok=True)
             self._cursor_path.write_text(json.dumps({
@@ -902,9 +1763,25 @@ class MochatChannel(BaseChannel):
         except Exception as e:
             self.logger.warning("Failed to save cursor file: {}", e)
 
-    # ---- HTTP helpers ------------------------------------------------------
+    # 中文说明：这一段围绕HTTP处理，注意输入、输出和异常路径。
 
     async def _post_json(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """异步执行辅助逻辑（_post_json = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._post_json` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        path: 文件或路径信息，代码会按安全边界读取或写入。
+        payload: 结构化数据负载，后续会被解析或转发。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self._http:
             raise RuntimeError("Mochat HTTP client not initialized")
         url = f"{self.config.base_url.strip().rstrip('/')}{path}"
@@ -927,7 +1804,26 @@ class MochatChannel(BaseChannel):
 
     async def _api_send(self, path: str, id_key: str, id_val: str,
                         content: str, reply_to: str | None, group_id: str | None = None) -> dict[str, Any]:
-        """Unified send helper for session and panel messages."""
+        """异步发送消息（_api_send = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._api_send` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        path: 文件或路径信息，代码会按安全边界读取或写入。
+        id_key: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        id_val: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        content: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        reply_to: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        group_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         body: dict[str, Any] = {id_key: id_val, "content": content}
         if reply_to:
             body["replyTo"] = reply_to
@@ -937,7 +1833,22 @@ class MochatChannel(BaseChannel):
 
     @staticmethod
     def _read_group_id(metadata: dict[str, Any]) -> str | None:
+        """执行辅助逻辑（_read_group_id = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。MoChat 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MochatChannel._read_group_id` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        metadata: 结构化数据负载，后续会被解析或转发。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not isinstance(metadata, dict):
             return None
         value = metadata.get("group_id") or metadata.get("groupId")
         return value.strip() if isinstance(value, str) and value.strip() else None
+

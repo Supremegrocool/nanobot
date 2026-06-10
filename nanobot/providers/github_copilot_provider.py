@@ -1,4 +1,21 @@
-"""GitHub Copilot OAuth-backed provider."""
+"""GitHub Copilot Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+
+【中文名称】Provider 实现：nanobot/providers/github_copilot_provider.py
+
+【功能说明】
+本文件属于 P1 学习范围，重点帮助初学者理解“外部系统 ↔ nanobot 后端”之间的适配层。
+阅读时可以先看类和函数的中文说明，再沿着消息、配置、异常和返回值四条线索跟代码。
+
+【主要职责】
+1. 接收配置或输入数据，整理成后端内部统一使用的结构。
+2. 调用第三方 SDK、HTTP API 或公共工具函数完成实际工作。
+3. 把外部返回值、错误和流式事件转换成 nanobot 可继续处理的数据。
+4. 在边界处处理鉴权、限流、媒体文件、重试和日志，避免复杂度泄漏到核心 Agent。
+
+【学习提示】
+如果你是 Agent 或后端初学者，可以把本文件看成“翻译器”：它不改变核心 Agent 思路，
+而是负责理解某个平台或服务商的协议，并把它翻译成项目内部约定的数据形状。
+"""
 
 from __future__ import annotations
 
@@ -30,6 +47,20 @@ _LONG_LIVED_TOKEN_SECONDS = 315360000
 
 
 def get_storage() -> FileTokenStorage:
+    """执行辅助逻辑（get_storage = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。GitHub Copilot Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `get_storage` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    无显式参数。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     return FileTokenStorage(
         token_filename=TOKEN_FILENAME,
         app_name=TOKEN_APP_NAME,
@@ -38,6 +69,20 @@ def get_storage() -> FileTokenStorage:
 
 
 def _copilot_headers(token: str) -> dict[str, str]:
+    """执行辅助逻辑（_copilot_headers = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。GitHub Copilot Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_copilot_headers` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    token: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     return {
         "Authorization": f"token {token}",
         "Accept": "application/json",
@@ -48,6 +93,20 @@ def _copilot_headers(token: str) -> dict[str, str]:
 
 
 def _load_github_token() -> OAuthToken | None:
+    """加载数据（_load_github_token = 原函数名）。
+
+    【中文名称】加载数据
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。GitHub Copilot Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_load_github_token` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    无显式参数。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     token = get_storage().load()
     if not token or not token.access:
         return None
@@ -55,7 +114,20 @@ def _load_github_token() -> OAuthToken | None:
 
 
 def get_github_copilot_login_status() -> OAuthToken | None:
-    """Return the persisted GitHub OAuth token if available."""
+    """执行辅助逻辑（get_github_copilot_login_status = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。GitHub Copilot Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `get_github_copilot_login_status` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    无显式参数。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     return _load_github_token()
 
 
@@ -63,7 +135,21 @@ def login_github_copilot(
     print_fn: Callable[[str], None] | None = None,
     prompt_fn: Callable[[str], str] | None = None,
 ) -> OAuthToken:
-    """Run GitHub device flow and persist the GitHub OAuth token used for Copilot."""
+    """执行辅助逻辑（login_github_copilot = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。GitHub Copilot Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `login_github_copilot` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    print_fn: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    prompt_fn: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     del prompt_fn
     printer = print_fn or print
     timeout = httpx.Timeout(20.0, connect=20.0)
@@ -155,9 +241,37 @@ def login_github_copilot(
 
 
 class GitHubCopilotProvider(OpenAICompatProvider):
-    """Provider that exchanges a stored GitHub OAuth token for Copilot access tokens."""
+    """GitHubCopilotProvider 类，封装 Provider 实现 的核心状态和行为。
+
+    【中文名称】GitHubCopilotProvider
+
+    【功能说明】
+    GitHub Copilot Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    OpenAICompatProvider。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     def __init__(self, default_model: str = "github-copilot/gpt-4.1"):
+        """初始化对象（__init__ = 原函数名）。
+
+        【中文名称】初始化对象
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。GitHub Copilot Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `GitHubCopilotProvider.__init__` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        default_model: 模型名称或模型配置，用于选择具体 LLM 能力。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         from nanobot.providers.registry import find_by_name
 
         self._copilot_access_token: str | None = None
@@ -175,6 +289,20 @@ class GitHubCopilotProvider(OpenAICompatProvider):
         )
 
     async def _get_copilot_access_token(self) -> str:
+        """异步执行辅助逻辑（_get_copilot_access_token = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。GitHub Copilot Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `GitHubCopilotProvider._get_copilot_access_token` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         now = time.time()
         if self._copilot_access_token and now < self._copilot_expires_at - _EXPIRY_SKEW_SECONDS:
             return self._copilot_access_token
@@ -206,6 +334,20 @@ class GitHubCopilotProvider(OpenAICompatProvider):
         return self._copilot_access_token
 
     async def _refresh_client_api_key(self) -> str:
+        """异步执行辅助逻辑（_refresh_client_api_key = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。GitHub Copilot Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `GitHubCopilotProvider._refresh_client_api_key` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         token = await self._get_copilot_access_token()
         client = await self._ensure_client()
         self.api_key = token
@@ -222,6 +364,27 @@ class GitHubCopilotProvider(OpenAICompatProvider):
         reasoning_effort: str | None = None,
         tool_choice: str | dict[str, object] | None = None,
     ):
+        """异步执行辅助逻辑（chat = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。GitHub Copilot Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `GitHubCopilotProvider.chat` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        messages: 消息数据，可能来自用户、频道、模型或工具调用。
+        tools: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        max_tokens: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        temperature: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        reasoning_effort: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        tool_choice: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         await self._refresh_client_api_key()
         return await super().chat(
             messages=messages,
@@ -246,6 +409,30 @@ class GitHubCopilotProvider(OpenAICompatProvider):
         on_thinking_delta: Callable[[str], Awaitable[None]] | None = None,
         on_tool_call_delta: Callable[[dict[str, object]], Awaitable[None]] | None = None,
     ):
+        """异步流式处理（chat_stream = 原函数名）。
+
+        【中文名称】流式处理
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。GitHub Copilot Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `GitHubCopilotProvider.chat_stream` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        messages: 消息数据，可能来自用户、频道、模型或工具调用。
+        tools: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        max_tokens: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        temperature: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        reasoning_effort: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        tool_choice: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        on_content_delta: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        on_thinking_delta: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        on_tool_call_delta: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         await self._refresh_client_api_key()
         return await super().chat_stream(
             messages=messages,
@@ -259,3 +446,4 @@ class GitHubCopilotProvider(OpenAICompatProvider):
             on_thinking_delta=on_thinking_delta,
             on_tool_call_delta=on_tool_call_delta,
         )
+

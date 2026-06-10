@@ -1,4 +1,21 @@
-"""Runtime-specific helper functions and constants."""
+"""识别当前运行环境、命令来源和终端能力。
+
+【中文名称】工具模块：nanobot/utils/runtime.py
+
+【功能说明】
+本文件属于 P1 学习范围，重点帮助初学者理解“外部系统 ↔ nanobot 后端”之间的适配层。
+阅读时可以先看类和函数的中文说明，再沿着消息、配置、异常和返回值四条线索跟代码。
+
+【主要职责】
+1. 接收配置或输入数据，整理成后端内部统一使用的结构。
+2. 调用第三方 SDK、HTTP API 或公共工具函数完成实际工作。
+3. 把外部返回值、错误和流式事件转换成 nanobot 可继续处理的数据。
+4. 在边界处处理鉴权、限流、媒体文件、重试和日志，避免复杂度泄漏到核心 Agent。
+
+【学习提示】
+如果你是 Agent 或后端初学者，可以把本文件看成“翻译器”：它不改变核心 Agent 思路，
+而是负责理解某个平台或服务商的协议，并把它翻译成项目内部约定的数据形状。
+"""
 
 from __future__ import annotations
 
@@ -12,7 +29,7 @@ from nanobot.utils.helpers import stringify_text_blocks
 
 _MAX_REPEAT_EXTERNAL_LOOKUPS = 2
 
-# Third same-target workspace violation in a turn escalates to "stop retrying".
+# 中文说明：这一段围绕重试处理，注意输入、输出和异常路径。
 _MAX_REPEAT_WORKSPACE_VIOLATIONS = 2
 
 EMPTY_FINAL_RESPONSE_MESSAGE = (
@@ -44,12 +61,39 @@ SUSTAINED_GOAL_CONTINUE_PROMPT = (
 
 
 def empty_tool_result_message(tool_name: str) -> str:
-    """Short prompt-safe marker for tools that completed without visible output."""
+    """执行辅助逻辑（empty_tool_result_message = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。识别当前运行环境、命令来源和终端能力。
+    在阅读 `empty_tool_result_message` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    tool_name: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     return f"({tool_name} completed with no output)"
 
 
 def ensure_nonempty_tool_result(tool_name: str, content: Any) -> Any:
-    """Replace semantically empty tool results with a short marker string."""
+    """确保前置条件成立（ensure_nonempty_tool_result = 原函数名）。
+
+    【中文名称】确保前置条件成立
+
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。识别当前运行环境、命令来源和终端能力。
+    在阅读 `ensure_nonempty_tool_result` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    tool_name: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    content: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     if content is None:
         return empty_tool_result_message(tool_name)
     if isinstance(content, str) and not content.strip():
@@ -64,32 +108,111 @@ def ensure_nonempty_tool_result(tool_name: str, content: Any) -> Any:
 
 
 def is_blank_text(content: str | None) -> bool:
-    """True when *content* is missing or only whitespace."""
+    """判断条件是否成立（is_blank_text = 原函数名）。
+
+    【中文名称】判断条件是否成立
+
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。识别当前运行环境、命令来源和终端能力。
+    在阅读 `is_blank_text` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    content: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     return content is None or not content.strip()
 
 
 def build_finalization_retry_message() -> dict[str, str]:
-    """A short no-tools-allowed prompt for final answer recovery."""
+    """构建对象（build_finalization_retry_message = 原函数名）。
+
+    【中文名称】构建对象
+
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。识别当前运行环境、命令来源和终端能力。
+    在阅读 `build_finalization_retry_message` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    无显式参数。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     return {"role": "user", "content": FINALIZATION_RETRY_PROMPT}
 
 
 def build_budget_exhausted_finalization_message() -> dict[str, str]:
-    """Prompt the model for a no-tools final response after budget exhaustion."""
+    """构建对象（build_budget_exhausted_finalization_message = 原函数名）。
+
+    【中文名称】构建对象
+
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。识别当前运行环境、命令来源和终端能力。
+    在阅读 `build_budget_exhausted_finalization_message` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    无显式参数。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     return {"role": "user", "content": BUDGET_EXHAUSTED_FINALIZATION_PROMPT}
 
 
 def build_length_recovery_message() -> dict[str, str]:
-    """Prompt the model to continue after hitting output token limit."""
+    """构建对象（build_length_recovery_message = 原函数名）。
+
+    【中文名称】构建对象
+
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。识别当前运行环境、命令来源和终端能力。
+    在阅读 `build_length_recovery_message` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    无显式参数。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     return {"role": "user", "content": LENGTH_RECOVERY_PROMPT}
 
 
 def build_goal_continue_message(custom: str | None = None) -> dict[str, str]:
-    """Prompt the model to continue when a sustained goal is still active."""
+    """构建对象（build_goal_continue_message = 原函数名）。
+
+    【中文名称】构建对象
+
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。识别当前运行环境、命令来源和终端能力。
+    在阅读 `build_goal_continue_message` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    custom: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     return {"role": "user", "content": custom or SUSTAINED_GOAL_CONTINUE_PROMPT}
 
 
 def external_lookup_signature(tool_name: str, arguments: Any) -> str | None:
-    """Stable signature for repeated external lookups we want to throttle."""
+    """执行辅助逻辑（external_lookup_signature = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。识别当前运行环境、命令来源和终端能力。
+    在阅读 `external_lookup_signature` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    tool_name: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    arguments: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     if not isinstance(arguments, dict):
         return None
     if tool_name == "web_fetch":
@@ -108,7 +231,22 @@ def repeated_external_lookup_error(
     arguments: Any,
     seen_counts: dict[str, int],
 ) -> str | None:
-    """Block repeated external lookups after a small retry budget."""
+    """执行辅助逻辑（repeated_external_lookup_error = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。识别当前运行环境、命令来源和终端能力。
+    在阅读 `repeated_external_lookup_error` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    tool_name: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    arguments: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    seen_counts: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     signature = external_lookup_signature(tool_name, arguments)
     if signature is None:
         return None
@@ -127,7 +265,7 @@ def repeated_external_lookup_error(
     )
 
 
-# Workspace-boundary violations are soft errors, with per-target throttling.
+# 中文说明：这一段围绕错误处理，注意输入、输出和异常路径。
 
 _OUTSIDE_PATH_PATTERN = re.compile(r"(?:^|[\s|>'\"])((?:/[^\s\"'>;|<]+)|(?:~[^\s\"'>;|<]+))")
 
@@ -136,7 +274,21 @@ def workspace_violation_signature(
     tool_name: str,
     arguments: Any,
 ) -> str | None:
-    """Return a stable cross-tool signature for the outside-workspace target."""
+    """执行辅助逻辑（workspace_violation_signature = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。识别当前运行环境、命令来源和终端能力。
+    在阅读 `workspace_violation_signature` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    tool_name: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    arguments: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     if not isinstance(arguments, dict):
         return None
     for key in ("path", "file_path", "target", "source", "destination"):
@@ -158,7 +310,20 @@ def workspace_violation_signature(
 
 
 def _normalize_violation_target(raw: str) -> str:
-    """Normalize *raw* path so that equivalent spellings collide on the same key."""
+    """标准化数据（_normalize_violation_target = 原函数名）。
+
+    【中文名称】标准化数据
+
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。识别当前运行环境、命令来源和终端能力。
+    在阅读 `_normalize_violation_target` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    raw: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     try:
         normalized = Path(raw).expanduser().resolve().as_posix()
     except Exception:
@@ -171,7 +336,22 @@ def repeated_workspace_violation_error(
     arguments: Any,
     seen_counts: dict[str, int],
 ) -> str | None:
-    """Return an escalated error after repeated bypass attempts."""
+    """执行辅助逻辑（repeated_workspace_violation_error = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。识别当前运行环境、命令来源和终端能力。
+    在阅读 `repeated_workspace_violation_error` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    tool_name: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    arguments: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    seen_counts: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     signature = workspace_violation_signature(tool_name, arguments)
     if signature is None:
         return None
@@ -195,3 +375,4 @@ def repeated_workspace_violation_error(
         "access it and ask how they want to proceed (e.g. copy the file "
         "into the workspace, or disable restrict_to_workspace for this run)."
     )
+

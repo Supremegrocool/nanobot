@@ -1,4 +1,21 @@
-"""Slack channel implementation using Socket Mode."""
+"""Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+
+【中文名称】渠道适配器：nanobot/channels/slack.py
+
+【功能说明】
+本文件属于 P1 学习范围，重点帮助初学者理解“外部系统 ↔ nanobot 后端”之间的适配层。
+阅读时可以先看类和函数的中文说明，再沿着消息、配置、异常和返回值四条线索跟代码。
+
+【主要职责】
+1. 接收配置或输入数据，整理成后端内部统一使用的结构。
+2. 调用第三方 SDK、HTTP API 或公共工具函数完成实际工作。
+3. 把外部返回值、错误和流式事件转换成 nanobot 可继续处理的数据。
+4. 在边界处处理鉴权、限流、媒体文件、重试和日志，避免复杂度泄漏到核心 Agent。
+
+【学习提示】
+如果你是 Agent 或后端初学者，可以把本文件看成“翻译器”：它不改变核心 Agent 思路，
+而是负责理解某个平台或服务商的协议，并把它翻译成项目内部约定的数据形状。
+"""
 
 import asyncio
 import re
@@ -23,7 +40,20 @@ from nanobot.utils.helpers import safe_filename, split_message
 
 
 class SlackDMConfig(Base):
-    """Slack DM policy configuration."""
+    """SlackDMConfig 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】SlackDMConfig
+
+    【功能说明】
+    Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    Base。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     enabled: bool = True
     policy: str = "open"
@@ -31,7 +61,20 @@ class SlackDMConfig(Base):
 
 
 class SlackConfig(Base):
-    """Slack channel configuration."""
+    """SlackConfig 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】SlackConfig
+
+    【功能说明】
+    Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    Base。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     enabled: bool = False
     mode: str = "socket"
@@ -50,17 +93,30 @@ class SlackConfig(Base):
     dm: SlackDMConfig = Field(default_factory=SlackDMConfig)
 
 
-SLACK_MAX_MESSAGE_LEN = 39_000  # Slack API allows ~40k; leave margin
+SLACK_MAX_MESSAGE_LEN = 39_000  # 中文说明：这一段围绕Slack、API处理，注意输入、输出和异常路径。
 SLACK_DOWNLOAD_TIMEOUT = 30.0
-# Abort Socket Mode WSS handshake after this many seconds. REST auth_test can still
-# succeed while WSS blocks (firewall / region). slack-sdk does not apply HTTP(S)_PROXY
-# to websockets.connect — see slack_sdk.socket_mode.websockets.SocketModeClient.connect.
+# 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+# 中文说明：这一段围绕Slack、HTTP处理，注意输入、输出和异常路径。
+# 中文说明：这一段围绕Slack、WebSocket处理，注意输入、输出和异常路径。
 SLACK_SOCKET_CONNECT_TIMEOUT_S = 45.0
 _HTML_DOWNLOAD_PREFIXES = (b"<!doctype html", b"<html")
 
 
 class SlackChannel(BaseChannel):
-    """Slack channel using Socket Mode."""
+    """SlackChannel 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】SlackChannel
+
+    【功能说明】
+    Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    BaseChannel。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     name = "slack"
     display_name = "Slack"
@@ -70,11 +126,41 @@ class SlackChannel(BaseChannel):
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
+        """执行辅助逻辑（default_config = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SlackChannel.default_config` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return SlackConfig().model_dump(by_alias=True)
 
     _THREAD_CONTEXT_CACHE_LIMIT = 10_000
 
     def __init__(self, config: Any, bus: MessageBus):
+        """初始化对象（__init__ = 原函数名）。
+
+        【中文名称】初始化对象
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SlackChannel.__init__` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        config: 配置对象或配置片段，决定该逻辑如何连接外部服务。
+        bus: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if isinstance(config, dict):
             config = SlackConfig.model_validate(config)
         super().__init__(config, bus)
@@ -86,7 +172,20 @@ class SlackChannel(BaseChannel):
         self._thread_context_attempted: set[str] = set()
 
     async def start(self) -> None:
-        """Start the Slack Socket Mode client."""
+        """异步启动流程（start = 原函数名）。
+
+        【中文名称】启动流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SlackChannel.start` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self.config.bot_token or not self.config.app_token:
             self.logger.error("bot/app token not configured")
             return
@@ -104,7 +203,7 @@ class SlackChannel(BaseChannel):
 
         self._socket_client.socket_mode_request_listeners.append(self._on_socket_request)
 
-        # Resolve bot user ID for mention handling
+        # 中文说明：这一段围绕用户处理，注意输入、输出和异常路径。
         try:
             auth = await self._web_client.auth_test()
             self._bot_user_id = auth.get("user_id")
@@ -135,7 +234,20 @@ class SlackChannel(BaseChannel):
             await asyncio.sleep(1)
 
     async def stop(self) -> None:
-        """Stop the Slack client."""
+        """异步停止流程（stop = 原函数名）。
+
+        【中文名称】停止流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SlackChannel.stop` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         self._running = False
         if self._socket_client:
             try:
@@ -145,7 +257,21 @@ class SlackChannel(BaseChannel):
             self._socket_client = None
 
     async def send(self, msg: OutboundMessage) -> None:
-        """Send a message through Slack."""
+        """异步发送消息（send = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SlackChannel.send` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        msg: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self._web_client:
             self.logger.warning("client not running")
             return
@@ -154,15 +280,15 @@ class SlackChannel(BaseChannel):
             slack_meta = msg.metadata.get("slack", {}) if msg.metadata else {}
             thread_ts = slack_meta.get("thread_ts")
             origin_chat_id = str((slack_meta.get("event", {}) or {}).get("channel") or msg.chat_id)
-            # Reply in the same thread the inbound message belongs to (works
-            # for both real channel threads and DM threads). When the agent
-            # is forwarding to a different channel, drop thread_ts because it
-            # only makes sense within the originating conversation.
+            # 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
             thread_ts_param = thread_ts if thread_ts and target_chat_id == origin_chat_id else None
 
             is_progress = (msg.metadata or {}).get("_progress", False)
             if is_progress and not msg.content:
-                pass  # skip empty progress messages (e.g. tool-event-only updates)
+                pass  # 中文说明：这一段围绕消息、工具、事件处理，注意输入、输出和异常路径。
             elif msg.content or not (msg.media or []):
                 mrkdwn = self._to_mrkdwn(msg.content) if msg.content else " "
                 buttons = getattr(msg, "buttons", None) or []
@@ -185,7 +311,7 @@ class SlackChannel(BaseChannel):
                 except Exception:
                     self.logger.exception("Failed to upload file {}", media_path)
 
-            # Update reaction emoji when the final (non-progress) response is sent
+            # 中文说明：这一段围绕响应处理，注意输入、输出和异常路径。
             if not (msg.metadata or {}).get("_progress"):
                 event = slack_meta.get("event", {})
                 await self._update_react_emoji(origin_chat_id, event.get("ts"))
@@ -195,7 +321,21 @@ class SlackChannel(BaseChannel):
             raise
 
     async def _resolve_target_chat_id(self, target: str) -> str:
-        """Resolve human-friendly Slack targets to concrete IDs when needed."""
+        """异步解析目标（_resolve_target_chat_id = 原函数名）。
+
+        【中文名称】解析目标
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SlackChannel._resolve_target_chat_id` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        target: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self._web_client:
             return target
 
@@ -223,6 +363,21 @@ class SlackChannel(BaseChannel):
             return await self._resolve_user_handle(target)
 
     async def _resolve_channel_name(self, name: str) -> str:
+        """异步解析目标（_resolve_channel_name = 原函数名）。
+
+        【中文名称】解析目标
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SlackChannel._resolve_channel_name` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        name: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         normalized = self._normalize_target_name(name)
         if not normalized:
             raise ValueError("Slack target channel name is empty")
@@ -255,6 +410,21 @@ class SlackChannel(BaseChannel):
         )
 
     async def _resolve_user_handle(self, handle: str) -> str:
+        """异步解析目标（_resolve_user_handle = 原函数名）。
+
+        【中文名称】解析目标
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SlackChannel._resolve_user_handle` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        handle: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         normalized = self._normalize_target_name(handle)
         if not normalized:
             raise ValueError("Slack target user handle is empty")
@@ -283,6 +453,21 @@ class SlackChannel(BaseChannel):
         )
 
     async def _open_dm_for_user(self, user_id: str) -> str:
+        """异步执行辅助逻辑（_open_dm_for_user = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SlackChannel._open_dm_for_user` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        user_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         response = await self._web_client.conversations_open(users=user_id)
         channel_id = str(((response.get("channel") or {}).get("id")) or "")
         if not channel_id:
@@ -291,10 +476,40 @@ class SlackChannel(BaseChannel):
 
     @staticmethod
     def _normalize_target_name(value: str) -> str:
+        """标准化数据（_normalize_target_name = 原函数名）。
+
+        【中文名称】标准化数据
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SlackChannel._normalize_target_name` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return value.strip().lstrip("#@").lower()
 
     @classmethod
     def _member_matches_handle(cls, member: dict[str, Any], normalized: str) -> bool:
+        """处理事件（_member_matches_handle = 原函数名）。
+
+        【中文名称】处理事件
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SlackChannel._member_matches_handle` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        member: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        normalized: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         profile = member.get("profile") or {}
         candidates = {
             str(member.get("name") or ""),
@@ -310,14 +525,29 @@ class SlackChannel(BaseChannel):
         client: SocketModeClient,
         req: SocketModeRequest,
     ) -> None:
-        """Handle incoming Socket Mode requests."""
+        """异步执行辅助逻辑（_on_socket_request = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SlackChannel._on_socket_request` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        client: 第三方 SDK 或 HTTP 客户端实例。
+        req: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if req.type == "interactive":
             await self._on_block_action(client, req)
             return
         if req.type != "events_api":
             return
 
-        # Acknowledge right away
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         await client.send_socket_mode_response(
             SocketModeResponse(envelope_id=req.envelope_id)
         )
@@ -326,7 +556,7 @@ class SlackChannel(BaseChannel):
         event = payload.get("event") or {}
         event_type = event.get("type")
 
-        # Handle app mentions or plain messages
+        # 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
         if event_type not in ("message", "app_mention"):
             return
 
@@ -334,20 +564,20 @@ class SlackChannel(BaseChannel):
         chat_id = event.get("channel")
 
         subtype = event.get("subtype")
-        # Slack uses subtype=file_share for user messages with attachments.
-        # Ignore other subtypes such as bot_message / message_changed / deleted.
+        # 中文说明：这一段围绕Slack、消息、用户、文件处理，注意输入、输出和异常路径。
+        # 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
         if subtype and subtype != "file_share":
             return
         if self._bot_user_id and sender_id == self._bot_user_id:
             return
 
-        # Avoid double-processing: Slack sends both `message` and `app_mention`
-        # for mentions in channels. Prefer `app_mention`.
+        # 中文说明：这一段围绕Slack、消息处理，注意输入、输出和异常路径。
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         text = event.get("text") or ""
         if event_type == "message" and self._bot_user_id and f"<@{self._bot_user_id}>" in text:
             return
 
-        # Debug: log basic event shape
+        # 中文说明：这一段围绕事件处理，注意输入、输出和异常路径。
         self.logger.debug(
             "event: type={} subtype={} user={} channel={} channel_type={} text={}",
             event_type,
@@ -380,16 +610,16 @@ class SlackChannel(BaseChannel):
         event_ts = event.get("ts")
         raw_thread_ts = event.get("thread_ts")
         thread_ts = raw_thread_ts
-        # In DMs we don't auto-open a thread on top-level messages (it would
-        # bury replies under "1 reply"). But if the user explicitly opened a
-        # thread inside the DM, raw_thread_ts is set and we honor it.
+        # 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
+        # 中文说明：这一段围绕用户处理，注意输入、输出和异常路径。
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         if (
             self.config.reply_in_thread
             and not thread_ts
             and channel_type != "im"
         ):
             thread_ts = event_ts
-        # Add :eyes: reaction to the triggering message (best-effort)
+        # 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
         try:
             if self._web_client and event.get("ts"):
                 await self._web_client.reactions_add(
@@ -400,9 +630,9 @@ class SlackChannel(BaseChannel):
         except Exception as e:
             self.logger.debug("reactions_add failed: {}", e)
 
-        # Thread-scoped session key whenever the user is in a real thread
-        # (raw_thread_ts is set). DM threads get their own session, separate
-        # from the DM root, so context doesn't bleed across thread boundaries.
+        # 中文说明：这一段围绕会话、用户处理，注意输入、输出和异常路径。
+        # 中文说明：这一段围绕会话处理，注意输入、输出和异常路径。
+        # 中文说明：这一段围绕上下文处理，注意输入、输出和异常路径。
         session_key = (
             f"slack:{chat_id}:{thread_ts}" if thread_ts and raw_thread_ts else None
         )
@@ -450,7 +680,21 @@ class SlackChannel(BaseChannel):
             self.logger.exception("Error handling message from {}", sender_id)
 
     async def _download_slack_file(self, file_info: dict[str, Any]) -> tuple[str | None, str]:
-        """Download a Slack private file to the local media directory."""
+        """异步下载资源（_download_slack_file = 原函数名）。
+
+        【中文名称】下载资源
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SlackChannel._download_slack_file` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        file_info: 文件或路径信息，代码会按安全边界读取或写入。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         file_id = str(file_info.get("id") or "file")
         name = str(
             file_info.get("name")
@@ -485,6 +729,22 @@ class SlackChannel(BaseChannel):
 
     @staticmethod
     def _download_failure_marker(marker_type: str, name: str, reason: str) -> str:
+        """下载资源（_download_failure_marker = 原函数名）。
+
+        【中文名称】下载资源
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SlackChannel._download_failure_marker` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        marker_type: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        name: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        reason: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return (
             f"[{marker_type}: {name}: {reason}; not available to nanobot. "
             "Check Slack files:read scope, reinstall the Slack app, and ensure the bot can access the file.]"
@@ -492,6 +752,20 @@ class SlackChannel(BaseChannel):
 
     @staticmethod
     def _looks_like_html_download(response: httpx.Response) -> bool:
+        """下载资源（_looks_like_html_download = 原函数名）。
+
+        【中文名称】下载资源
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SlackChannel._looks_like_html_download` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        response: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         content_type = response.headers.get("content-type", "").lower()
         if "text/html" in content_type:
             return True
@@ -499,7 +773,22 @@ class SlackChannel(BaseChannel):
         return preview.startswith(_HTML_DOWNLOAD_PREFIXES)
 
     async def _on_block_action(self, client: SocketModeClient, req: SocketModeRequest) -> None:
-        """Handle button clicks from inline action buttons."""
+        """异步执行辅助逻辑（_on_block_action = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SlackChannel._on_block_action` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        client: 第三方 SDK 或 HTTP 客户端实例。
+        req: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         await client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
         payload = req.payload or {}
         actions = payload.get("actions") or []
@@ -539,8 +828,27 @@ class SlackChannel(BaseChannel):
         raw_thread_ts: str | None,
         current_ts: str | None,
     ) -> str:
-        """Include thread history the first time the bot is pulled into a Slack thread."""
-        del channel_type  # DM and channel threads are both fetched via conversations.replies
+        """异步执行辅助逻辑（_with_thread_context = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SlackChannel._with_thread_context` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        text: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        channel_type: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        thread_ts: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        raw_thread_ts: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        current_ts: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
+        del channel_type  # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         if (
             not self.config.include_thread_context
             or not self._web_client
@@ -576,6 +884,22 @@ class SlackChannel(BaseChannel):
         return "Slack thread context before this mention:\n" + "\n".join(lines) + f"\n\nCurrent message:\n{text}"
 
     def _format_thread_context(self, messages: list[dict[str, Any]], *, current_ts: str | None) -> list[str]:
+        """格式化内容（_format_thread_context = 原函数名）。
+
+        【中文名称】格式化内容
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SlackChannel._format_thread_context` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        messages: 消息数据，可能来自用户、频道、模型或工具调用。
+        current_ts: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         lines: list[str] = []
         for item in messages:
             if item.get("ts") == current_ts:
@@ -596,7 +920,21 @@ class SlackChannel(BaseChannel):
 
     @staticmethod
     def _build_button_blocks(text: str, buttons: list[list[str]]) -> list[dict[str, Any]]:
-        """Build Slack Block Kit blocks with action buttons."""
+        """构建对象（_build_button_blocks = 原函数名）。
+
+        【中文名称】构建对象
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SlackChannel._build_button_blocks` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        text: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        buttons: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         blocks: list[dict[str, Any]] = [
             {"type": "section", "text": {"type": "mrkdwn", "text": text[:3000]}},
         ]
@@ -614,7 +952,22 @@ class SlackChannel(BaseChannel):
         return blocks
 
     async def _update_react_emoji(self, chat_id: str, ts: str | None) -> None:
-        """Remove the in-progress reaction and optionally add a done reaction."""
+        """异步执行辅助逻辑（_update_react_emoji = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SlackChannel._update_react_emoji` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        ts: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self._web_client or not ts:
             return
         try:
@@ -636,6 +989,23 @@ class SlackChannel(BaseChannel):
                 self.logger.debug("done reaction failed: {}", e)
 
     def _is_allowed(self, sender_id: str, chat_id: str, channel_type: str) -> bool:
+        """判断条件是否成立（_is_allowed = 原函数名）。
+
+        【中文名称】判断条件是否成立
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SlackChannel._is_allowed` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        sender_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        channel_type: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if channel_type == "im":
             if not self.config.dm.enabled:
                 return False
@@ -643,12 +1013,29 @@ class SlackChannel(BaseChannel):
                 return sender_id in self.config.dm.allow_from or is_approved(self.name, sender_id)
             return True
 
-        # Group / channel messages
+        # 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
         if self.config.group_policy == "allowlist":
             return chat_id in self.config.group_allow_from
         return True
 
     def _should_respond_in_channel(self, event_type: str, text: str, chat_id: str) -> bool:
+        """执行辅助逻辑（_should_respond_in_channel = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SlackChannel._should_respond_in_channel` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        event_type: 外部平台事件对象，包含用户输入和平台元数据。
+        text: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if self.config.group_policy == "open":
             return True
         if self.config.group_policy == "mention":
@@ -660,12 +1047,41 @@ class SlackChannel(BaseChannel):
         return False
 
     def is_allowed(self, sender_id: str) -> bool:
-        # Slack needs channel-aware policy checks, so _on_socket_request and
-        # _on_block_action call _is_allowed before handing off to BaseChannel.
+        # 中文说明：这一段围绕Slack、请求处理，注意输入、输出和异常路径。
+        # 中文说明：这一段围绕调用处理，注意输入、输出和异常路径。
+        """判断条件是否成立（is_allowed = 原函数名）。
+
+        【中文名称】判断条件是否成立
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SlackChannel.is_allowed` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        sender_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return True
 
     @staticmethod
     def _infer_channel_type(chat_id: str) -> str:
+        """执行辅助逻辑（_infer_channel_type = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SlackChannel._infer_channel_type` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if chat_id.startswith("D"):
             return "im"
         if chat_id.startswith("G"):
@@ -673,6 +1089,21 @@ class SlackChannel(BaseChannel):
         return "channel"
 
     def _strip_bot_mention(self, text: str) -> str:
+        """执行辅助逻辑（_strip_bot_mention = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SlackChannel._strip_bot_mention` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        text: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not text or not self._bot_user_id:
             return text
         return re.sub(rf"<@{re.escape(self._bot_user_id)}>\s*", "", text).strip()
@@ -686,7 +1117,21 @@ class SlackChannel(BaseChannel):
 
     @classmethod
     def _to_mrkdwn(cls, text: str) -> str:
-        """Convert Markdown to Slack mrkdwn, including tables."""
+        """执行辅助逻辑（_to_mrkdwn = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SlackChannel._to_mrkdwn` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        text: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not text:
             return ""
         text = cls._TABLE_RE.sub(cls._convert_table, text)
@@ -694,10 +1139,38 @@ class SlackChannel(BaseChannel):
 
     @classmethod
     def _fixup_mrkdwn(cls, text: str) -> str:
-        """Fix markdown artifacts that slackify_markdown misses."""
+        """执行辅助逻辑（_fixup_mrkdwn = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SlackChannel._fixup_mrkdwn` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        text: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         code_blocks: list[str] = []
 
         def _save_code(m: re.Match) -> str:
+            """保存数据（_save_code = 原函数名）。
+
+            【中文名称】保存数据
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `SlackChannel._save_code` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            m: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             code_blocks.append(m.group(0))
             return f"\x00CB{len(code_blocks) - 1}\x00"
 
@@ -713,7 +1186,20 @@ class SlackChannel(BaseChannel):
 
     @staticmethod
     def _convert_table(match: re.Match) -> str:
-        """Convert a Markdown table to a Slack-readable list."""
+        """转换格式（_convert_table = 原函数名）。
+
+        【中文名称】转换格式
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Slack 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SlackChannel._convert_table` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        match: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         lines = [ln.strip() for ln in match.group(0).strip().splitlines() if ln.strip()]
         if len(lines) < 2:
             return match.group(0)
@@ -727,3 +1213,4 @@ class SlackChannel(BaseChannel):
             if parts:
                 rows.append(" · ".join(parts))
         return "\n".join(rows)
+

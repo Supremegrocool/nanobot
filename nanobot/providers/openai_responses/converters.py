@@ -1,7 +1,20 @@
-"""Responses API 转换层：把 Chat Completions 风格输入转换成 Responses 格式。
+"""OpenAI Responses API 的辅助转换模块，负责在内部消息结构和 Responses 事件之间做适配。
 
-nanobot 的历史抽象和很多 provider 适配层仍以 Chat Completions 风格组织消息。
-当底层改走 OpenAI Responses API 时，就需要这一层做结构翻译。
+【中文名称】Provider 辅助模块：nanobot/providers/openai_responses/converters.py
+
+【功能说明】
+本文件属于 P1 学习范围，重点帮助初学者理解“外部系统 ↔ nanobot 后端”之间的适配层。
+阅读时可以先看类和函数的中文说明，再沿着消息、配置、异常和返回值四条线索跟代码。
+
+【主要职责】
+1. 接收配置或输入数据，整理成后端内部统一使用的结构。
+2. 调用第三方 SDK、HTTP API 或公共工具函数完成实际工作。
+3. 把外部返回值、错误和流式事件转换成 nanobot 可继续处理的数据。
+4. 在边界处处理鉴权、限流、媒体文件、重试和日志，避免复杂度泄漏到核心 Agent。
+
+【学习提示】
+如果你是 Agent 或后端初学者，可以把本文件看成“翻译器”：它不改变核心 Agent 思路，
+而是负责理解某个平台或服务商的协议，并把它翻译成项目内部约定的数据形状。
 """
 
 from __future__ import annotations
@@ -13,12 +26,19 @@ from nanobot.providers.base import tool_arguments_json_for_replay
 
 
 def convert_messages(messages: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
-    """把 Chat Completions 风格消息转换成 Responses API ``input`` 条目。
+    """转换格式（convert_messages = 原函数名）。
 
-    返回 ``(system_prompt, input_items)``：
+    【中文名称】转换格式
 
-    - ``system_prompt``：从 ``system`` 消息中单独抽出
-    - ``input_items``：Responses API 需要的 ``input`` 数组
+    【功能说明】
+    这是 Provider 辅助模块 中的一个关键步骤。OpenAI Responses API 的辅助转换模块，负责在内部消息结构和 Responses 事件之间做适配。
+    在阅读 `convert_messages` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    messages: 消息数据，可能来自用户、频道、模型或工具调用。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
     """
     system_prompt = ""
     input_items: list[dict[str, Any]] = []
@@ -66,13 +86,19 @@ def convert_messages(messages: list[dict[str, Any]]) -> tuple[str, list[dict[str
 
 
 def convert_user_message(content: Any) -> dict[str, Any]:
-    """把用户消息内容转换成 Responses API 结构。
+    """转换格式（convert_user_message = 原函数名）。
 
-    支持：
+    【中文名称】转换格式
 
-    - 纯字符串
-    - ``text`` 块 -> ``input_text``
-    - ``image_url`` 块 -> ``input_image``
+    【功能说明】
+    这是 Provider 辅助模块 中的一个关键步骤。OpenAI Responses API 的辅助转换模块，负责在内部消息结构和 Responses 事件之间做适配。
+    在阅读 `convert_user_message` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    content: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
     """
     if isinstance(content, str):
         return {"role": "user", "content": [{"type": "input_text", "text": content}]}
@@ -93,7 +119,20 @@ def convert_user_message(content: Any) -> dict[str, Any]:
 
 
 def convert_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """把工具 schema 从 Chat Completions 风格拍平成 Responses API 风格。"""
+    """转换格式（convert_tools = 原函数名）。
+
+    【中文名称】转换格式
+
+    【功能说明】
+    这是 Provider 辅助模块 中的一个关键步骤。OpenAI Responses API 的辅助转换模块，负责在内部消息结构和 Responses 事件之间做适配。
+    在阅读 `convert_tools` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    tools: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     converted: list[dict[str, Any]] = []
     for tool in tools:
         fn = (tool.get("function") or {}) if tool.get("type") == "function" else tool
@@ -111,7 +150,21 @@ def convert_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _unique_item_id(item_id: str, used: set[str]) -> str:
-    """确保同一个 Responses 请求里的 item id 唯一。"""
+    """执行辅助逻辑（_unique_item_id = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 辅助模块 中的一个关键步骤。OpenAI Responses API 的辅助转换模块，负责在内部消息结构和 Responses 事件之间做适配。
+    在阅读 `_unique_item_id` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    item_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    used: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     if item_id not in used:
         used.add(item_id)
         return item_id
@@ -125,9 +178,19 @@ def _unique_item_id(item_id: str, used: set[str]) -> str:
 
 
 def split_tool_call_id(tool_call_id: Any) -> tuple[str, str | None]:
-    """拆分形如 ``call_id|item_id`` 的复合工具调用 ID。
+    """切分内容（split_tool_call_id = 原函数名）。
 
-    返回 ``(call_id, item_id)``，其中 ``item_id`` 可以为空。
+    【中文名称】切分内容
+
+    【功能说明】
+    这是 Provider 辅助模块 中的一个关键步骤。OpenAI Responses API 的辅助转换模块，负责在内部消息结构和 Responses 事件之间做适配。
+    在阅读 `split_tool_call_id` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    tool_call_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
     """
     if isinstance(tool_call_id, str) and tool_call_id:
         if "|" in tool_call_id:
@@ -135,3 +198,4 @@ def split_tool_call_id(tool_call_id: Any) -> tuple[str, str | None]:
             return call_id, item_id or None
         return tool_call_id, None
     return "call_0", None
+

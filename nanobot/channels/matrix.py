@@ -1,4 +1,21 @@
-"""Matrix (Element) channel — inbound sync + outbound message/media delivery."""
+"""Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+
+【中文名称】渠道适配器：nanobot/channels/matrix.py
+
+【功能说明】
+本文件属于 P1 学习范围，重点帮助初学者理解“外部系统 ↔ nanobot 后端”之间的适配层。
+阅读时可以先看类和函数的中文说明，再沿着消息、配置、异常和返回值四条线索跟代码。
+
+【主要职责】
+1. 接收配置或输入数据，整理成后端内部统一使用的结构。
+2. 调用第三方 SDK、HTTP API 或公共工具函数完成实际工作。
+3. 把外部返回值、错误和流式事件转换成 nanobot 可继续处理的数据。
+4. 在边界处处理鉴权、限流、媒体文件、重试和日志，避免复杂度泄漏到核心 Agent。
+
+【学习提示】
+如果你是 Agent 或后端初学者，可以把本文件看成“翻译器”：它不改变核心 Agent 思路，
+而是负责理解某个平台或服务商的协议，并把它翻译成项目内部约定的数据形状。
+"""
 
 import asyncio
 import json
@@ -57,7 +74,7 @@ from nanobot.utils.helpers import safe_filename
 from nanobot.utils.logging_bridge import redirect_lib_logging
 
 TYPING_NOTICE_TIMEOUT_MS = 30_000
-# Must stay below TYPING_NOTICE_TIMEOUT_MS so the indicator doesn't expire mid-processing.
+# 中文说明：这一段围绕超时处理，注意输入、输出和异常路径。
 TYPING_KEEPALIVE_INTERVAL_MS = 20_000
 MATRIX_HTML_FORMAT = "org.matrix.custom.html"
 _ATTACH_MARKER = "[attachment: {}]"
@@ -72,7 +89,20 @@ MatrixMediaEvent: TypeAlias = RoomMessageMedia | RoomEncryptedMedia
 
 
 class _MediaTooLargeError(Exception):
-    """Raised when an inbound Matrix media download exceeds the configured cap."""
+    """_MediaTooLargeError 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】_MediaTooLargeError
+
+    【功能说明】
+    Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    Exception。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
 MATRIX_MARKDOWN = create_markdown(
     escape=True,
@@ -93,7 +123,22 @@ MATRIX_ALLOWED_URL_SCHEMES = {"https", "http", "matrix", "mailto", "mxc"}
 
 
 def _filter_matrix_html_attribute(tag: str, attr: str, value: str) -> str | None:
-    """Filter attribute values to a safe Matrix-compatible subset."""
+    """执行辅助逻辑（_filter_matrix_html_attribute = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `_filter_matrix_html_attribute` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    tag: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    attr: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     if tag == "a" and attr == "href":
         return value if value.lower().startswith(("https://", "http://", "matrix:", "mailto:")) else None
     if tag == "img" and attr == "src":
@@ -115,30 +160,46 @@ MATRIX_HTML_CLEANER = nh3.Cleaner(
 
 @dataclass
 class _StreamBuf:
-    """
-    Represents a buffer for managing LLM response stream data.
+    """_StreamBuf 类，封装 渠道适配器 的核心状态和行为。
 
-    :ivar text: Stores the text content of the buffer.
-    :type text: str
-    :ivar event_id: Identifier for the associated event. None indicates no
-        specific event association.
-    :type event_id: str | None
-    :ivar last_edit: Timestamp of the most recent edit to the buffer.
-    :type last_edit: float
+    【中文名称】_StreamBuf
+
+    【功能说明】
+    Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    普通 Python 类。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
     """
     text: str = ""
     event_id: str | None = None
     last_edit: float = 0.0
 
 def _render_markdown_html(text: str) -> str | None:
-    """Render markdown to sanitized HTML; returns None for plain text."""
+    """渲染内容（_render_markdown_html = 原函数名）。
+
+    【中文名称】渲染内容
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `_render_markdown_html` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    text: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     try:
         formatted = MATRIX_HTML_CLEANER.clean(MATRIX_MARKDOWN(text)).strip()
     except Exception:
         return None
     if not formatted:
         return None
-    # Skip formatted_body for plain <p>text</p> to keep payload minimal.
+    # 中文说明：这一段围绕格式处理，注意输入、输出和异常路径。
     if formatted.startswith("<p>") and formatted.endswith("</p>"):
         inner = formatted[3:-4]
         if "<" not in inner and ">" not in inner:
@@ -151,23 +212,21 @@ def _build_matrix_text_content(
     event_id: str | None = None,
     thread_relates_to: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    """
-    Constructs and returns a dictionary representing the matrix text content with optional
-    HTML formatting and reference to an existing event for replacement. This function is
-    primarily used to create content payloads compatible with the Matrix messaging protocol.
+    """构建对象（_build_matrix_text_content = 原函数名）。
 
-    :param text: The plain text content to include in the message.
-    :type text: str
-    :param event_id: Optional ID of the event to replace. If provided, the function will
-        include information indicating that the message is a replacement of the specified
-        event.
-    :type event_id: str | None
-    :param thread_relates_to: Optional Matrix thread relation metadata. For edits this is
-        stored in ``m.new_content`` so the replacement remains in the same thread.
-    :type thread_relates_to: dict[str, object] | None
-    :return: A dictionary containing the matrix text content, potentially enriched with
-        HTML formatting and replacement metadata if applicable.
-    :rtype: dict[str, object]
+    【中文名称】构建对象
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `_build_matrix_text_content` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    text: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    event_id: 外部平台事件对象，包含用户输入和平台元数据。
+    thread_relates_to: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
     """
     content: dict[str, object] = {"msgtype": "m.text", "body": text, "m.mentions": {}}
     if html := _render_markdown_html(text):
@@ -191,7 +250,20 @@ def _build_matrix_text_content(
 
 
 class MatrixConfig(Base):
-    """Matrix (Element) channel configuration."""
+    """MatrixConfig 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】MatrixConfig
+
+    【功能说明】
+    Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    Base。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     enabled: bool = False
     homeserver: str = "https://matrix.org"
@@ -212,15 +284,42 @@ class MatrixConfig(Base):
 
 
 class MatrixChannel(BaseChannel):
-    """Matrix (Element) channel using long-polling sync."""
+    """MatrixChannel 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】MatrixChannel
+
+    【功能说明】
+    Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    BaseChannel。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     name = "matrix"
     display_name = "Matrix"
-    _STREAM_EDIT_INTERVAL = 2 # min seconds between edit_message_text calls
+    _STREAM_EDIT_INTERVAL = 2 # 中文说明：这一段围绕消息、调用处理，注意输入、输出和异常路径。
     monotonic_time = time.monotonic
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
+        """执行辅助逻辑（default_config = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel.default_config` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return MatrixConfig().model_dump(by_alias=True)
 
     def __init__(
@@ -231,6 +330,24 @@ class MatrixChannel(BaseChannel):
         restrict_to_workspace: bool = False,
         workspace: str | Path | None = None,
     ):
+        """初始化对象（__init__ = 原函数名）。
+
+        【中文名称】初始化对象
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel.__init__` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        config: 配置对象或配置片段，决定该逻辑如何连接外部服务。
+        bus: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        restrict_to_workspace: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        workspace: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if isinstance(config, dict):
             config = MatrixConfig.model_validate(config)
         super().__init__(config, bus)
@@ -251,7 +368,20 @@ class MatrixChannel(BaseChannel):
 
 
     async def start(self) -> None:
-        """Start Matrix client and begin sync loop."""
+        """异步启动流程（start = 原函数名）。
+
+        【中文名称】启动流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel.start` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         self._running = True
         self._started_at_ms = int(time.time() * 1000)
         redirect_lib_logging("nio", level="WARNING")
@@ -260,7 +390,7 @@ class MatrixChannel(BaseChannel):
         self.store_path.mkdir(parents=True, exist_ok=True)
         self.session_path = self.store_path / "session.json"
 
-        # Replace ':' with '_' to produce a Windows-safe filename
+        # 中文说明：这一段围绕文件处理，注意输入、输出和异常路径。
         safe_store_name = self.config.user_id.replace(":", "_") + f"_{self.config.device_id}.db"
 
         self.client = AsyncClient(
@@ -328,7 +458,20 @@ class MatrixChannel(BaseChannel):
         self._sync_task = asyncio.create_task(self._sync_loop())
 
     async def stop(self) -> None:
-        """Stop the Matrix channel with graceful sync shutdown."""
+        """异步停止流程（stop = 原函数名）。
+
+        【中文名称】停止流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel.stop` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         self._running = False
         for room_id in list(self._typing_tasks):
             await self._stop_typing_keepalive(room_id, clear_typing=False)
@@ -346,7 +489,21 @@ class MatrixChannel(BaseChannel):
             await self.client.close()
 
     def _write_session_to_disk(self, resp: LoginResponse) -> None:
-        """Save login session to disk for persistence across restarts."""
+        """执行辅助逻辑（_write_session_to_disk = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._write_session_to_disk` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        resp: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         session = {
             "access_token": resp.access_token,
             "device_id": resp.device_id,
@@ -359,13 +516,41 @@ class MatrixChannel(BaseChannel):
             self.logger.warning("Failed to save session: {}", e)
 
     def _is_workspace_path_allowed(self, path: Path) -> bool:
-        """Check path is inside workspace (when restriction enabled)."""
+        """判断条件是否成立（_is_workspace_path_allowed = 原函数名）。
+
+        【中文名称】判断条件是否成立
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._is_workspace_path_allowed` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        path: 文件或路径信息，代码会按安全边界读取或写入。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self._restrict_to_workspace or not self._workspace:
             return True
         return is_path_within(path, self._workspace)
 
     def _collect_outbound_media_candidates(self, media: list[str]) -> list[Path]:
-        """Deduplicate and resolve outbound attachment paths."""
+        """执行辅助逻辑（_collect_outbound_media_candidates = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._collect_outbound_media_candidates` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        media: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         seen: set[str] = set()
         candidates: list[Path] = []
         for raw in media:
@@ -386,7 +571,24 @@ class MatrixChannel(BaseChannel):
         *, filename: str, mime: str, size_bytes: int,
         mxc_url: str, encryption_info: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Build Matrix content payload for an uploaded file/image/audio/video."""
+        """构建对象（_build_outbound_attachment_content = 原函数名）。
+
+        【中文名称】构建对象
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._build_outbound_attachment_content` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        filename: 文件或路径信息，代码会按安全边界读取或写入。
+        mime: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        size_bytes: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        mxc_url: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        encryption_info: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         prefix = mime.split("/")[0]
         msgtype = {"image": "m.image", "audio": "m.audio", "video": "m.video"}.get(prefix, "m.file")
         content: dict[str, Any] = {
@@ -400,6 +602,21 @@ class MatrixChannel(BaseChannel):
         return content
 
     def _is_encrypted_room(self, room_id: str) -> bool:
+        """判断条件是否成立（_is_encrypted_room = 原函数名）。
+
+        【中文名称】判断条件是否成立
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._is_encrypted_room` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        room_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self.client:
             return False
         room = getattr(self.client, "rooms", {}).get(room_id)
@@ -407,7 +624,22 @@ class MatrixChannel(BaseChannel):
 
     async def _send_room_content(self, room_id: str,
                                  content: dict[str, Any]) -> None | RoomSendResponse | RoomSendError:
-        """Send m.room.message with E2EE options."""
+        """异步发送消息（_send_room_content = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._send_room_content` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        room_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        content: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self.client:
             return None
         kwargs: dict[str, Any] = {"room_id": room_id, "message_type": "m.room.message", "content": content}
@@ -418,7 +650,20 @@ class MatrixChannel(BaseChannel):
         return response
 
     async def _resolve_server_upload_limit_bytes(self) -> int | None:
-        """Query homeserver upload limit once per channel lifecycle."""
+        """异步解析目标（_resolve_server_upload_limit_bytes = 原函数名）。
+
+        【中文名称】解析目标
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._resolve_server_upload_limit_bytes` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if self._server_upload_limit_checked:
             return self._server_upload_limit_bytes
         self._server_upload_limit_checked = True
@@ -436,7 +681,20 @@ class MatrixChannel(BaseChannel):
         return None
 
     async def _effective_media_limit_bytes(self) -> int:
-        """min(local config, server advertised) — 0 blocks all uploads."""
+        """异步执行辅助逻辑（_effective_media_limit_bytes = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._effective_media_limit_bytes` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         local_limit = max(int(self.config.max_media_bytes), 0)
         server_limit = await self._resolve_server_upload_limit_bytes()
         if server_limit is None:
@@ -447,7 +705,24 @@ class MatrixChannel(BaseChannel):
         self, room_id: str, path: Path, limit_bytes: int,
         relates_to: dict[str, Any] | None = None,
     ) -> str | None:
-        """Upload one local file to Matrix and send it as a media message. Returns failure marker or None."""
+        """异步上传资源（_upload_and_send_attachment = 原函数名）。
+
+        【中文名称】上传资源
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._upload_and_send_attachment` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        room_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        path: 文件或路径信息，代码会按安全边界读取或写入。
+        limit_bytes: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        relates_to: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self.client:
             return _ATTACH_UPLOAD_FAILED.format(path.name or _DEFAULT_ATTACH_NAME)
 
@@ -498,7 +773,21 @@ class MatrixChannel(BaseChannel):
         return None
 
     async def send(self, msg: OutboundMessage) -> None:
-        """Send outbound content; clear typing for non-progress messages."""
+        """异步发送消息（send = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel.send` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        msg: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self.client:
             return
         text = msg.content or ""
@@ -529,6 +818,23 @@ class MatrixChannel(BaseChannel):
                 await self._stop_typing_keepalive(msg.chat_id, clear_typing=True)
 
     async def send_delta(self, chat_id: str, delta: str, metadata: dict[str, Any] | None = None) -> None:
+        """异步发送消息（send_delta = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel.send_delta` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        delta: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        metadata: 结构化数据负载，后续会被解析或转发。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         meta = metadata or {}
         relates_to = self._build_thread_relates_to(metadata)
 
@@ -568,7 +874,7 @@ class MatrixChannel(BaseChannel):
                 response = await self._send_room_content(chat_id, content)
                 buf.last_edit = now
                 if not buf.event_id:
-                    # we are editing the same message all the time, so only the first time the event id needs to be set
+                    # 中文说明：这一段围绕消息、事件处理，注意输入、输出和异常路径。
                     buf.event_id = response.event_id
             except Exception:
                 self.logger.error("Stream send/edit failed for chat_id=%s", chat_id, exc_info=True)
@@ -576,11 +882,39 @@ class MatrixChannel(BaseChannel):
 
 
     def _register_event_callbacks(self) -> None:
+        """执行辅助逻辑（_register_event_callbacks = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._register_event_callbacks` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         self.client.add_event_callback(self._on_message, RoomMessageText)
         self.client.add_event_callback(self._on_media_message, MATRIX_MEDIA_EVENT_FILTER)
         self.client.add_event_callback(self._on_room_invite, InviteEvent)
 
     def _register_to_device_callbacks(self) -> None:
+        """执行辅助逻辑（_register_to_device_callbacks = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._register_to_device_callbacks` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if self.config.e2ee_enabled and self.config.sas_verification:
             self.client.add_to_device_callback(
                 self._on_key_verification_event,
@@ -588,14 +922,58 @@ class MatrixChannel(BaseChannel):
             )
 
     def _register_response_callbacks(self) -> None:
+        """执行辅助逻辑（_register_response_callbacks = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._register_response_callbacks` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         self.client.add_response_callback(self._on_sync_error, SyncError)
         self.client.add_response_callback(self._on_join_error, JoinError)
         self.client.add_response_callback(self._on_send_error, RoomSendError)
 
     def _is_sas_sender_allowed(self, sender: str) -> bool:
+        """判断条件是否成立（_is_sas_sender_allowed = 原函数名）。
+
+        【中文名称】判断条件是否成立
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._is_sas_sender_allowed` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        sender: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return bool(sender and self.is_allowed(sender))
 
     async def _on_key_verification_event(self, event: KeyVerificationEvent) -> None:
+        """异步执行辅助逻辑（_on_key_verification_event = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._on_key_verification_event` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        event: 外部平台事件对象，包含用户输入和平台元数据。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         try:
             await self._handle_key_verification_event(event)
         except asyncio.CancelledError:
@@ -604,6 +982,21 @@ class MatrixChannel(BaseChannel):
             self.logger.exception("Matrix SAS verification handling failed")
 
     async def _handle_key_verification_event(self, event: KeyVerificationEvent) -> None:
+        """异步处理事件（_handle_key_verification_event = 原函数名）。
+
+        【中文名称】处理事件
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._handle_key_verification_event` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        event: 外部平台事件对象，包含用户输入和平台元数据。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not (self.config.e2ee_enabled and self.config.sas_verification):
             return
         if not self.client:
@@ -652,20 +1045,65 @@ class MatrixChannel(BaseChannel):
             )
 
     def _is_fatal_auth_response(self, response: Any) -> bool:
+        """判断条件是否成立（_is_fatal_auth_response = 原函数名）。
+
+        【中文名称】判断条件是否成立
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._is_fatal_auth_response` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        response: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         code = getattr(response, "status_code", None)
         is_auth = code in {"M_UNKNOWN_TOKEN", "M_FORBIDDEN", "M_UNAUTHORIZED"}
         return is_auth or bool(getattr(response, "soft_logout", False))
 
     def _log_response_error(self, label: str, response: Any) -> None:
-        """Log Matrix response errors — auth errors at ERROR level, rest at WARNING."""
+        """执行辅助逻辑（_log_response_error = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._log_response_error` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        label: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        response: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         is_fatal = self._is_fatal_auth_response(response)
         (self.logger.error if is_fatal else self.logger.warning)("{} failed: {}", label, response)
 
     async def _on_sync_error(self, response: SyncError) -> None:
+        """异步执行辅助逻辑（_on_sync_error = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._on_sync_error` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        response: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         self._log_response_error("sync", response)
         if self._is_fatal_auth_response(response):
-            # Auth errors won't recover by retry; stop the sync loop instead of
-            # spamming the homeserver every 2s (#1851).
+            # 中文说明：这一段围绕重试、错误处理，注意输入、输出和异常路径。
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
             self.logger.error("Authentication failed irrecoverably; stopping sync loop")
             self._running = False
             if self.client:
@@ -673,13 +1111,58 @@ class MatrixChannel(BaseChannel):
                     self.client.stop_sync_forever()
 
     async def _on_join_error(self, response: JoinError) -> None:
+        """异步执行辅助逻辑（_on_join_error = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._on_join_error` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        response: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         self._log_response_error("join", response)
 
     async def _on_send_error(self, response: RoomSendError) -> None:
+        """异步发送消息（_on_send_error = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._on_send_error` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        response: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         self._log_response_error("send", response)
 
     async def _set_typing(self, room_id: str, typing: bool) -> None:
-        """Best-effort typing indicator update."""
+        """异步执行辅助逻辑（_set_typing = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._set_typing` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        room_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        typing: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self.client:
             return
         with suppress(Exception):
@@ -689,13 +1172,41 @@ class MatrixChannel(BaseChannel):
                 self.logger.debug("typing failed for {}: {}", room_id, response)
 
     async def _start_typing_keepalive(self, room_id: str) -> None:
-        """Start periodic typing refresh (spec-recommended keepalive)."""
+        """异步启动流程（_start_typing_keepalive = 原函数名）。
+
+        【中文名称】启动流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._start_typing_keepalive` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        room_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         await self._stop_typing_keepalive(room_id, clear_typing=False)
         await self._set_typing(room_id, True)
         if not self._running:
             return
 
         async def loop() -> None:
+            """异步执行辅助逻辑（loop = 原函数名）。
+
+            【中文名称】执行辅助逻辑
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `MatrixChannel.loop` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            无显式参数。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             with suppress(asyncio.CancelledError):
                 while self._running:
                     await asyncio.sleep(TYPING_KEEPALIVE_INTERVAL_MS / 1000)
@@ -704,6 +1215,22 @@ class MatrixChannel(BaseChannel):
         self._typing_tasks[room_id] = asyncio.create_task(loop())
 
     async def _stop_typing_keepalive(self, room_id: str, *, clear_typing: bool) -> None:
+        """异步停止流程（_stop_typing_keepalive = 原函数名）。
+
+        【中文名称】停止流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._stop_typing_keepalive` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        room_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        clear_typing: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if task := self._typing_tasks.pop(room_id, None):
             task.cancel()
             with suppress(asyncio.CancelledError):
@@ -712,6 +1239,20 @@ class MatrixChannel(BaseChannel):
             await self._set_typing(room_id, False)
 
     async def _sync_loop(self) -> None:
+        """异步执行辅助逻辑（_sync_loop = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._sync_loop` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         backoff = 2.0
         while self._running:
             try:
@@ -726,15 +1267,60 @@ class MatrixChannel(BaseChannel):
                 backoff = min(backoff * 2, 60.0)
 
     async def _on_room_invite(self, room: MatrixRoom, event: InviteEvent) -> None:
+        """异步执行辅助逻辑（_on_room_invite = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._on_room_invite` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        room: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        event: 外部平台事件对象，包含用户输入和平台元数据。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if self.is_allowed(event.sender):
             await self.client.join(room.room_id)
 
     def _is_direct_room(self, room: MatrixRoom) -> bool:
+        """判断条件是否成立（_is_direct_room = 原函数名）。
+
+        【中文名称】判断条件是否成立
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._is_direct_room` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        room: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         count = getattr(room, "member_count", None)
         return isinstance(count, int) and count <= 2
 
     def _is_bot_mentioned(self, event: RoomMessage) -> bool:
-        """Check m.mentions payload for bot mention."""
+        """判断条件是否成立（_is_bot_mentioned = 原函数名）。
+
+        【中文名称】判断条件是否成立
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._is_bot_mentioned` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        event: 外部平台事件对象，包含用户输入和平台元数据。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         source = getattr(event, "source", None)
         if not isinstance(source, dict):
             return False
@@ -747,17 +1333,41 @@ class MatrixChannel(BaseChannel):
         return bool(self.config.allow_room_mentions and mentions.get("room") is True)
 
     def _is_pre_startup_event(self, event: RoomMessage) -> bool:
-        """Skip events that landed in the timeline before this process started.
+        """判断条件是否成立（_is_pre_startup_event = 原函数名）。
 
-        Matrix sync replays the room timeline on each startup/restart; without
-        this filter old messages would be re-handled as if they were fresh
-        (#3553).
+        【中文名称】判断条件是否成立
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._is_pre_startup_event` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        event: 外部平台事件对象，包含用户输入和平台元数据。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         ts = getattr(event, "server_timestamp", None)
         return isinstance(ts, int) and ts < self._started_at_ms
 
     def _should_process_message(self, room: MatrixRoom, event: RoomMessage) -> bool:
-        """Apply sender and room policy checks."""
+        """执行辅助逻辑（_should_process_message = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._should_process_message` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        room: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        event: 外部平台事件对象，包含用户输入和平台元数据。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self.is_allowed(event.sender):
             return False
         if self._is_direct_room(room):
@@ -772,10 +1382,38 @@ class MatrixChannel(BaseChannel):
         return False
 
     def _media_dir(self) -> Path:
+        """执行辅助逻辑（_media_dir = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._media_dir` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return get_media_dir("matrix")
 
     @staticmethod
     def _event_source_content(event: RoomMessage) -> dict[str, Any]:
+        """执行辅助逻辑（_event_source_content = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._event_source_content` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        event: 外部平台事件对象，包含用户输入和平台元数据。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         source = getattr(event, "source", None)
         if not isinstance(source, dict):
             return {}
@@ -783,6 +1421,21 @@ class MatrixChannel(BaseChannel):
         return content if isinstance(content, dict) else {}
 
     def _event_thread_root_id(self, event: RoomMessage) -> str | None:
+        """执行辅助逻辑（_event_thread_root_id = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._event_thread_root_id` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        event: 外部平台事件对象，包含用户输入和平台元数据。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         relates_to = self._event_source_content(event).get("m.relates_to")
         if not isinstance(relates_to, dict) or relates_to.get("rel_type") != "m.thread":
             return None
@@ -790,6 +1443,21 @@ class MatrixChannel(BaseChannel):
         return root_id if isinstance(root_id, str) and root_id else None
 
     def _thread_metadata(self, event: RoomMessage) -> dict[str, str] | None:
+        """执行辅助逻辑（_thread_metadata = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._thread_metadata` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        event: 外部平台事件对象，包含用户输入和平台元数据。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not (root_id := self._event_thread_root_id(event)):
             return None
         meta: dict[str, str] = {"thread_root_event_id": root_id}
@@ -799,6 +1467,20 @@ class MatrixChannel(BaseChannel):
 
     @staticmethod
     def _build_thread_relates_to(metadata: dict[str, Any] | None) -> dict[str, Any] | None:
+        """构建对象（_build_thread_relates_to = 原函数名）。
+
+        【中文名称】构建对象
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._build_thread_relates_to` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        metadata: 结构化数据负载，后续会被解析或转发。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not metadata:
             return None
         root_id = metadata.get("thread_root_event_id")
@@ -811,21 +1493,80 @@ class MatrixChannel(BaseChannel):
                 "m.in_reply_to": {"event_id": reply_to}, "is_falling_back": True}
 
     def _event_attachment_type(self, event: MatrixMediaEvent) -> str:
+        """执行辅助逻辑（_event_attachment_type = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._event_attachment_type` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        event: 外部平台事件对象，包含用户输入和平台元数据。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         msgtype = self._event_source_content(event).get("msgtype")
         return _MSGTYPE_MAP.get(msgtype, "file")
 
     @staticmethod
     def _is_encrypted_media_event(event: MatrixMediaEvent) -> bool:
+        """判断条件是否成立（_is_encrypted_media_event = 原函数名）。
+
+        【中文名称】判断条件是否成立
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._is_encrypted_media_event` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        event: 外部平台事件对象，包含用户输入和平台元数据。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return (isinstance(getattr(event, "key", None), dict)
                 and isinstance(getattr(event, "hashes", None), dict)
                 and isinstance(getattr(event, "iv", None), str))
 
     def _event_declared_size_bytes(self, event: MatrixMediaEvent) -> int | None:
+        """执行辅助逻辑（_event_declared_size_bytes = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._event_declared_size_bytes` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        event: 外部平台事件对象，包含用户输入和平台元数据。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         info = self._event_source_content(event).get("info")
         size = info.get("size") if isinstance(info, dict) else None
         return size if type(size) is int and size >= 0 else None
 
     def _event_mime(self, event: MatrixMediaEvent) -> str | None:
+        """执行辅助逻辑（_event_mime = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._event_mime` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        event: 外部平台事件对象，包含用户输入和平台元数据。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         info = self._event_source_content(event).get("info")
         if isinstance(info, dict) and isinstance(m := info.get("mimetype"), str) and m:
             return m
@@ -833,6 +1574,22 @@ class MatrixChannel(BaseChannel):
         return m if isinstance(m, str) and m else None
 
     def _event_filename(self, event: MatrixMediaEvent, attachment_type: str) -> str:
+        """执行辅助逻辑（_event_filename = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._event_filename` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        event: 外部平台事件对象，包含用户输入和平台元数据。
+        attachment_type: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         body = getattr(event, "body", None)
         if isinstance(body, str) and body.strip():
             if candidate := safe_filename(Path(body).name):
@@ -841,6 +1598,24 @@ class MatrixChannel(BaseChannel):
 
     def _build_attachment_path(self, event: MatrixMediaEvent, attachment_type: str,
                                filename: str, mime: str | None) -> Path:
+        """构建对象（_build_attachment_path = 原函数名）。
+
+        【中文名称】构建对象
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._build_attachment_path` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        event: 外部平台事件对象，包含用户输入和平台元数据。
+        attachment_type: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        filename: 文件或路径信息，代码会按安全边界读取或写入。
+        mime: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         safe_name = safe_filename(Path(filename).name) or _DEFAULT_ATTACH_NAME
         suffix = Path(safe_name).suffix
         if not suffix and mime:
@@ -853,6 +1628,22 @@ class MatrixChannel(BaseChannel):
         return self._media_dir() / f"{event_prefix}_{stem}{suffix}"
 
     async def _download_media_bytes(self, mxc_url: str, limit_bytes: int) -> bytes | None:
+        """异步下载资源（_download_media_bytes = 原函数名）。
+
+        【中文名称】下载资源
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._download_media_bytes` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        mxc_url: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        limit_bytes: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self.client or limit_bytes <= 0:
             raise _MediaTooLargeError
 
@@ -896,6 +1687,22 @@ class MatrixChannel(BaseChannel):
             return None
 
     def _decrypt_media_bytes(self, event: MatrixMediaEvent, ciphertext: bytes) -> bytes | None:
+        """执行辅助逻辑（_decrypt_media_bytes = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._decrypt_media_bytes` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        event: 外部平台事件对象，包含用户输入和平台元数据。
+        ciphertext: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         key_obj, hashes, iv = getattr(event, "key", None), getattr(event, "hashes", None), getattr(event, "iv", None)
         key = key_obj.get("k") if isinstance(key_obj, dict) else None
         sha256 = hashes.get("sha256") if isinstance(hashes, dict) else None
@@ -910,7 +1717,22 @@ class MatrixChannel(BaseChannel):
     async def _fetch_media_attachment(
         self, room: MatrixRoom, event: MatrixMediaEvent,
     ) -> tuple[dict[str, Any] | None, str]:
-        """Download, decrypt if needed, and persist a Matrix attachment."""
+        """异步执行辅助逻辑（_fetch_media_attachment = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._fetch_media_attachment` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        room: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        event: 外部平台事件对象，包含用户输入和平台元数据。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         atype = self._event_attachment_type(event)
         mime = self._event_mime(event)
         filename = self._event_filename(event, atype)
@@ -957,7 +1779,22 @@ class MatrixChannel(BaseChannel):
         return attachment, _ATTACH_MARKER.format(path)
 
     def _base_metadata(self, room: MatrixRoom, event: RoomMessage) -> dict[str, Any]:
-        """Build common metadata for text and media handlers."""
+        """执行辅助逻辑（_base_metadata = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._base_metadata` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        room: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        event: 外部平台事件对象，包含用户输入和平台元数据。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         meta: dict[str, Any] = {"room": getattr(room, "display_name", room.room_id)}
         if isinstance(eid := getattr(event, "event_id", None), str) and eid:
             meta["event_id"] = eid
@@ -966,6 +1803,22 @@ class MatrixChannel(BaseChannel):
         return meta
 
     async def _on_message(self, room: MatrixRoom, event: RoomMessageText) -> None:
+        """异步执行辅助逻辑（_on_message = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._on_message` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        room: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        event: 外部平台事件对象，包含用户输入和平台元数据。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if (
             event.sender == self.config.user_id
             or self._is_pre_startup_event(event)
@@ -984,6 +1837,22 @@ class MatrixChannel(BaseChannel):
             raise
 
     async def _on_media_message(self, room: MatrixRoom, event: MatrixMediaEvent) -> None:
+        """异步执行辅助逻辑（_on_media_message = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Matrix 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `MatrixChannel._on_media_message` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        room: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        event: 外部平台事件对象，包含用户输入和平台元数据。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if (
             event.sender == self.config.user_id
             or self._is_pre_startup_event(event)
@@ -1020,3 +1889,4 @@ class MatrixChannel(BaseChannel):
         except Exception:
             await self._stop_typing_keepalive(room.room_id, clear_typing=True)
             raise
+

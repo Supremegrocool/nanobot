@@ -1,19 +1,20 @@
-"""QQ channel implementation using botpy SDK.
+"""QQ 官方机器人 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
 
-Inbound:
-- Parse QQ botpy messages (C2C / Group)
-- Download attachments to media dir using chunked streaming write (memory-safe)
-- Publish to Nanobot bus via BaseChannel._handle_message()
-- Content includes a clear, actionable "Received files:" list with local paths
+【中文名称】渠道适配器：nanobot/channels/qq.py
 
-Outbound:
-- Send attachments (msg.media) first via QQ rich media API (base64 upload + msg_type=7)
-- Then send text (plain or markdown)
-- msg.media supports local paths, file:// paths, and http(s) URLs
+【功能说明】
+本文件属于 P1 学习范围，重点帮助初学者理解“外部系统 ↔ nanobot 后端”之间的适配层。
+阅读时可以先看类和函数的中文说明，再沿着消息、配置、异常和返回值四条线索跟代码。
 
-Notes:
-- QQ restricts many audio/video formats. We conservatively classify as image vs file.
-- Attachment structures differ across botpy versions; we try multiple field candidates.
+【主要职责】
+1. 接收配置或输入数据，整理成后端内部统一使用的结构。
+2. 调用第三方 SDK、HTTP API 或公共工具函数完成实际工作。
+3. 把外部返回值、错误和流式事件转换成 nanobot 可继续处理的数据。
+4. 在边界处处理鉴权、限流、媒体文件、重试和日志，避免复杂度泄漏到核心 Agent。
+
+【学习提示】
+如果你是 Agent 或后端初学者，可以把本文件看成“翻译器”：它不改变核心 Agent 思路，
+而是负责理解某个平台或服务商的协议，并把它翻译成项目内部约定的数据形状。
 """
 
 from __future__ import annotations
@@ -61,8 +62,8 @@ if TYPE_CHECKING:
     from botpy.types.message import Media
 
 
-# QQ rich media file_type: 1=image, 4=file
-# (2=voice, 3=video are restricted; we only use image vs file)
+# 中文说明：这一段围绕媒体、图片、文件处理，注意输入、输出和异常路径。
+# 中文说明：这一段围绕图片、文件处理，注意输入、输出和异常路径。
 QQ_FILE_TYPE_IMAGE = 1
 QQ_FILE_TYPE_FILE = 4
 
@@ -79,12 +80,25 @@ _IMAGE_EXTS = {
     ".svg",
 }
 
-# Replace unsafe characters with "_", keep Chinese and common safe punctuation.
+# 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
 _SAFE_NAME_RE = re.compile(r"[^\w.\-()\[\]（）【】\u4e00-\u9fff]+", re.UNICODE)
 
 
 def _sanitize_filename(name: str) -> str:
-    """Sanitize filename to avoid traversal and problematic chars."""
+    """执行辅助逻辑（_sanitize_filename = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。QQ 官方机器人 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `_sanitize_filename` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    name: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     name = (name or "").strip()
     name = Path(name).name
     name = _SAFE_NAME_RE.sub("_", name).strip("._ ")
@@ -92,11 +106,38 @@ def _sanitize_filename(name: str) -> str:
 
 
 def _is_image_name(name: str) -> bool:
+    """判断条件是否成立（_is_image_name = 原函数名）。
+
+    【中文名称】判断条件是否成立
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。QQ 官方机器人 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `_is_image_name` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    name: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     return Path(name).suffix.lower() in _IMAGE_EXTS
 
 
 def _guess_send_file_type(filename: str) -> int:
-    """Conservative send type: images -> 1, else -> 4."""
+    """发送消息（_guess_send_file_type = 原函数名）。
+
+    【中文名称】发送消息
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。QQ 官方机器人 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `_guess_send_file_type` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    filename: 文件或路径信息，代码会按安全边界读取或写入。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     ext = Path(filename).suffix.lower()
     mime, _ = mimetypes.guess_type(filename)
     if ext in _IMAGE_EXTS or (mime and mime.startswith("image/")):
@@ -105,31 +146,144 @@ def _guess_send_file_type(filename: str) -> int:
 
 
 def _make_bot_class(channel: QQChannel) -> type[botpy.Client]:
-    """Create a botpy Client subclass bound to the given channel."""
+    """执行辅助逻辑（_make_bot_class = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。QQ 官方机器人 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `_make_bot_class` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    channel: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     intents = botpy.Intents(public_messages=True, direct_message=True)
 
     class _Bot(botpy.Client):
+        """_Bot 类，封装 渠道适配器 的核心状态和行为。
+
+        【中文名称】_Bot
+
+        【功能说明】
+        QQ 官方机器人 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+        让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+        【继承关系】
+        botpy.Client。继承关系决定它需要实现哪些项目约定的方法。
+
+        【学习提示】
+        先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+        """
         def __init__(self):
-            # Disable botpy's file log — nanobot uses loguru; default "botpy.log" fails on read-only fs
+            # 中文说明：这一段围绕文件处理，注意输入、输出和异常路径。
+            """初始化对象（__init__ = 原函数名）。
+
+            【中文名称】初始化对象
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。QQ 官方机器人 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `_Bot.__init__` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             super().__init__(intents=intents, ext_handlers=False)
 
         async def on_ready(self):
+            """异步执行辅助逻辑（on_ready = 原函数名）。
+
+            【中文名称】执行辅助逻辑
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。QQ 官方机器人 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `_Bot.on_ready` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             logger.info("QQ bot ready: {}", self.robot.name)
 
         async def on_c2c_message_create(self, message: C2CMessage):
+            """异步创建对象（on_c2c_message_create = 原函数名）。
+
+            【中文名称】创建对象
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。QQ 官方机器人 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `_Bot.on_c2c_message_create` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+            message: 消息数据，可能来自用户、频道、模型或工具调用。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             await channel._on_message(message, is_group=False)
 
         async def on_group_at_message_create(self, message: GroupMessage):
+            """异步创建对象（on_group_at_message_create = 原函数名）。
+
+            【中文名称】创建对象
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。QQ 官方机器人 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `_Bot.on_group_at_message_create` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+            message: 消息数据，可能来自用户、频道、模型或工具调用。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             await channel._on_message(message, is_group=True)
 
         async def on_direct_message_create(self, message):
+            """异步创建对象（on_direct_message_create = 原函数名）。
+
+            【中文名称】创建对象
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。QQ 官方机器人 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `_Bot.on_direct_message_create` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+            message: 消息数据，可能来自用户、频道、模型或工具调用。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             await channel._on_message(message, is_group=False)
 
     return _Bot
 
 
 class QQConfig(Base):
-    """QQ channel configuration using botpy SDK."""
+    """QQConfig 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】QQConfig
+
+    【功能说明】
+    QQ 官方机器人 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    Base。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     enabled: bool = False
     app_id: str = ""
@@ -138,25 +292,68 @@ class QQConfig(Base):
     msg_format: Literal["plain", "markdown"] = "plain"
     ack_message: str = "⏳ Processing..."
 
-    # Optional: directory to save inbound attachments. If empty, use nanobot get_media_dir("qq").
+    # 中文说明：这一段围绕媒体处理，注意输入、输出和异常路径。
     media_dir: str = ""
 
-    # Download tuning
-    download_chunk_size: int = 1024 * 256  # 256KB
-    download_max_bytes: int = 1024 * 1024 * 200  # 200MB safety limit
+    # 中文说明：Download tuning 相关逻辑。
+    download_chunk_size: int = 1024 * 256  # 中文说明：256KB 相关逻辑。
+    download_max_bytes: int = 1024 * 1024 * 200  # 中文说明：200MB safety limit 相关逻辑。
 
 
 class QQChannel(BaseChannel):
-    """QQ channel using botpy SDK with WebSocket connection."""
+    """QQChannel 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】QQChannel
+
+    【功能说明】
+    QQ 官方机器人 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    BaseChannel。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     name = "qq"
     display_name = "QQ"
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
+        """执行辅助逻辑（default_config = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。QQ 官方机器人 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `QQChannel.default_config` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return QQConfig().model_dump(by_alias=True)
 
     def __init__(self, config: Any, bus: MessageBus):
+        """初始化对象（__init__ = 原函数名）。
+
+        【中文名称】初始化对象
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。QQ 官方机器人 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `QQChannel.__init__` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        config: 配置对象或配置片段，决定该逻辑如何连接外部服务。
+        bus: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if isinstance(config, dict):
             config = QQConfig.model_validate(config)
         super().__init__(config, bus)
@@ -166,17 +363,30 @@ class QQChannel(BaseChannel):
         self._http: aiohttp.ClientSession | None = None
 
         self._processed_ids: deque[str] = deque(maxlen=1000)
-        self._msg_seq: int = 1  # used to avoid QQ API dedup
+        self._msg_seq: int = 1  # 中文说明：这一段围绕API处理，注意输入、输出和异常路径。
         self._chat_type_cache: dict[str, str] = {}
 
         self._media_root: Path = self._init_media_root()
 
-    # ---------------------------
-    # Lifecycle
-    # ---------------------------
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
+    # 中文说明：Lifecycle 相关逻辑。
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
     def _init_media_root(self) -> Path:
-        """Choose a directory for saving inbound attachments."""
+        """执行辅助逻辑（_init_media_root = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。QQ 官方机器人 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `QQChannel._init_media_root` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if self.config.media_dir:
             root = Path(self.config.media_dir).expanduser()
         elif get_media_dir:
@@ -192,7 +402,20 @@ class QQChannel(BaseChannel):
         return root
 
     async def start(self) -> None:
-        """Start the QQ bot with auto-reconnect loop."""
+        """异步启动流程（start = 原函数名）。
+
+        【中文名称】启动流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。QQ 官方机器人 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `QQChannel.start` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         redirect_lib_logging("botpy", level="WARNING")
         if not QQ_AVAILABLE:
             self.logger.error("SDK not installed. Run: pip install qq-botpy")
@@ -210,7 +433,20 @@ class QQChannel(BaseChannel):
         await self._run_bot()
 
     async def _run_bot(self) -> None:
-        """Run the bot connection with auto-reconnect."""
+        """异步运行流程（_run_bot = 原函数名）。
+
+        【中文名称】运行流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。QQ 官方机器人 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `QQChannel._run_bot` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         while self._running:
             try:
                 await self._client.start(appid=self.config.app_id, secret=self.config.secret)
@@ -221,7 +457,20 @@ class QQChannel(BaseChannel):
                 await asyncio.sleep(5)
 
     async def stop(self) -> None:
-        """Stop bot and cleanup resources."""
+        """异步停止流程（stop = 原函数名）。
+
+        【中文名称】停止流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。QQ 官方机器人 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `QQChannel.stop` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         self._running = False
         if self._client:
             with suppress(Exception):
@@ -235,12 +484,26 @@ class QQChannel(BaseChannel):
 
         self.logger.info("bot stopped")
 
-    # ---------------------------
-    # Outbound (send)
-    # ---------------------------
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
+    # 中文说明：Outbound (send) 相关逻辑。
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
     async def send(self, msg: OutboundMessage) -> None:
-        """Send attachments first, then text."""
+        """异步发送消息（send = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。QQ 官方机器人 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `QQChannel.send` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        msg: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         try:
             if not self._client:
                 self.logger.warning("client not initialized")
@@ -250,7 +513,7 @@ class QQChannel(BaseChannel):
             chat_type = self._chat_type_cache.get(msg.chat_id, "c2c")
             is_group = chat_type == "group"
 
-            # 1) Send media
+            # 中文说明：这一段围绕媒体处理，注意输入、输出和异常路径。
             for media_ref in msg.media or []:
                 ok = await self._send_media(
                     chat_id=msg.chat_id,
@@ -271,7 +534,7 @@ class QQChannel(BaseChannel):
                         content=f"[Attachment send failed: {filename}]",
                     )
 
-            # 2) Send text
+            # 中文说明：2) Send text 相关逻辑。
             if msg.content and msg.content.strip():
                 await self._send_text_only(
                     chat_id=msg.chat_id,
@@ -280,7 +543,7 @@ class QQChannel(BaseChannel):
                     content=msg.content.strip(),
                 )
         except (aiohttp.ClientError, OSError):
-            # Network / transport errors — propagate so ChannelManager can retry
+            # 中文说明：这一段围绕重试、错误处理，注意输入、输出和异常路径。
             raise
         except Exception:
             self.logger.exception("Error sending message to chat_id={}", msg.chat_id)
@@ -292,7 +555,24 @@ class QQChannel(BaseChannel):
         msg_id: str | None,
         content: str,
     ) -> None:
-        """Send a plain/markdown text message."""
+        """异步发送消息（_send_text_only = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。QQ 官方机器人 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `QQChannel._send_text_only` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        is_group: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        msg_id: 消息数据，可能来自用户、频道、模型或工具调用。
+        content: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self._client:
             return
 
@@ -320,7 +600,24 @@ class QQChannel(BaseChannel):
         msg_id: str | None,
         is_group: bool,
     ) -> bool:
-        """Read bytes -> base64 upload -> msg_type=7 send."""
+        """异步发送消息（_send_media = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。QQ 官方机器人 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `QQChannel._send_media` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        media_ref: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        msg_id: 消息数据，可能来自用户、频道、模型或工具调用。
+        is_group: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self._client:
             return False
 
@@ -365,26 +662,40 @@ class QQChannel(BaseChannel):
             self.logger.info("media sent: {}", filename)
             return True
         except (aiohttp.ClientError, OSError) as e:
-            # Network / transport errors — propagate for retry by caller
+            # 中文说明：这一段围绕调用、重试、错误处理，注意输入、输出和异常路径。
             self.logger.warning("send media network error filename={} err={}", filename, e)
             raise
         except Exception:
-            # API-level or other non-network errors — return False so send() can fallback
+            # 中文说明：兜底。
             self.logger.exception("send media failed filename={}", filename)
             return False
 
     async def _read_media_bytes(self, media_ref: str) -> tuple[bytes | None, str | None]:
-        """Read bytes from http(s) or local file path; return (data, filename)."""
+        """异步执行辅助逻辑（_read_media_bytes = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。QQ 官方机器人 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `QQChannel._read_media_bytes` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        media_ref: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         media_ref = (media_ref or "").strip()
         if not media_ref:
             return None, None
 
-        # Local file: plain path or file:// URI
+        # 中文说明：这一段围绕文件、路径处理，注意输入、输出和异常路径。
         if not media_ref.startswith("http://") and not media_ref.startswith("https://"):
             try:
                 if media_ref.startswith("file://"):
                     parsed = urlparse(media_ref)
-                    # Windows: path in netloc; Unix: path in path
+                    # 中文说明：这一段围绕路径处理，注意输入、输出和异常路径。
                     raw = parsed.path or parsed.netloc
                     local_path = Path(unquote(raw))
                 else:
@@ -400,7 +711,7 @@ class QQChannel(BaseChannel):
                 self.logger.warning("outbound media read error ref={} err={}", media_ref, e)
                 return None, None
 
-        # Remote URL
+        # 中文说明：Remote URL 相关逻辑。
         ok, err = validate_url_target(media_ref)
         if not ok:
             self.logger.warning("outbound media URL validation failed url={} err={}", media_ref, err)
@@ -426,8 +737,8 @@ class QQChannel(BaseChannel):
             self.logger.warning("outbound media download error url={} err={}", media_ref, e)
             return None, None
 
-    # https://github.com/tencent-connect/botpy/issues/198
-    # https://bot.q.qq.com/wiki/develop/api-v2/server-inter/message/send-receive/rich-media.html
+    # 中文说明：这一段围绕HTTP处理，注意输入、输出和异常路径。
+    # 中文说明：这一段围绕消息、API、HTTP、媒体处理，注意输入、输出和异常路径。
     async def _post_base64file(
         self,
         chat_id: str,
@@ -437,7 +748,26 @@ class QQChannel(BaseChannel):
         file_name: str | None = None,
         srv_send_msg: bool = False,
     ) -> Media:
-        """Upload base64-encoded file and return Media object."""
+        """异步执行辅助逻辑（_post_base64file = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。QQ 官方机器人 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `QQChannel._post_base64file` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        is_group: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        file_type: 文件或路径信息，代码会按安全边界读取或写入。
+        file_data: 文件或路径信息，代码会按安全边界读取或写入。
+        file_name: 文件或路径信息，代码会按安全边界读取或写入。
+        srv_send_msg: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self._client:
             raise RuntimeError("QQ client not initialized")
 
@@ -454,27 +784,42 @@ class QQChannel(BaseChannel):
             "file_data": file_data,
             "srv_send_msg": srv_send_msg,
         }
-        # Only pass file_name for non-image types (file_type=4).
-        # Passing file_name for images causes QQ client to render them as
-        # file attachments instead of inline images.
+        # 中文说明：这一段围绕图片、文件处理，注意输入、输出和异常路径。
+        # 中文说明：这一段围绕图片、文件处理，注意输入、输出和异常路径。
+        # 中文说明：这一段围绕图片、文件处理，注意输入、输出和异常路径。
         if file_type != QQ_FILE_TYPE_IMAGE and file_name:
             payload["file_name"] = file_name
 
         route = Route("POST", endpoint, **{id_key: chat_id})
         result = await self._client.api._http.request(route, json=payload)
 
-        # Extract only the file_info field to avoid extra fields (file_uuid, ttl, etc.)
-        # that may confuse QQ client when sending the media object.
+        # 中文说明：提取。
+        # 中文说明：这一段围绕媒体处理，注意输入、输出和异常路径。
         if isinstance(result, dict) and "file_info" in result:
             return {"file_info": result["file_info"]}
         return result
 
-    # ---------------------------
-    # Inbound (receive)
-    # ---------------------------
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
+    # 中文说明：Inbound (receive) 相关逻辑。
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
     async def _on_message(self, data: C2CMessage | GroupMessage, is_group: bool = False) -> None:
-        """Parse inbound message, download attachments, and publish to the bus."""
+        """异步执行辅助逻辑（_on_message = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。QQ 官方机器人 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `QQChannel._on_message` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        data: 结构化数据负载，后续会被解析或转发。
+        is_group: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         try:
             if is_group:
                 chat_id = data.group_openid
@@ -495,9 +840,9 @@ class QQChannel(BaseChannel):
             self._processed_ids.append(data.id)
             self._chat_type_cache[chat_id] = chat_type
 
-            # Early permission check — avoid attachment downloads and ack side effects
-            # for unauthorized users. C2C messages can receive pairing codes;
-            # group messages remain silently ignored.
+            # 中文说明：这一段围绕权限处理，注意输入、输出和异常路径。
+            # 中文说明：这一段围绕消息、用户处理，注意输入、输出和异常路径。
+            # 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
             if not self.is_allowed(user_id):
                 if not is_group:
                     await self._handle_message(
@@ -508,12 +853,12 @@ class QQChannel(BaseChannel):
                     )
                 return
 
-            # the data used by tests don't contain attachments property
-            # so we use getattr with a default of [] to avoid AttributeError in tests
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+            # 中文说明：这一段围绕错误处理，注意输入、输出和异常路径。
             attachments = getattr(data, "attachments", None) or []
             media_paths, recv_lines, att_meta = await self._handle_attachments(attachments)
 
-            # Compose content that always contains actionable saved paths
+            # 中文说明：这一段围绕路径处理，注意输入、输出和异常路径。
             if recv_lines:
                 tag = (
                     "[Image]"
@@ -557,7 +902,21 @@ class QQChannel(BaseChannel):
         self,
         attachments: list[BaseMessage._Attachments],
     ) -> tuple[list[str], list[str], list[dict[str, Any]]]:
-        """Extract, download (chunked), and format attachments for agent consumption."""
+        """异步处理事件（_handle_attachments = 原函数名）。
+
+        【中文名称】处理事件
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。QQ 官方机器人 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `QQChannel._handle_attachments` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        attachments: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         media_paths: list[str] = []
         recv_lines: list[str] = []
         att_meta: list[dict[str, Any]] = []
@@ -597,13 +956,23 @@ class QQChannel(BaseChannel):
         url: str,
         filename_hint: str = "",
     ) -> str | None:
-        """Download an inbound attachment using streaming chunk write.
+        """异步下载资源（_download_to_media_dir_chunked = 原函数名）。
 
-        Uses chunked streaming to avoid loading large files into memory.
-        Enforces a max download size and writes to a .part temp file
-        that is atomically renamed on success.
+        【中文名称】下载资源
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。QQ 官方机器人 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `QQChannel._download_to_media_dir_chunked` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        url: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        filename_hint: 文件或路径信息，代码会按安全边界读取或写入。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
-        # Handle protocol-relative URLs (e.g. "//multimedia.nt.qq.com/...")
+        # 中文说明：这一段围绕媒体处理，注意输入、输出和异常路径。
         if url.startswith("//"):
             url = f"https:{url}"
 
@@ -626,7 +995,7 @@ class QQChannel(BaseChannel):
 
                 ctype = (resp.headers.get("Content-Type") or "").lower()
 
-                # Infer extension: url -> filename_hint -> content-type -> fallback
+                # 中文说明：兜底。
                 ext = Path(urlparse(url).path).suffix
                 if not ext:
                     ext = Path(filename_hint).suffix
@@ -657,7 +1026,7 @@ class QQChannel(BaseChannel):
 
                 tmp_path = target.with_suffix(target.suffix + ".part")
 
-                # Stream write
+                # 中文说明：这一段围绕流式输出处理，注意输入、输出和异常路径。
                 downloaded = 0
                 chunk_size = max(1024, int(self.config.download_chunk_size or 262144))
                 max_bytes = max(
@@ -665,6 +1034,20 @@ class QQChannel(BaseChannel):
                 )
 
                 def _open_tmp():
+                    """执行辅助逻辑（_open_tmp = 原函数名）。
+
+                    【中文名称】执行辅助逻辑
+
+                    【功能说明】
+                    这是 渠道适配器 中的一个关键步骤。QQ 官方机器人 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+                    在阅读 `QQChannel._open_tmp` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+                    【参数说明】
+                    无显式参数。
+
+                    【返回值】
+                    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+                    """
                     tmp_path.parent.mkdir(parents=True, exist_ok=True)
                     return open(tmp_path, "wb")  # noqa: SIM115
 
@@ -685,9 +1068,9 @@ class QQChannel(BaseChannel):
                 finally:
                     await asyncio.to_thread(f.close)
 
-                # Atomic rename
+                # 中文说明：Atomic rename 相关逻辑。
                 await asyncio.to_thread(os.replace, tmp_path, target)
-                tmp_path = None  # mark as moved
+                tmp_path = None  # 中文说明：mark as moved 相关逻辑。
                 self.logger.info("file saved: {}", str(target))
                 return str(target)
 
@@ -695,7 +1078,8 @@ class QQChannel(BaseChannel):
             self.logger.exception("download error")
             return None
         finally:
-            # Cleanup partial file
+            # 中文说明：这一段围绕文件处理，注意输入、输出和异常路径。
             if tmp_path is not None:
                 with suppress(Exception):
                     tmp_path.unlink(missing_ok=True)
+

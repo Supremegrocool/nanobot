@@ -1,12 +1,20 @@
-"""图片生成 Provider 抽象与适配层。
+"""图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
 
-上层工具希望拿到的是统一接口：
+【中文名称】Provider 实现：nanobot/providers/image_generation.py
 
-- 输入：prompt、模型名、可选参考图、比例/尺寸提示
-- 输出：若干张图片，以及可选说明文本
+【功能说明】
+本文件属于 P1 学习范围，重点帮助初学者理解“外部系统 ↔ nanobot 后端”之间的适配层。
+阅读时可以先看类和函数的中文说明，再沿着消息、配置、异常和返回值四条线索跟代码。
 
-而不同平台的返回格式、鉴权方式、能力边界都不同。
-这个模块就是把这些差异屏蔽掉。
+【主要职责】
+1. 接收配置或输入数据，整理成后端内部统一使用的结构。
+2. 调用第三方 SDK、HTTP API 或公共工具函数完成实际工作。
+3. 把外部返回值、错误和流式事件转换成 nanobot 可继续处理的数据。
+4. 在边界处处理鉴权、限流、媒体文件、重试和日志，避免复杂度泄漏到核心 Agent。
+
+【学习提示】
+如果你是 Agent 或后端初学者，可以把本文件看成“翻译器”：它不改变核心 Agent 思路，
+而是负责理解某个平台或服务商的协议，并把它翻译成项目内部约定的数据形状。
 """
 
 from __future__ import annotations
@@ -53,12 +61,38 @@ _OLLAMA_ASPECT_RATIO_RE = re.compile(r"^\s*(\d+)\s*:\s*(\d+)\s*$")
 
 
 class ImageGenerationError(RuntimeError):
-    """图片生成 provider 无法返回可用图片时抛出的统一异常。"""
+    """ImageGenerationError 类，封装 Provider 实现 的核心状态和行为。
+
+    【中文名称】ImageGenerationError
+
+    【功能说明】
+    图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    RuntimeError。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
 
 @dataclass(frozen=True)
 class GeneratedImageResponse:
-    """图片生成 provider 的统一返回结构。"""
+    """GeneratedImageResponse 类，封装 Provider 实现 的核心状态和行为。
+
+    【中文名称】GeneratedImageResponse
+
+    【功能说明】
+    图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    普通 Python 类。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     images: list[str]
     content: str
@@ -66,7 +100,20 @@ class GeneratedImageResponse:
 
 
 def _read_image_b64(path: str | Path) -> tuple[str, str]:
-    """读取本地图片，并返回 ``(mime, base64)``。"""
+    """执行辅助逻辑（_read_image_b64 = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_read_image_b64` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    path: 文件或路径信息，代码会按安全边界读取或写入。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     p = Path(path).expanduser()
     raw = p.read_bytes()
     mime = detect_image_mime(raw)
@@ -76,18 +123,58 @@ def _read_image_b64(path: str | Path) -> tuple[str, str]:
 
 
 def image_path_to_data_url(path: str | Path) -> str:
-    """把本地图片路径转换成 data URL。"""
+    """执行辅助逻辑（image_path_to_data_url = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `image_path_to_data_url` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    path: 文件或路径信息，代码会按安全边界读取或写入。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     mime, encoded = _read_image_b64(path)
     return f"data:{mime};base64,{encoded}"
 
 
 def image_path_to_inline_data(path: str | Path) -> dict[str, str]:
-    """把本地图片路径转换成 Gemini ``inlineData`` 负载字典。"""
+    """执行辅助逻辑（image_path_to_inline_data = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `image_path_to_inline_data` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    path: 文件或路径信息，代码会按安全边界读取或写入。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     mime, encoded = _read_image_b64(path)
     return {"mimeType": mime, "data": encoded}
 
 
 def _b64_image_data_url(value: str) -> str:
+    """执行辅助逻辑（_b64_image_data_url = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_b64_image_data_url` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     encoded = "".join(value.split())
     try:
         raw = base64.b64decode(encoded, validate=True)
@@ -100,10 +187,20 @@ def _b64_image_data_url(value: str) -> str:
 
 
 def _aihubmix_size(aspect_ratio: str | None, image_size: str | None) -> str:
-    """为 AIHubMix 计算 OpenAI Images 风格的 size 字符串。
+    """执行辅助逻辑（_aihubmix_size = 原函数名）。
 
-    WebUI 可能给出 ``1K`` 这类紧凑尺寸提示，但 AIHubMix 期望的是
-    ``1024x1024`` 这种显式尺寸或 ``auto``，因此这里要做一次转换。
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_aihubmix_size` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    aspect_ratio: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    image_size: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
     """
     if image_size and "x" in image_size.lower():
         return image_size
@@ -113,6 +210,20 @@ def _aihubmix_size(aspect_ratio: str | None, image_size: str | None) -> str:
 
 
 def _aihubmix_model_path(model: str) -> str:
+    """执行辅助逻辑（_aihubmix_model_path = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_aihubmix_model_path` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    model: 模型名称或模型配置，用于选择具体 LLM 能力。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     if "/" in model:
         return model
     if model.startswith(("gpt-image-", "dall-e-")):
@@ -124,6 +235,21 @@ async def _download_image_data_url(
     client: httpx.AsyncClient,
     url: str,
 ) -> str:
+    """异步下载资源（_download_image_data_url = 原函数名）。
+
+    【中文名称】下载资源
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_download_image_data_url` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    client: 第三方 SDK 或 HTTP 客户端实例。
+    url: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     response = await client.get(url)
     try:
         response.raise_for_status()
@@ -138,18 +264,27 @@ async def _download_image_data_url(
     return f"data:{mime};base64,{encoded}"
 
 
-# ---------------------------------------------------------------------------
+# ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 # Provider 注册表
-# ---------------------------------------------------------------------------
+# ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
 _IMAGE_GEN_PROVIDERS: dict[str, type[ImageGenerationProvider]] = {}
 
 
 def register_image_gen_provider(cls: type[ImageGenerationProvider]) -> None:
-    """在模块导入阶段注册一个图片生成 provider。
+    """执行辅助逻辑（register_image_gen_provider = 原函数名）。
 
-    这里使用“导入即注册”的模式，让 provider 发现保持惰性，
-    同时避免在进程里到处手工维护注册表。
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `register_image_gen_provider` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
     """
     name = cls.provider_name
     if not name:
@@ -162,11 +297,38 @@ def get_image_gen_provider(name: str) -> type[ImageGenerationProvider] | None:
 
 
 def image_gen_provider_names() -> tuple[str, ...]:
-    """Return registered image generation provider names in registry order."""
+    """执行辅助逻辑（image_gen_provider_names = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `image_gen_provider_names` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    无显式参数。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     return tuple(_IMAGE_GEN_PROVIDERS)
 
 
 def image_gen_provider_configs(config: Any) -> dict[str, Any]:
+    """执行辅助逻辑（image_gen_provider_configs = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `image_gen_provider_configs` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    config: 配置对象或配置片段，决定该逻辑如何连接外部服务。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     providers_cfg = config.providers
     return {
         name: pc
@@ -175,13 +337,26 @@ def image_gen_provider_configs(config: Any) -> dict[str, Any]:
     }
 
 
-# ---------------------------------------------------------------------------
+# ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 # 抽象基类
-# ---------------------------------------------------------------------------
+# ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
 
 class ImageGenerationProvider(ABC):
-    """所有图片生成 provider 的抽象基类。"""
+    """ImageGenerationProvider 类，封装 Provider 实现 的核心状态和行为。
+
+    【中文名称】ImageGenerationProvider
+
+    【功能说明】
+    图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    ABC。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     provider_name: str = ""
     missing_key_message: str = ""
@@ -197,6 +372,26 @@ class ImageGenerationProvider(ABC):
         timeout: float | None = None,
         client: httpx.AsyncClient | None = None,
     ) -> None:
+        """初始化对象（__init__ = 原函数名）。
+
+        【中文名称】初始化对象
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `ImageGenerationProvider.__init__` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        api_key: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        api_base: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        extra_headers: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        extra_body: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        timeout: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        client: 第三方 SDK 或 HTTP 客户端实例。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         self.api_key = api_key
         self.api_base = self._resolve_base_url(api_base)
         self.extra_headers = extra_headers or {}
@@ -205,6 +400,21 @@ class ImageGenerationProvider(ABC):
         self._client = client
 
     def _resolve_base_url(self, api_base: str | None) -> str:
+        """解析目标（_resolve_base_url = 原函数名）。
+
+        【中文名称】解析目标
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `ImageGenerationProvider._resolve_base_url` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        api_base: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if api_base:
             return api_base.rstrip("/")
         spec = find_by_name(self.provider_name)
@@ -227,6 +437,22 @@ class ImageGenerationProvider(ABC):
     ) -> GeneratedImageResponse: ...
 
     def _require_images(self, images: list[str], data: dict[str, Any]) -> None:
+        """执行辅助逻辑（_require_images = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `ImageGenerationProvider._require_images` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        images: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        data: 结构化数据负载，后续会被解析或转发。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if images:
             return
         provider_error = data.get("error") if isinstance(data, dict) else None
@@ -243,6 +469,24 @@ class ImageGenerationProvider(ABC):
         body: dict[str, Any],
         client: httpx.AsyncClient | None = None,
     ) -> httpx.Response:
+        """异步执行辅助逻辑（_http_post = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `ImageGenerationProvider._http_post` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        url: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        headers: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        body: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        client: 第三方 SDK 或 HTTP 客户端实例。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if client is not None:
             return await client.post(url, headers=headers, json=body)
         if self._client is not None:
@@ -252,7 +496,20 @@ class ImageGenerationProvider(ABC):
 
 
 class OpenRouterImageGenerationClient(ImageGenerationProvider):
-    """OpenRouter 生图客户端。"""
+    """OpenRouterImageGenerationClient 类，封装 Provider 实现 的核心状态和行为。
+
+    【中文名称】OpenRouterImageGenerationClient
+
+    【功能说明】
+    图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    ImageGenerationProvider。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     provider_name = "openrouter"
     missing_key_message = (
@@ -271,6 +528,25 @@ class OpenRouterImageGenerationClient(ImageGenerationProvider):
         aspect_ratio: str | None = None,
         image_size: str | None = None,
     ) -> GeneratedImageResponse:
+        """异步生成内容（generate = 原函数名）。
+
+        【中文名称】生成内容
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenRouterImageGenerationClient.generate` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        prompt: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        reference_images: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        aspect_ratio: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        image_size: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self.api_key:
             raise ImageGenerationError(self.missing_key_message)
 
@@ -343,7 +619,20 @@ class OpenRouterImageGenerationClient(ImageGenerationProvider):
 
 
 class AIHubMixImageGenerationClient(ImageGenerationProvider):
-    """AIHubMix 生图客户端。"""
+    """AIHubMixImageGenerationClient 类，封装 Provider 实现 的核心状态和行为。
+
+    【中文名称】AIHubMixImageGenerationClient
+
+    【功能说明】
+    图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    ImageGenerationProvider。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     provider_name = "aihubmix"
     missing_key_message = (
@@ -363,6 +652,25 @@ class AIHubMixImageGenerationClient(ImageGenerationProvider):
         aspect_ratio: str | None = None,
         image_size: str | None = None,
     ) -> GeneratedImageResponse:
+        """异步生成内容（generate = 原函数名）。
+
+        【中文名称】生成内容
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `AIHubMixImageGenerationClient.generate` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        prompt: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        reference_images: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        aspect_ratio: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        image_size: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self.api_key:
             raise ImageGenerationError(self.missing_key_message)
 
@@ -397,6 +705,26 @@ class AIHubMixImageGenerationClient(ImageGenerationProvider):
         size: str,
         headers: dict[str, str],
     ) -> GeneratedImageResponse:
+        """异步生成内容（_generate_with_client = 原函数名）。
+
+        【中文名称】生成内容
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `AIHubMixImageGenerationClient._generate_with_client` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        client: 第三方 SDK 或 HTTP 客户端实例。
+        prompt: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        reference_images: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        size: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        headers: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         image_input: str | list[str] | None = None
         if reference_images:
             image_refs = [image_path_to_data_url(path) for path in reference_images]
@@ -441,7 +769,20 @@ class AIHubMixImageGenerationClient(ImageGenerationProvider):
 
 
 def _http_error_detail(response: httpx.Response) -> str:
-    """从 HTTP 错误响应中提取更可读的错误文本。"""
+    """执行辅助逻辑（_http_error_detail = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_http_error_detail` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    response: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     try:
         data = response.json()
         if isinstance(data, dict):
@@ -456,11 +797,41 @@ def _http_error_detail(response: httpx.Response) -> str:
 
 
 def _round_to_multiple(value: float, multiple: int = 8) -> int:
+    """执行辅助逻辑（_round_to_multiple = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_round_to_multiple` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    multiple: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     rounded = int(round(value / multiple) * multiple)
     return max(multiple, rounded)
 
 
 def _ollama_dimensions(aspect_ratio: str | None, image_size: str | None) -> tuple[int, int]:
+    """执行辅助逻辑（_ollama_dimensions = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_ollama_dimensions` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    aspect_ratio: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    image_size: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     if image_size:
         size = image_size.strip()
         explicit = _OLLAMA_EXPLICIT_SIZE_RE.fullmatch(size)
@@ -492,15 +863,57 @@ def _ollama_dimensions(aspect_ratio: str | None, image_size: str | None) -> tupl
 
 
 def _ollama_image_data_url(value: str) -> str:
+    """执行辅助逻辑（_ollama_image_data_url = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_ollama_image_data_url` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     if value.startswith("data:image/"):
         return value
     return _b64_image_data_url(value)
 
 
 def _ollama_images_from_payload(payload: dict[str, Any]) -> list[str]:
+    """执行辅助逻辑（_ollama_images_from_payload = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_ollama_images_from_payload` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    payload: 结构化数据负载，后续会被解析或转发。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     images: list[str] = []
 
     def collect(value: Any) -> None:
+        """执行辅助逻辑（collect = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `collect` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if isinstance(value, str) and value:
             images.append(_ollama_image_data_url(value))
         elif isinstance(value, list):
@@ -513,7 +926,20 @@ def _ollama_images_from_payload(payload: dict[str, Any]) -> list[str]:
 
 
 class OllamaImageGenerationClient(ImageGenerationProvider):
-    """Ollama 原生生图模型的异步客户端。"""
+    """OllamaImageGenerationClient 类，封装 Provider 实现 的核心状态和行为。
+
+    【中文名称】OllamaImageGenerationClient
+
+    【功能说明】
+    图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    ImageGenerationProvider。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     provider_name = "ollama"
     default_timeout = 300.0
@@ -522,6 +948,21 @@ class OllamaImageGenerationClient(ImageGenerationProvider):
         return "http://localhost:11434/api"
 
     def _resolve_base_url(self, api_base: str | None) -> str:
+        """解析目标（_resolve_base_url = 原函数名）。
+
+        【中文名称】解析目标
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OllamaImageGenerationClient._resolve_base_url` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        api_base: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if api_base:
             base = api_base.rstrip("/")
             if base.endswith("/v1"):
@@ -538,6 +979,25 @@ class OllamaImageGenerationClient(ImageGenerationProvider):
         aspect_ratio: str | None = None,
         image_size: str | None = None,
     ) -> GeneratedImageResponse:
+        """异步生成内容（generate = 原函数名）。
+
+        【中文名称】生成内容
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OllamaImageGenerationClient.generate` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        prompt: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        reference_images: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        aspect_ratio: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        image_size: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if reference_images:
             raise ImageGenerationError(
                 "Ollama image generation does not support reference images"
@@ -589,7 +1049,20 @@ class OllamaImageGenerationClient(ImageGenerationProvider):
 
 
 class GeminiImageGenerationClient(ImageGenerationProvider):
-    """通过 Generative Language API 调用 Gemini/Imagen 生图的异步客户端。"""
+    """GeminiImageGenerationClient 类，封装 Provider 实现 的核心状态和行为。
+
+    【中文名称】GeminiImageGenerationClient
+
+    【功能说明】
+    图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    ImageGenerationProvider。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     provider_name = "gemini"
     missing_key_message = (
@@ -604,6 +1077,21 @@ class GeminiImageGenerationClient(ImageGenerationProvider):
         # Gemini 的普通聊天补全可能走注册表里的 OpenAI 兼容适配；
         # 但图片生成必须直连原生 Generative Language API，
         # 所以这里刻意绕过共享注册表查找逻辑。
+        """解析目标（_resolve_base_url = 原函数名）。
+
+        【中文名称】解析目标
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `GeminiImageGenerationClient._resolve_base_url` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        api_base: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if api_base:
             return api_base.rstrip("/")
         return self._default_base_url()
@@ -617,6 +1105,25 @@ class GeminiImageGenerationClient(ImageGenerationProvider):
         aspect_ratio: str | None = None,
         image_size: str | None = None,
     ) -> GeneratedImageResponse:
+        """异步生成内容（generate = 原函数名）。
+
+        【中文名称】生成内容
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `GeminiImageGenerationClient.generate` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        prompt: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        reference_images: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        aspect_ratio: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        image_size: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self.api_key:
             raise ImageGenerationError(self.missing_key_message)
         if "imagen" in model.lower():
@@ -641,6 +1148,23 @@ class GeminiImageGenerationClient(ImageGenerationProvider):
         model: str,
         aspect_ratio: str | None,
     ) -> GeneratedImageResponse:
+        """异步生成内容（_generate_imagen = 原函数名）。
+
+        【中文名称】生成内容
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `GeminiImageGenerationClient._generate_imagen` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        prompt: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        aspect_ratio: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         parameters: dict[str, Any] = {"sampleCount": 1}
         if aspect_ratio in _GEMINI_IMAGEN_ASPECT_RATIOS:
             parameters["aspectRatio"] = aspect_ratio
@@ -688,6 +1212,23 @@ class GeminiImageGenerationClient(ImageGenerationProvider):
         model: str,
         reference_images: list[str],
     ) -> GeneratedImageResponse:
+        """异步生成内容（_generate_gemini_flash = 原函数名）。
+
+        【中文名称】生成内容
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `GeminiImageGenerationClient._generate_gemini_flash` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        prompt: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        reference_images: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         parts: list[dict[str, Any]] = [
             {"inlineData": image_path_to_inline_data(path)} for path in reference_images
         ]
@@ -748,6 +1289,21 @@ async def _aihubmix_images_from_payload(
     client: httpx.AsyncClient,
     payload: dict[str, Any],
 ) -> list[str]:
+    """异步执行辅助逻辑（_aihubmix_images_from_payload = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_aihubmix_images_from_payload` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    client: 第三方 SDK 或 HTTP 客户端实例。
+    payload: 结构化数据负载，后续会被解析或转发。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     images: list[str] = []
     candidates: list[Any] = []
     if "data" in payload:
@@ -756,6 +1312,20 @@ async def _aihubmix_images_from_payload(
         candidates.append(payload["output"])
 
     async def collect(value: Any) -> None:
+        """异步执行辅助逻辑（collect = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `collect` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if isinstance(value, list):
             for item in value:
                 await collect(item)
@@ -813,7 +1383,20 @@ _MINIMAX_ASPECT_RATIO_SIZES = {
 
 
 class MiniMaxImageGenerationClient(ImageGenerationProvider):
-    """MiniMax 图片生成 API 的异步客户端。"""
+    """MiniMaxImageGenerationClient 类，封装 Provider 实现 的核心状态和行为。
+
+    【中文名称】MiniMaxImageGenerationClient
+
+    【功能说明】
+    图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    ImageGenerationProvider。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     provider_name = "minimax"
     missing_key_message = (
@@ -825,6 +1408,21 @@ class MiniMaxImageGenerationClient(ImageGenerationProvider):
         return "https://api.minimaxi.com/v1"
 
     def _resolve_aspect_ratio(self, aspect_ratio: str | None) -> str:
+        """解析目标（_resolve_aspect_ratio = 原函数名）。
+
+        【中文名称】解析目标
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `MiniMaxImageGenerationClient._resolve_aspect_ratio` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        aspect_ratio: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if aspect_ratio and aspect_ratio in _MINIMAX_ASPECT_RATIO_SIZES:
             return _MINIMAX_ASPECT_RATIO_SIZES[aspect_ratio]
         return "1:1"
@@ -838,6 +1436,25 @@ class MiniMaxImageGenerationClient(ImageGenerationProvider):
         aspect_ratio: str | None = None,
         image_size: str | None = None,
     ) -> GeneratedImageResponse:
+        """异步生成内容（generate = 原函数名）。
+
+        【中文名称】生成内容
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `MiniMaxImageGenerationClient.generate` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        prompt: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        reference_images: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        aspect_ratio: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        image_size: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self.api_key:
             raise ImageGenerationError(self.missing_key_message)
 
@@ -872,6 +1489,22 @@ class MiniMaxImageGenerationClient(ImageGenerationProvider):
         body: dict[str, Any],
         headers: dict[str, str],
     ) -> GeneratedImageResponse:
+        """异步生成内容（_generate_with_client = 原函数名）。
+
+        【中文名称】生成内容
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `MiniMaxImageGenerationClient._generate_with_client` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        body: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        headers: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         url = f"{self.api_base}/image_generation"
         try:
             response = await self._http_post(url, headers=headers, body=body)
@@ -895,9 +1528,19 @@ class MiniMaxImageGenerationClient(ImageGenerationProvider):
 
 
 def _minimax_images_from_payload(payload: dict[str, Any]) -> list[str]:
-    """Extract base64 images from MiniMax API response.
+    """执行辅助逻辑（_minimax_images_from_payload = 原函数名）。
 
-    MiniMax returns images in ``data.image_base64`` (list of base64 strings).
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_minimax_images_from_payload` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    payload: 结构化数据负载，后续会被解析或转发。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
     """
     images: list[str] = []
     data = payload.get("data")
@@ -909,9 +1552,9 @@ def _minimax_images_from_payload(payload: dict[str, Any]) -> list[str]:
     return images
 
 
-# ---------------------------------------------------------------------------
+# ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 # OpenAI 系图片生成
-# ---------------------------------------------------------------------------
+# ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
 _OPENAI_DALLE2_SUPPORTED_SIZES = {"256x256", "512x512", "1024x1024"}
 _OPENAI_DALLE3_SUPPORTED_SIZES = {"1024x1024", "1792x1024", "1024x1792"}
@@ -945,7 +1588,20 @@ _OPENAI_GPT_IMAGE_ASPECT_RATIO_SIZES = {
 
 
 class OpenAIImageGenerationClient(ImageGenerationProvider):
-    """基于 API key 的 OpenAI Images API 客户端。"""
+    """OpenAIImageGenerationClient 类，封装 Provider 实现 的核心状态和行为。
+
+    【中文名称】OpenAIImageGenerationClient
+
+    【功能说明】
+    图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    ImageGenerationProvider。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     provider_name = "openai"
     missing_key_message = (
@@ -957,7 +1613,20 @@ class OpenAIImageGenerationClient(ImageGenerationProvider):
 
     @staticmethod
     def _strip_model_prefix(model: str) -> str:
-        """如果模型名前带有 ``openai/`` 前缀，就去掉它。"""
+        """执行辅助逻辑（_strip_model_prefix = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenAIImageGenerationClient._strip_model_prefix` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if model.startswith("openai/") or model.startswith("openai_codex/"):
             return model.split("/", 1)[1]
         return model
@@ -971,6 +1640,25 @@ class OpenAIImageGenerationClient(ImageGenerationProvider):
         aspect_ratio: str | None = None,
         image_size: str | None = None,
     ) -> GeneratedImageResponse:
+        """异步生成内容（generate = 原函数名）。
+
+        【中文名称】生成内容
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenAIImageGenerationClient.generate` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        prompt: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        reference_images: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        aspect_ratio: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        image_size: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self.api_key:
             raise ImageGenerationError(self.missing_key_message)
 
@@ -1043,7 +1731,20 @@ class OpenAIImageGenerationClient(ImageGenerationProvider):
 
 
 class CustomImageGenerationClient(ImageGenerationProvider):
-    """面向用户自定义 provider 的 OpenAI 兼容 Images API 客户端。"""
+    """CustomImageGenerationClient 类，封装 Provider 实现 的核心状态和行为。
+
+    【中文名称】CustomImageGenerationClient
+
+    【功能说明】
+    图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    ImageGenerationProvider。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     provider_name = "custom"
     missing_base_message = (
@@ -1055,6 +1756,21 @@ class CustomImageGenerationClient(ImageGenerationProvider):
 
     @staticmethod
     def _custom_size(aspect_ratio: str | None, image_size: str | None) -> str:
+        """执行辅助逻辑（_custom_size = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `CustomImageGenerationClient._custom_size` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        aspect_ratio: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        image_size: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if image_size:
             requested = image_size.strip()
             if requested:
@@ -1072,6 +1788,25 @@ class CustomImageGenerationClient(ImageGenerationProvider):
         aspect_ratio: str | None = None,
         image_size: str | None = None,
     ) -> GeneratedImageResponse:
+        """异步生成内容（generate = 原函数名）。
+
+        【中文名称】生成内容
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `CustomImageGenerationClient.generate` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        prompt: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        reference_images: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        aspect_ratio: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        image_size: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self.api_base:
             raise ImageGenerationError(self.missing_base_message)
 
@@ -1135,16 +1870,25 @@ class CustomImageGenerationClient(ImageGenerationProvider):
         return GeneratedImageResponse(images=images, content="", raw=payload)
 
 
-# ---------------------------------------------------------------------------
+# ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 # OpenAI Codex 图片生成
-# ---------------------------------------------------------------------------
+# ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
 
 class CodexImageGenerationClient(ImageGenerationProvider):
-    """通过 Codex 订阅 OAuth 调用 OpenAI 图片生成。
+    """CodexImageGenerationClient 类，封装 Provider 实现 的核心状态和行为。
 
-    这里走的是 Codex Responses API 的 ``image_generation`` 工具链路，
-    不依赖传统 API key，而依赖 Codex OAuth token。
+    【中文名称】CodexImageGenerationClient
+
+    【功能说明】
+    图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    ImageGenerationProvider。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
     """
 
     provider_name = "openai_codex"
@@ -1157,7 +1901,21 @@ class CodexImageGenerationClient(ImageGenerationProvider):
         return "https://chatgpt.com/backend-api"
 
     def _codex_model(self, model: str) -> str:
-        """如果模型名前带有 ``openai-codex/`` 前缀，就去掉它。"""
+        """执行辅助逻辑（_codex_model = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `CodexImageGenerationClient._codex_model` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if model.startswith(("openai-codex/", "openai_codex/")):
             return model.split("/", 1)[1]
         return model
@@ -1171,6 +1929,25 @@ class CodexImageGenerationClient(ImageGenerationProvider):
         aspect_ratio: str | None = None,
         image_size: str | None = None,
     ) -> GeneratedImageResponse:
+        """异步生成内容（generate = 原函数名）。
+
+        【中文名称】生成内容
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `CodexImageGenerationClient.generate` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        prompt: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        reference_images: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        aspect_ratio: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        image_size: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         try:
             from oauth_cli_kit import get_token as get_codex_token
         except ImportError:
@@ -1247,7 +2024,22 @@ def _openai_size(
     aspect_ratio: str | None,
     image_size: str | None,
 ) -> str:
-    """把比例或尺寸提示解析成 OpenAI Images API 需要的 size 字符串。"""
+    """执行辅助逻辑（_openai_size = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_openai_size` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    model: 模型名称或模型配置，用于选择具体 LLM 能力。
+    aspect_ratio: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    image_size: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     sizes, supported_sizes = _openai_size_options(model)
     explicit_size = _normalize_openai_image_size(image_size)
     if explicit_size and _openai_explicit_size_supported(
@@ -1267,11 +2059,39 @@ def _openai_size(
 
 
 def _openai_is_gpt_image_model(model: str) -> bool:
+    """执行辅助逻辑（_openai_is_gpt_image_model = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_openai_is_gpt_image_model` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    model: 模型名称或模型配置，用于选择具体 LLM 能力。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     normalized = model.lower()
     return normalized.startswith(("gpt-image", "chatgpt-image"))
 
 
 def _openai_size_options(model: str) -> tuple[dict[str, str], set[str] | None]:
+    """执行辅助逻辑（_openai_size_options = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_openai_size_options` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    model: 模型名称或模型配置，用于选择具体 LLM 能力。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     normalized = model.lower()
     if normalized.startswith("dall-e-2"):
         return _OPENAI_DALLE2_ASPECT_RATIO_SIZES, _OPENAI_DALLE2_SUPPORTED_SIZES
@@ -1283,6 +2103,20 @@ def _openai_size_options(model: str) -> tuple[dict[str, str], set[str] | None]:
 
 
 def _normalize_openai_image_size(image_size: str | None) -> str | None:
+    """标准化数据（_normalize_openai_image_size = 原函数名）。
+
+    【中文名称】标准化数据
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_normalize_openai_image_size` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    image_size: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     if not image_size:
         return None
     normalized = image_size.strip().lower()
@@ -1294,6 +2128,21 @@ def _openai_explicit_size_supported(
     *,
     supported_sizes: set[str] | None,
 ) -> bool:
+    """执行辅助逻辑（_openai_explicit_size_supported = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_openai_explicit_size_supported` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    size: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    supported_sizes: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     if supported_sizes is not None:
         return size in supported_sizes
     width, sep, height = size.partition("x")
@@ -1304,9 +2153,20 @@ async def _openai_images_from_payload(
     client: httpx.AsyncClient,
     payload: dict[str, Any],
 ) -> list[str]:
-    """从 OpenAI Images API 响应中提取图片。
+    """异步执行辅助逻辑（_openai_images_from_payload = 原函数名）。
 
-    同时兼容 ``b64_json`` 和 ``url`` 两种返回形式。
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_openai_images_from_payload` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    client: 第三方 SDK 或 HTTP 客户端实例。
+    payload: 结构化数据负载，后续会被解析或转发。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
     """
     images: list[str] = []
     for item in payload.get("data") or []:
@@ -1323,7 +2183,20 @@ async def _openai_images_from_payload(
 
 
 def _codex_responses_images_from_payload(payload: dict[str, Any]) -> list[str]:
-    """从 Codex Responses API 的 ``image_generation_call`` 输出中提取图片。"""
+    """执行辅助逻辑（_codex_responses_images_from_payload = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_codex_responses_images_from_payload` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    payload: 结构化数据负载，后续会被解析或转发。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     images: list[str] = []
     for item in payload.get("output") or []:
         if not isinstance(item, dict):
@@ -1344,9 +2217,19 @@ def _codex_responses_images_from_payload(payload: dict[str, Any]) -> list[str]:
 async def _parse_codex_sse_images(
     response: httpx.Response,
 ) -> tuple[list[str], str]:
-    """解析 Codex Responses API 的 SSE 生图输出流。
+    """异步解析数据（_parse_codex_sse_images = 原函数名）。
 
-    返回 ``(images, content_text)``。
+    【中文名称】解析数据
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_parse_codex_sse_images` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    response: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
     """
     import json as _json
 
@@ -1396,6 +2279,21 @@ async def _parse_codex_sse_images(
 
 
 def _collect_images_from_sse_event(event: dict[str, Any], images: list[str]) -> None:
+    """执行辅助逻辑（_collect_images_from_sse_event = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_collect_images_from_sse_event` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    event: 外部平台事件对象，包含用户输入和平台元数据。
+    images: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     if event.get("type") != "response.output_item.done":
         return
     item = event.get("item") or {}
@@ -1417,15 +2315,30 @@ def _collect_images_from_sse_event(event: dict[str, Any], images: list[str]) -> 
 
 
 def _collect_text_from_sse_event(event: dict[str, Any], text_parts: list[str]) -> None:
+    """执行辅助逻辑（_collect_text_from_sse_event = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_collect_text_from_sse_event` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    event: 外部平台事件对象，包含用户输入和平台元数据。
+    text_parts: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     if event.get("type") == "response.output_text.delta":
         delta = event.get("delta")
         if isinstance(delta, str) and delta:
             text_parts.append(delta)
 
 
-# ---------------------------------------------------------------------------
+# ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 # StepFun（阶跃星辰）图片生成
-# ---------------------------------------------------------------------------
+# ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
 _STEPFUN_ASPECT_RATIO_SIZES = {
     "1:1": "1024x1024",
@@ -1437,9 +2350,19 @@ _STEPFUN_ASPECT_RATIO_SIZES = {
 
 
 class StepFunImageGenerationClient(ImageGenerationProvider):
-    """StepFun（阶跃星辰）图片生成的异步客户端。
+    """StepFunImageGenerationClient 类，封装 Provider 实现 的核心状态和行为。
 
-    支持文生图，以及基于参考图的引导式生成。
+    【中文名称】StepFunImageGenerationClient
+
+    【功能说明】
+    图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    ImageGenerationProvider。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
     """
 
     provider_name = "stepfun"
@@ -1460,6 +2383,25 @@ class StepFunImageGenerationClient(ImageGenerationProvider):
         aspect_ratio: str | None = None,
         image_size: str | None = None,
     ) -> GeneratedImageResponse:
+        """异步生成内容（generate = 原函数名）。
+
+        【中文名称】生成内容
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `StepFunImageGenerationClient.generate` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        prompt: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        reference_images: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        aspect_ratio: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        image_size: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self.api_key:
             raise ImageGenerationError(self.missing_key_message)
 
@@ -1516,9 +2458,20 @@ def _stepfun_size(
     aspect_ratio: str | None,
     image_size: str | None,
 ) -> str:
-    """把比例/尺寸提示解析成 StepFun 所需的 size 字符串。
+    """执行辅助逻辑（_stepfun_size = 原函数名）。
 
-    StepFun 期望的是 ``WIDTHxHEIGHT`` 格式，且支持的尺寸集合比较固定。
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_stepfun_size` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    aspect_ratio: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    image_size: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
     """
     if image_size and "x" in image_size.lower():
         return image_size
@@ -1528,7 +2481,20 @@ def _stepfun_size(
 
 
 def _stepfun_images_from_payload(payload: dict[str, Any]) -> list[str]:
-    """从 StepFun API 响应中提取 base64 图片。"""
+    """执行辅助逻辑（_stepfun_images_from_payload = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_stepfun_images_from_payload` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    payload: 结构化数据负载，后续会被解析或转发。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     images: list[str] = []
     for item in payload.get("data") or []:
         if not isinstance(item, dict):
@@ -1539,9 +2505,9 @@ def _stepfun_images_from_payload(payload: dict[str, Any]) -> list[str]:
     return images
 
 
-# ---------------------------------------------------------------------------
+# ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 # Zhipu（智谱）图片生成
-# ---------------------------------------------------------------------------
+# ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
 _ZHIPU_TIMEOUT_S = 300.0
 
@@ -1555,7 +2521,20 @@ _ZHIPU_ASPECT_RATIO_SIZES = {
 
 
 class ZhipuImageGenerationClient(ImageGenerationProvider):
-    """Zhipu（智谱）图片生成 API 的异步客户端。"""
+    """ZhipuImageGenerationClient 类，封装 Provider 实现 的核心状态和行为。
+
+    【中文名称】ZhipuImageGenerationClient
+
+    【功能说明】
+    图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    ImageGenerationProvider。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     provider_name = "zhipu"
     missing_key_message = "Zhipu API key is not configured. Set providers.zhipu.apiKey."
@@ -1573,6 +2552,25 @@ class ZhipuImageGenerationClient(ImageGenerationProvider):
         aspect_ratio: str | None = None,
         image_size: str | None = None,
     ) -> GeneratedImageResponse:
+        """异步生成内容（generate = 原函数名）。
+
+        【中文名称】生成内容
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `ZhipuImageGenerationClient.generate` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        prompt: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        reference_images: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        aspect_ratio: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        image_size: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self.api_key:
             raise ImageGenerationError(self.missing_key_message)
 
@@ -1620,6 +2618,24 @@ class ZhipuImageGenerationClient(ImageGenerationProvider):
         body: dict[str, Any],
         url: str,
     ) -> GeneratedImageResponse:
+        """异步生成内容（_generate_with_client = 原函数名）。
+
+        【中文名称】生成内容
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `ZhipuImageGenerationClient._generate_with_client` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        client: 第三方 SDK 或 HTTP 客户端实例。
+        headers: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        body: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        url: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         try:
             response = await self._http_post(url, headers=headers, body=body, client=client)
         except httpx.TimeoutException as exc:
@@ -1645,7 +2661,21 @@ def _zhipu_size(
     aspect_ratio: str | None,
     image_size: str | None,
 ) -> str:
-    """把比例/尺寸提示解析成 Zhipu 所需的 size 字符串。"""
+    """执行辅助逻辑（_zhipu_size = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_zhipu_size` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    aspect_ratio: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    image_size: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     if image_size and "x" in image_size.lower():
         return image_size
     if aspect_ratio and aspect_ratio in _ZHIPU_ASPECT_RATIO_SIZES:
@@ -1657,9 +2687,20 @@ async def _zhipu_images_from_payload(
     client: httpx.AsyncClient,
     payload: dict[str, Any],
 ) -> list[str]:
-    """从 Zhipu API 响应中提取图片 data URL。
+    """异步执行辅助逻辑（_zhipu_images_from_payload = 原函数名）。
 
-    Zhipu 返回的是临时 URL，这里会下载后重新编码成 base64 data URL。
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。图像生成 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_zhipu_images_from_payload` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    client: 第三方 SDK 或 HTTP 客户端实例。
+    payload: 结构化数据负载，后续会被解析或转发。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
     """
     images: list[str] = []
     for item in payload.get("data") or []:
@@ -1671,9 +2712,9 @@ async def _zhipu_images_from_payload(
     return images
 
 
-# ---------------------------------------------------------------------------
+# ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 # Provider 注册
-# ---------------------------------------------------------------------------
+# ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
 register_image_gen_provider(AIHubMixImageGenerationClient)
 register_image_gen_provider(CodexImageGenerationClient)
@@ -1685,3 +2726,4 @@ register_image_gen_provider(OpenAIImageGenerationClient)
 register_image_gen_provider(OpenRouterImageGenerationClient)
 register_image_gen_provider(StepFunImageGenerationClient)
 register_image_gen_provider(ZhipuImageGenerationClient)
+
