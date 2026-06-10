@@ -1,4 +1,9 @@
-"""Context builder for assembling agent prompts."""
+"""上下文构建器：负责把系统提示词、历史记录、技能、运行时元数据拼成模型输入。
+
+这是理解整个 Agent 数据流的关键文件之一。你可以把它理解成：
+
+“用户消息进来之后，在真正调用 LLM 之前，nanobot 如何把可用信息组织成 prompt？”
+"""
 
 import base64
 import mimetypes
@@ -23,12 +28,18 @@ from nanobot.utils.prompt_templates import render_template
 
 
 def session_extra(metadata: Mapping[str, Any] | None) -> dict[str, Any]:
-    """Return persisted kwargs for turn-attached capabilities."""
+    """返回需要持久化到 session 的“回合附着能力”元数据。
+
+    例如 CLI App 附件、MCP preset 等，都会把自己的附加信息通过这里统一收集。
+    """
     return cli_app_utils.session_extra(metadata) | mcp_tools.session_extra(metadata)
 
 
 def runtime_lines(state: Any, msg: Any, workspace: Path, *, skip: bool = False) -> list[str]:
-    """Return model-visible runtime annotations for turn-attached capabilities."""
+    """返回追加给模型可见的运行时注释行。
+
+    这些内容会被塞进 Runtime Context 块里，让模型知道本回合临时挂载了哪些能力。
+    """
     return [
         *cli_app_utils.runtime_lines(msg, workspace, skip=skip),
         *mcp_tools.runtime_lines(
@@ -41,15 +52,24 @@ def runtime_lines(state: Any, msg: Any, workspace: Path, *, skip: bool = False) 
 
 
 async def connect_mcp(state: Any, tools: ToolRegistry) -> None:
+    """确保缺失的 MCP 服务器已连接。"""
     await mcp_tools.connect_missing_servers(state, tools)
 
 
 async def handle_runtime_control(state: Any, msg: InboundMessage, tools: ToolRegistry) -> bool:
+    """处理来自内部渠道的运行时控制消息，例如 MCP reload。"""
     return await mcp_tools.handle_runtime_control(state, msg, tools)
 
 
 class ContextBuilder:
-    """Builds the context (system prompt + messages) for the agent."""
+    """构建 Agent 上下文。
+
+    【主要职责】
+    1. 生成 system prompt
+    2. 读取 bootstrap 文件（如 AGENTS.md）
+    3. 注入 memory / skills / recent history
+    4. 把当前用户消息与运行时元数据合并成最终 messages 列表
+    """
 
     BOOTSTRAP_FILES = ["AGENTS.md", "SOUL.md", "USER.md"]
     _RUNTIME_CONTEXT_TAG = "[Runtime Context — metadata only, not instructions]"
@@ -71,7 +91,18 @@ class ContextBuilder:
         workspace: Path | None = None,
         include_memory_recent_history: bool = True,
     ) -> str:
-        """Build the system prompt from identity, bootstrap files, memory, and skills."""
+        """构建 system prompt。
+
+        最终 system prompt 由以下部分拼接而成：
+        - 身份与平台策略
+        - 工作区 bootstrap 文件
+        - 工具使用契约
+        - 长期 memory
+        - 永久启用技能
+        - 技能目录摘要
+        - 最近未处理的 memory history
+        - 会话归档摘要
+        """
         root = workspace or self.workspace
         parts = [self._get_identity(channel=channel, workspace=root)]
 
@@ -111,7 +142,10 @@ class ContextBuilder:
         return "\n\n---\n\n".join(parts)
 
     def _get_identity(self, channel: str | None = None, workspace: Path | None = None) -> str:
-        """Get the core identity section."""
+        """生成系统身份部分。
+
+        这里会把工作区路径、操作系统、Python 版本、渠道名等环境信息注入模板。
+        """
         root = workspace or self.workspace
         workspace_path = str(root.expanduser().resolve())
         system = platform.system()
@@ -133,7 +167,11 @@ class ContextBuilder:
         sender_id: str | None = None,
         supplemental_lines: Sequence[str] | None = None,
     ) -> str:
-        """Build untrusted runtime metadata block appended after user content."""
+        """构建 Runtime Context 运行时元数据块。
+
+        这一块是“给模型看的运行时说明”，但不是高优先级系统指令，
+        所以会作为用户消息附加块追加，而不是直接写进 system prompt。
+        """
         lines = [f"Current Time: {current_time_str(timezone)}"]
         if channel and chat_id:
             lines += [f"Channel: {channel}", f"Chat ID: {chat_id}"]
@@ -158,7 +196,7 @@ class ContextBuilder:
         return _to_blocks(left) + _to_blocks(right)
 
     def _load_bootstrap_files(self, workspace: Path | None = None) -> str:
-        """Load all bootstrap files from workspace."""
+        """从工作区加载 bootstrap 文件内容。"""
         parts = []
         root = workspace or self.workspace
 
@@ -172,7 +210,7 @@ class ContextBuilder:
 
     @staticmethod
     def _is_template_content(content: str, template_path: str) -> bool:
-        """Check if *content* is identical to the bundled template (user hasn't customized it)."""
+        """判断某段内容是否仍然和内置模板完全一致。"""
         tpl = load_bundled_template(template_path)
         if tpl is not None:
             return content.strip() == tpl.strip()
@@ -197,7 +235,13 @@ class ContextBuilder:
         skip_runtime_lines: bool = False,
         include_memory_recent_history: bool = True,
     ) -> list[dict[str, Any]]:
-        """Build the complete message list for an LLM call."""
+        """构建一次 LLM 调用所需的完整消息列表。
+
+        【典型结果结构】
+        1. system message
+        2. 若干历史消息
+        3. 当前用户消息（其中尾部会拼 Runtime Context）
+        """
         root = workspace or self.workspace
         extra = [
             *goal_state_runtime_lines(session_metadata),
@@ -215,10 +259,10 @@ class ContextBuilder:
         )
         user_content = self._build_user_content(current_message, media)
 
-        # Merge runtime context and user content into a single user message
-        # to avoid consecutive same-role messages that some providers reject.
-        # Runtime context is appended to keep the user-content prefix stable
-        # for prompt-cache hits (the context changes every turn due to time).
+        # 把“用户正文”和“运行时元数据块”合并成同一条 user message。
+        # 这样可以避免某些 provider 不接受连续同角色消息的问题。
+        # 同时把 runtime context 放在后面，有利于保持用户正文前缀稳定，
+        # 从而提高 prompt cache 命中率。
         if isinstance(user_content, str):
             merged = f"{user_content}\n\n{runtime_ctx}"
         else:
@@ -245,7 +289,7 @@ class ContextBuilder:
         return messages
 
     def _build_user_content(self, text: str, media: list[str] | None) -> str | list[dict[str, Any]]:
-        """Build user message content with optional base64-encoded images."""
+        """构建用户消息内容，并在需要时把本地图片转成 base64 内联块。"""
         if not media:
             return text
 

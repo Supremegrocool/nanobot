@@ -1,4 +1,9 @@
-"""Shared lifecycle hook primitives for agent runs."""
+"""Agent 运行生命周期 Hook 抽象。
+
+你可以把 Hook 理解成“在 AgentRunner 主循环的关键节点插进去的扩展点”。
+它本身不负责决定业务逻辑，而是负责让日志、进度 UI、SDK 捕获器等模块能够
+在不污染主循环代码的前提下插入自己的行为。
+"""
 
 from __future__ import annotations
 
@@ -12,7 +17,11 @@ from nanobot.providers.base import LLMResponse, ToolCallRequest
 
 @dataclass(slots=True)
 class AgentHookContext:
-    """Mutable per-iteration state exposed to runner hooks."""
+    """单次 iteration 级别的可变上下文。
+
+    每一轮“请求模型 -> 可能调工具 -> 再继续”的循环，都会复用这一份上下文，
+    Hook 可以在这里看到当轮响应、工具调用、使用量、最终文本等信息。
+    """
 
     iteration: int
     messages: list[dict[str, Any]]
@@ -31,7 +40,7 @@ class AgentHookContext:
 
 @dataclass(slots=True)
 class AgentRunHookContext:
-    """Run-level state snapshot exposed to runner hooks."""
+    """一次完整 run 级别的上下文快照。"""
 
     messages: list[dict[str, Any]]
     final_content: str | None = None
@@ -45,7 +54,10 @@ class AgentRunHookContext:
 
 
 class AgentHook:
-    """Minimal lifecycle surface for shared runner customization."""
+    """AgentRunner 可插拔生命周期接口。
+
+    这是最小抽象基类。大多数方法默认空实现，子类只需要重写自己关心的节点。
+    """
 
     def __init__(self, reraise: bool = False) -> None:
         self._reraise = reraise
@@ -81,10 +93,10 @@ class AgentHook:
         pass
 
     async def emit_reasoning_end(self) -> None:
-        """Mark the end of an in-flight reasoning stream.
+        """标记“推理流”已经结束。
 
-        Hooks that buffer ``emit_reasoning`` chunks (for in-place UI updates)
-        flush and freeze the rendered group here. One-shot hooks ignore.
+        如果某个 Hook 是按增量片段缓存 reasoning 的，那么它会在这里把缓存刷出、
+        结束当前分组；如果是一次性输出型 Hook，则可以直接忽略。
         """
         pass
 
@@ -96,11 +108,19 @@ class AgentHook:
 
 
 class CompositeHook(AgentHook):
-    """Fan-out hook that delegates to an ordered list of hooks.
+    """组合 Hook：把同一个生命周期事件广播给多个 Hook。
 
-    Error isolation: async methods catch and log per-hook exceptions
-    so a faulty custom hook cannot crash the agent loop.
-    ``finalize_content`` is a pipeline (no isolation — bugs should surface).
+    【为什么需要它】
+    一个 turn 里我们可能同时需要：
+    - 进度显示 Hook
+    - SDK 捕获 Hook
+    - 自定义日志 Hook
+
+    让 AgentRunner 只面对一个 Hook 对象，内部再由 CompositeHook 分发，会更整洁。
+
+    【错误隔离策略】
+    大多数异步 Hook 方法都会单独捕获异常，避免一个坏 Hook 直接拖垮整个主循环。
+    但 ``finalize_content`` 不做隔离，因为这一步改的是最终内容，逻辑错误应该暴露。
     """
 
     __slots__ = ("_hooks",)
@@ -163,13 +183,10 @@ class CompositeHook(AgentHook):
 
 
 class SDKCaptureHook(AgentHook):
-    """Record tool names and the final message list for ``RunResult``.
+    """给 SDK 调用方抓取最终消息列表和工具使用情况。
 
-    The runner mutates ``context.messages`` in place across iterations, so the
-    snapshot is refreshed on every ``after_iteration`` call; the last call
-    reflects the end-of-turn state the SDK caller cares about.  The run-level
-    snapshot is authoritative when available and covers paths without a final
-    per-iteration callback.
+    AgentRunner 在循环中会原地修改 ``context.messages``，所以这里每次 iteration
+    结束都会刷新一次快照。最终 run 结束时，再用 run 级上下文补一份权威结果。
     """
 
     def __init__(self) -> None:

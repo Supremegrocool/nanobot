@@ -1,4 +1,8 @@
-"""Convert Chat Completions messages/tools to Responses API format."""
+"""Responses API 转换层：把 Chat Completions 风格输入转换成 Responses 格式。
+
+nanobot 的历史抽象和很多 provider 适配层仍以 Chat Completions 风格组织消息。
+当底层改走 OpenAI Responses API 时，就需要这一层做结构翻译。
+"""
 
 from __future__ import annotations
 
@@ -9,11 +13,12 @@ from nanobot.providers.base import tool_arguments_json_for_replay
 
 
 def convert_messages(messages: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
-    """Convert Chat Completions messages to Responses API input items.
+    """把 Chat Completions 风格消息转换成 Responses API ``input`` 条目。
 
-    Returns ``(system_prompt, input_items)`` where *system_prompt* is extracted
-    from any ``system`` role message and *input_items* is the Responses API
-    ``input`` array.
+    返回 ``(system_prompt, input_items)``：
+
+    - ``system_prompt``：从 ``system`` 消息中单独抽出
+    - ``input_items``：Responses API 需要的 ``input`` 数组
     """
     system_prompt = ""
     input_items: list[dict[str, Any]] = []
@@ -61,10 +66,13 @@ def convert_messages(messages: list[dict[str, Any]]) -> tuple[str, list[dict[str
 
 
 def convert_user_message(content: Any) -> dict[str, Any]:
-    """Convert a user message's content to Responses API format.
+    """把用户消息内容转换成 Responses API 结构。
 
-    Handles plain strings, ``text`` blocks -> ``input_text``, and
-    ``image_url`` blocks -> ``input_image``.
+    支持：
+
+    - 纯字符串
+    - ``text`` 块 -> ``input_text``
+    - ``image_url`` 块 -> ``input_image``
     """
     if isinstance(content, str):
         return {"role": "user", "content": [{"type": "input_text", "text": content}]}
@@ -85,7 +93,7 @@ def convert_user_message(content: Any) -> dict[str, Any]:
 
 
 def convert_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Convert OpenAI function-calling tool schema to Responses API flat format."""
+    """把工具 schema 从 Chat Completions 风格拍平成 Responses API 风格。"""
     converted: list[dict[str, Any]] = []
     for tool in tools:
         fn = (tool.get("function") or {}) if tool.get("type") == "function" else tool
@@ -103,7 +111,7 @@ def convert_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _unique_item_id(item_id: str, used: set[str]) -> str:
-    """Return a Responses input item id that is unique within one request."""
+    """确保同一个 Responses 请求里的 item id 唯一。"""
     if item_id not in used:
         used.add(item_id)
         return item_id
@@ -117,9 +125,9 @@ def _unique_item_id(item_id: str, used: set[str]) -> str:
 
 
 def split_tool_call_id(tool_call_id: Any) -> tuple[str, str | None]:
-    """Split a compound ``call_id|item_id`` string.
+    """拆分形如 ``call_id|item_id`` 的复合工具调用 ID。
 
-    Returns ``(call_id, item_id)`` where *item_id* may be ``None``.
+    返回 ``(call_id, item_id)``，其中 ``item_id`` 可以为空。
     """
     if isinstance(tool_call_id, str) and tool_call_id:
         if "|" in tool_call_id:

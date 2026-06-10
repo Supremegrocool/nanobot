@@ -1,4 +1,4 @@
-"""Agent tools module."""
+"""Agent 工具模块。"""
 
 from nanobot.agent.tools.base import Schema, Tool, tool_parameters
 from nanobot.agent.tools.context import ToolContext

@@ -1,12 +1,15 @@
-"""JSON Schema fragment types: all subclass :class:`~nanobot.agent.tools.base.Schema` for descriptions and constraints on tool parameters.
+"""常用 JSON Schema 片段类型。
 
-- ``to_json_schema()``: returns a dict compatible with :meth:`~nanobot.agent.tools.base.Schema.validate_json_schema_value` /
-  :class:`~nanobot.agent.tools.base.Tool`.
-- ``validate_value(value, path)``: validates a single value against this schema; returns a list of error messages (empty means valid).
+这些类是工具参数定义层的“积木”：
+- ``StringSchema``：字符串字段
+- ``IntegerSchema``：整数字段
+- ``NumberSchema``：数字字段
+- ``BooleanSchema``：布尔字段
+- ``ArraySchema``：数组字段
+- ``ObjectSchema``：对象字段
 
-Shared validation and fragment normalization are on the class methods of :class:`~nanobot.agent.tools.base.Schema`.
-
-Note: Python does not allow subclassing ``bool``, so booleans use :class:`BooleanSchema`.
+工具作者可以用它们组合出参数结构，再交给 ``Tool.parameters`` 或
+``tool_parameters_schema`` 使用。
 """
 
 from __future__ import annotations
@@ -18,7 +21,7 @@ from nanobot.agent.tools.base import Schema
 
 
 class StringSchema(Schema):
-    """String parameter: ``description`` documents the field; optional length bounds and enum."""
+    """字符串参数定义。"""
 
     def __init__(
         self,
@@ -52,7 +55,7 @@ class StringSchema(Schema):
 
 
 class IntegerSchema(Schema):
-    """Integer parameter: optional placeholder int (legacy ctor signature), description, and bounds."""
+    """整数参数定义。"""
 
     def __init__(
         self,
@@ -88,7 +91,7 @@ class IntegerSchema(Schema):
 
 
 class NumberSchema(Schema):
-    """Numeric parameter (JSON number): description and optional bounds."""
+    """数字参数定义。"""
 
     def __init__(
         self,
@@ -124,7 +127,10 @@ class NumberSchema(Schema):
 
 
 class BooleanSchema(Schema):
-    """Boolean parameter (standalone class because Python forbids subclassing ``bool``)."""
+    """布尔参数定义。
+
+    Python 不允许继承 ``bool``，所以这里单独做一个 Schema 类。
+    """
 
     def __init__(
         self,
@@ -150,7 +156,7 @@ class BooleanSchema(Schema):
 
 
 class ArraySchema(Schema):
-    """Array parameter: element schema is given by ``items``."""
+    """数组参数定义，由 ``items`` 指定元素类型。"""
 
     def __init__(
         self,
@@ -185,7 +191,12 @@ class ArraySchema(Schema):
 
 
 class ObjectSchema(Schema):
-    """Object parameter: ``properties`` or keyword args are field names; values are child Schema or JSON Schema dicts."""
+    """对象参数定义。
+
+    ``properties`` 或关键字参数中的键是字段名，值可以是：
+    - 子 Schema
+    - 原始 JSON Schema dict
+    """
 
     def __init__(
         self,
@@ -224,7 +235,7 @@ def tool_parameters_schema(
     description: str = "",
     **properties: Any,
 ) -> dict[str, Any]:
-    """Build root tool parameters ``{"type": "object", "properties": ...}`` for :meth:`Tool.parameters`."""
+    """快速构建工具根参数对象 schema。"""
     return ObjectSchema(
         required=required,
         description=description,

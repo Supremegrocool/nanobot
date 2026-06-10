@@ -1,4 +1,11 @@
-"""Tool discovery and registration via package scanning."""
+"""工具发现与注册加载器。
+
+它负责两件事：
+1. 扫描内置工具模块
+2. 扫描 entry_points 插件工具
+
+然后按作用域和启用条件，把最终可用工具注册进 ``ToolRegistry``。
+"""
 from __future__ import annotations
 
 import importlib
@@ -18,6 +25,7 @@ _SKIP_MODULES = frozenset({
 
 
 class ToolLoader:
+    """工具加载器。"""
     def __init__(self, package: Any = None, *, test_classes: list[type[Tool]] | None = None):
         if package is None:
             import nanobot.agent.tools as _pkg
@@ -28,6 +36,7 @@ class ToolLoader:
         self._plugins: dict[str, type[Tool]] | None = None
 
     def discover(self) -> list[type[Tool]]:
+        """发现内置工具类。"""
         if self._test_classes is not None:
             return list(self._test_classes)
         if self._discovered is not None:
@@ -60,7 +69,7 @@ class ToolLoader:
         return results
 
     def _discover_plugins(self) -> dict[str, type[Tool]]:
-        """Discover external tool plugins registered via entry_points."""
+        """发现通过 entry_points 注册的外部工具插件。"""
         if self._plugins is not None:
             return self._plugins
         plugins: dict[str, type[Tool]] = {}
@@ -84,6 +93,7 @@ class ToolLoader:
         return plugins
 
     def load(self, ctx: Any, registry: ToolRegistry, *, scope: str = "core") -> list[str]:
+        """按给定作用域加载并注册工具，返回成功注册的工具名列表。"""
         registered: list[str] = []
         builtin_names: set[str] = set()
         sources = [(self.discover(), False), (self._discover_plugins().values(), True)]

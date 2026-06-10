@@ -1,4 +1,13 @@
-"""Search tools: file discovery and grep."""
+"""搜索工具：负责文件发现与内容检索。
+
+这组工具主要解决两个问题：
+
+1. 不知道文件在哪，先找文件。
+2. 知道大概范围，但不知道内容在哪一行，先 grep。
+
+它们相当于 Agent 的“项目内搜索能力”，比直接调用 shell 的 find/grep
+更可控，也更容易做统一的路径与输出约束。
+"""
 
 from __future__ import annotations
 
@@ -98,6 +107,13 @@ def _matches_query(rel_path: str, query: str | None) -> bool:
 
 
 class _SearchTool(_FsTool):
+    """搜索类工具的公共基类。
+
+    复用两类核心逻辑：
+
+    - 统一的路径展示格式
+    - 统一的文件遍历与忽略目录策略
+    """
     _IGNORE_DIRS = set(ListDirTool._IGNORE_DIRS)
 
     def _display_path(self, target: Path, root: Path) -> str:
@@ -120,7 +136,7 @@ class _SearchTool(_FsTool):
 
 
 class FindFilesTool(_SearchTool):
-    """Find files by path fragment, glob, or type."""
+    """按路径片段、glob 或文件类型查找文件。"""
     _scopes = {"core", "subagent"}
 
     @property
@@ -277,7 +293,7 @@ class FindFilesTool(_SearchTool):
 
 
 class GrepTool(_SearchTool):
-    """Search file contents using a regex-like pattern."""
+    """按正则或纯文本模式搜索文件内容。"""
     _scopes = {"core", "subagent"}
 
     _MAX_RESULT_CHARS = 128_000

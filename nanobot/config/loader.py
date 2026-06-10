@@ -1,4 +1,12 @@
-"""Configuration loading utilities."""
+"""配置加载工具。
+
+这个模块负责把磁盘上的 ``config.json`` 变成程序内可用的 ``Config`` 对象，
+并在需要时处理三件关键事情：
+
+1. 旧配置迁移：兼容历史字段结构
+2. 环境变量替换：把 ``${VAR}`` 解析成真实环境变量值
+3. 安全联动：把 SSRF 白名单配置同步到网络安全模块
+"""
 
 import json
 import os
@@ -12,33 +20,42 @@ from pydantic import BaseModel
 
 from nanobot.config.schema import Config, _resolve_tool_config_refs
 
-# Global variable to store current config path (for multi-instance support)
+# 当前生效配置文件路径的全局缓存。
+# 这样可以支持“同一进程切换到另一个配置文件实例”的场景。
 _current_config_path: Path | None = None
 _schema_refs_ready = False
 
 
 def set_config_path(path: Path) -> None:
-    """Set the current config path (used to derive data directory)."""
+    """设置当前配置文件路径。
+
+    之所以要单独缓存它，是因为很多运行时目录（日志、媒体、webui 数据等）
+    都是相对于配置文件所在目录派生出来的。
+    """
     global _current_config_path
     _current_config_path = path
 
 
 def get_config_path() -> Path:
-    """Get the configuration file path."""
+    """获取当前配置文件路径。"""
     if _current_config_path:
         return _current_config_path
     return Path.home() / ".nanobot" / "config.json"
 
 
 def load_config(config_path: Path | None = None) -> Config:
-    """
-    Load configuration from file or create default.
+    """加载配置文件，失败时回退到默认配置。
 
-    Args:
-        config_path: Optional path to config file. Uses default if not provided.
+    【执行流程】
+    1. 先确保 ``ToolsConfig`` 的延迟类型引用已经解析完成
+    2. 决定要读取哪个配置文件路径
+    3. 如果文件存在，就读取 JSON -> 执行历史配置迁移 -> 用 Pydantic 校验
+    4. 如果读取失败，则记录日志并回退到默认 ``Config()``
+    5. 最后把配置里的 SSRF 白名单同步到安全模块
 
-    Returns:
-        Loaded configuration object.
+    【为什么不用“读取失败直接崩溃”】
+    因为 nanobot 希望在配置损坏或缺失时仍然能启动一个最小可运行实例，
+    方便用户修复配置。
     """
     global _schema_refs_ready
     if not _schema_refs_ready:
@@ -50,6 +67,7 @@ def load_config(config_path: Path | None = None) -> Config:
     config = Config()
     if path.exists():
         try:
+            # 读取磁盘 JSON 后，先做“格式迁移”，再做“结构校验”。
             with open(path, encoding="utf-8") as f:
                 data = json.load(f)
             data = _migrate_config(data)
@@ -63,19 +81,17 @@ def load_config(config_path: Path | None = None) -> Config:
 
 
 def _apply_ssrf_whitelist(config: Config) -> None:
-    """Apply SSRF whitelist from config to the network security module."""
+    """把配置中的 SSRF 白名单应用到网络安全模块。"""
     from nanobot.security.network import configure_ssrf_whitelist
 
     configure_ssrf_whitelist(config.tools.ssrf_whitelist)
 
 
 def save_config(config: Config, config_path: Path | None = None) -> None:
-    """
-    Save configuration to file.
+    """把 ``Config`` 对象写回磁盘。
 
-    Args:
-        config: Configuration to save.
-        config_path: Optional path to save to. Uses default if not provided.
+    这里使用 ``model_dump(by_alias=True)``，是为了把内部的 snake_case 字段
+    重新序列化成用户配置中更常见的 camelCase 形式。
     """
     path = config_path or get_config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -90,16 +106,23 @@ _ENV_REF_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
 def resolve_config_env_vars(config: Config) -> Config:
-    """Return *config* with ``${VAR}`` env-var references resolved.
+    """解析配置对象中的 ``${VAR}`` 环境变量引用。
 
-    Walks in place so fields declared with ``exclude=True`` survive;
-    returns the same instance when no references are present.
-    Raises ``ValueError`` if a referenced variable is not set.
+    注意这不是 shell 风格的“带默认值表达式”，这里只支持最简单的
+    ``${ENV_NAME}`` 形式；如果环境变量不存在，会直接抛 ``ValueError``。
     """
     return _resolve_in_place(config)
 
 
 def _resolve_in_place(obj: Any) -> Any:
+    """递归解析任意配置对象中的环境变量引用。
+
+    这里需要同时支持：
+    - 普通字符串
+    - Pydantic 模型
+    - dict
+    - list
+    """
     if isinstance(obj, str):
         new = _ENV_REF_PATTERN.sub(_env_replace, obj)
         return new if new != obj else obj
@@ -132,7 +155,7 @@ def _resolve_in_place(obj: Any) -> Any:
 
 
 def _resolve_env_vars(obj: object) -> object:
-    """Recursively resolve ``${VAR}`` patterns in plain strings/dicts/lists."""
+    """递归解析普通字符串 / dict / list 中的 ``${VAR}`` 引用。"""
     if isinstance(obj, str):
         return _ENV_REF_PATTERN.sub(_env_replace, obj)
     if isinstance(obj, dict):
@@ -153,16 +176,20 @@ def _env_replace(match: re.Match[str]) -> str:
 
 
 def _migrate_config(data: dict) -> dict:
-    """Migrate old config formats to current."""
-    # Move tools.exec.restrictToWorkspace → tools.restrictToWorkspace
+    """把旧版配置结构迁移到当前格式。
+
+    这一步发生在 Pydantic 校验之前，目的是兼容老用户留下的历史配置文件。
+    """
+    # 旧字段：tools.exec.restrictToWorkspace
+    # 新字段：tools.restrictToWorkspace
     tools = data.get("tools", {})
     exec_cfg = tools.get("exec", {})
     if "restrictToWorkspace" in exec_cfg and "restrictToWorkspace" not in tools:
         tools["restrictToWorkspace"] = exec_cfg.pop("restrictToWorkspace")
 
-    # Move tools.myEnabled / tools.mySet → tools.my.{enable, allowSet}.
-    # The old flat keys shipped in the initial MyTool landing; wrapping them in a
-    # sub-config keeps `web` / `exec` / `my` symmetric and gives room to grow.
+    # 旧字段：tools.myEnabled / tools.mySet
+    # 新字段：tools.my.enable / tools.my.allowSet
+    # 这样可以把 my 工具也收敛到与 web / exec 一致的子配置结构里。
     if "myEnabled" in tools or "mySet" in tools:
         my_cfg = tools.setdefault("my", {})
         if "myEnabled" in tools and "enable" not in my_cfg:

@@ -1,8 +1,8 @@
-"""Session metadata helpers for sustained goals (e.g. ``long_task`` / ``complete_goal``).
+"""持续目标（sustained goal）相关的 Session 元数据辅助函数。
 
-Tools set ``metadata[GOAL_STATE_KEY]``. Reads accept the legacy session key ``thread_goal``
-for older sessions. Callers use ``goal_state_runtime_lines``, ``goal_state_ws_blob``, and
-``runner_wall_llm_timeout_s`` without importing tool implementations.
+这里服务的是 ``long_task`` / ``complete_goal`` 这类“可能跨多个 turn 持续推进”的能力。
+它们会把目标状态写进 ``session.metadata``，而 AgentLoop、WebUI、Runner 等其它模块
+则通过这里的辅助函数读取这些状态，而不必直接依赖具体工具实现。
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ _MAX_OBJECTIVE_WS = 600
 
 
 def _session_goal_raw(metadata: Mapping[str, Any] | None) -> Any:
+    """从新旧字段中取出原始 goal blob。"""
     if not metadata:
         return None
     if GOAL_STATE_KEY in metadata:
@@ -28,17 +29,17 @@ def _session_goal_raw(metadata: Mapping[str, Any] | None) -> Any:
 
 
 def discard_legacy_goal_state_key(metadata: MutableMapping[str, Any]) -> None:
-    """Remove legacy metadata key after migrating writes to :data:`GOAL_STATE_KEY`."""
+    """在新写入逻辑迁移完成后，删除旧版 goal 元数据键。"""
     metadata.pop(_LEGACY_GOAL_STATE_SESSION_KEY, None)
 
 
 def goal_state_raw(metadata: Mapping[str, Any] | None) -> Any:
-    """Return the session goal blob under :data:`GOAL_STATE_KEY` or the legacy key."""
+    """返回 session 中保存的 goal 原始数据，兼容旧字段名。"""
     return _session_goal_raw(metadata)
 
 
 def sustained_goal_active(metadata: Mapping[str, Any] | None) -> bool:
-    """True when this session has an active sustained objective (``long_task`` bookkeeping)."""
+    """判断当前会话是否存在“激活中的持续目标”。"""
     goal = parse_goal_state(goal_state_raw(metadata))
     return isinstance(goal, dict) and goal.get("status") == "active"
 
@@ -48,7 +49,7 @@ def sustained_goal_turn(
     *,
     message_metadata: Mapping[str, Any] | None = None,
 ) -> bool:
-    """True when this turn should use sustained-goal runtime limits."""
+    """判断当前 turn 是否应该启用“持续目标模式”的运行时限制。"""
     if sustained_goal_active(metadata):
         return True
     if not message_metadata:
@@ -57,6 +58,7 @@ def sustained_goal_turn(
 
 
 def parse_goal_state(blob: Any) -> dict[str, Any] | None:
+    """把原始 goal blob 解析成标准字典结构。"""
     if blob is None:
         return None
     if isinstance(blob, dict):
@@ -71,7 +73,7 @@ def parse_goal_state(blob: Any) -> dict[str, Any] | None:
 
 
 def goal_state_runtime_lines(metadata: Mapping[str, Any] | None) -> list[str]:
-    """Lines appended inside the Runtime Context block when a goal is active."""
+    """在 goal 激活时，生成要附加到 Runtime Context 的文本行。"""
     if not metadata:
         return []
     goal = parse_goal_state(_session_goal_raw(metadata))
@@ -90,7 +92,7 @@ def goal_state_runtime_lines(metadata: Mapping[str, Any] | None) -> list[str]:
 
 
 def goal_state_ws_blob(metadata: Mapping[str, Any] | None) -> dict[str, Any]:
-    """JSON-safe snapshot for WebSocket ``goal_state`` events (one chat_id per frame)."""
+    """生成适合通过 WebSocket 推送给前端的 goal 状态快照。"""
     goal = parse_goal_state(_session_goal_raw(metadata)) if metadata else None
     if isinstance(goal, dict) and goal.get("status") == "active":
         objective = str(goal.get("objective") or "").strip()
@@ -113,12 +115,13 @@ def runner_wall_llm_timeout_s(
     metadata: Mapping[str, Any] | None = None,
     message_metadata: Mapping[str, Any] | None = None,
 ) -> float | None:
-    """Wall-clock cap for :class:`~nanobot.agent.runner.AgentRunner` when streaming an LLM.
+    """决定 Runner 在本 turn 上调用 LLM 时的整体超时策略。
 
-    Returns ``0.0`` to disable ``asyncio.wait_for`` around the request when this is a
-    sustained-goal turn; ``None`` means use ``NANOBOT_LLM_TIMEOUT_S``. Pass in-memory
-    ``metadata`` when the caller already holds :attr:`~nanobot.session.manager.Session.metadata`
-    for this turn.
+    约定：
+    - 返回 ``0.0``：关闭 ``asyncio.wait_for`` 的硬超时包裹
+    - 返回 ``None``：沿用环境变量/默认超时逻辑
+
+    持续目标往往需要跑更久，所以这里会给它放宽约束。
     """
     meta: Mapping[str, Any] | None = metadata
     if meta is None and session_key:

@@ -1,4 +1,13 @@
-"""File system tools: read, write, edit, list."""
+"""文件系统工具集：读文件、写文件、编辑文件、列目录。
+
+这是 nanobot 最核心的一组工具之一，因为 Agent 能否真正“改代码、看文件”，
+很大程度上取决于这里。
+
+学习时建议重点关注三个方面：
+1. 路径如何被限制在 workspace 内
+2. 文本读取 / 编辑如何尽量保持安全和可恢复
+3. 为什么很多细节都在为“让模型更稳定地使用工具”服务
+"""
 
 import difflib
 import mimetypes
@@ -21,7 +30,13 @@ from nanobot.utils.helpers import build_image_content_blocks, detect_image_mime
 
 
 class _FsTool(Tool):
-    """Shared base for filesystem tools — common init and path resolution."""
+    """文件系统工具公共基类。
+
+    它把所有文件类工具共享的能力收口在一起：
+    - 记录 workspace
+    - 做路径解析与安全限制
+    - 管理 file_state（读写状态追踪）
+    """
 
     def __init__(
         self,
@@ -41,9 +56,9 @@ class _FsTool(Tool):
             else allowed_dir is not None
         )
         self._sandbox_restricts_workspace = sandbox_restricts_workspace
-        # Explicit state is used by isolated runners like Dream/subagents.
-        # Main AgentLoop tools leave this unset and resolve state from the
-        # current async task, which keeps shared tool instances session-safe.
+        # 显式 file state 主要给 Dream / subagent 这类隔离运行器使用。
+        # 主 AgentLoop 通常不直接持有它，而是从当前异步任务上下文里解析，
+        # 这样共享工具实例也不会串 session 状态。
         self._explicit_file_states = file_states
         self._fallback_file_states = FileStates()
 
@@ -51,6 +66,8 @@ class _FsTool(Tool):
     def create(cls, ctx: Any) -> Tool:
         from nanobot.agent.skills import BUILTIN_SKILLS_DIR
 
+        # 如果启用了 restrict_to_workspace，或 shell sandbox 本身会限制 workspace，
+        # 就把 allowed_dir 绑定为当前 workspace。
         restrict = (
             ctx.config.restrict_to_workspace
             or ctx.config.exec.sandbox
@@ -74,6 +91,7 @@ class _FsTool(Tool):
         return current_file_states(self._fallback_file_states)
 
     def _resolve(self, path: str) -> Path:
+        """把用户/模型给出的相对路径解析成受安全边界约束的绝对路径。"""
         access = current_tool_workspace(
             self._workspace,
             restrict_to_workspace=self._restrict_to_workspace,
@@ -104,7 +122,11 @@ _BLOCKED_DEVICE_PATHS = frozenset({
 
 
 def _is_blocked_device(path: str | Path) -> bool:
-    """Check if path is a blocked device that could hang or produce infinite output."""
+    """判断路径是否指向危险设备文件。
+
+    例如 ``/dev/zero``、``/dev/random`` 这类设备如果允许读取，
+    很容易造成无限输出、阻塞或挂死。
+    """
     import re
     raw = str(path)
 
@@ -128,7 +150,7 @@ def _is_blocked_device(path: str | Path) -> bool:
 
 
 def _parse_page_range(pages: str, total: int) -> tuple[int, int]:
-    """Parse a page range like '2-5' into 0-based (start, end) inclusive."""
+    """把类似 ``2-5`` 的页码范围解析成 0 基区间。"""
     parts = pages.strip().split("-")
     if len(parts) == 1:
         p = int(parts[0])
@@ -160,7 +182,7 @@ def _parse_page_range(pages: str, total: int) -> tuple[int, int]:
     )
 )
 class ReadFileTool(_FsTool):
-    """Read file contents with optional line-based pagination."""
+    """读取文件内容，支持文本、图片和部分文档格式。"""
     _scopes = {"core", "subagent", "memory"}
 
     _MAX_CHARS = 128_000
@@ -199,11 +221,20 @@ class ReadFileTool(_FsTool):
         force: bool = False,
         **kwargs: Any,
     ) -> Any:
+        """执行读文件。
+
+        这段逻辑虽然长，但主线很清晰：
+        1. 校验 path / 设备文件黑名单
+        2. 解析安全路径并检查文件存在性
+        3. 针对 PDF / Office / 图片走专门分支
+        4. 普通文本按行分页读取
+        5. 借助 file_state 做“未变化文件去重提示”
+        """
         try:
             if not path:
                 return "Error reading file: Unknown path"
 
-            # Device path blacklist
+            # 先挡住危险设备路径。
             if _is_blocked_device(path):
                 return f"Error: Reading {path} is blocked (device path that could hang or produce infinite output)."
 
@@ -215,11 +246,11 @@ class ReadFileTool(_FsTool):
             if not fp.is_file():
                 return f"Error: Not a file: {path}"
 
-            # PDF support
+            # PDF 单独走提取文本逻辑。
             if fp.suffix.lower() == ".pdf":
                 return self._read_pdf(fp, pages)
 
-            # Office document support
+            # Office 文档（docx/xlsx/pptx）也走单独文本提取逻辑。
             if fp.suffix.lower() in {".docx", ".xlsx", ".pptx"}:
                 return self._read_office_doc(fp)
 
@@ -231,8 +262,9 @@ class ReadFileTool(_FsTool):
             if mime and mime.startswith("image/"):
                 return build_image_content_blocks(raw, mime, str(fp), f"(Image file: {path})")
 
-            # Read dedup: same path + offset + limit + unchanged mtime → stub
-            # Always check for external modifications before dedup
+            # 读文件去重优化：
+            # 同一路径 + 同一 offset/limit + 文件未变化时，不必重复返回全文。
+            # 但在做 dedup 前必须先检查是否发生了外部修改。
             entry = self._file_states.get(fp)
             try:
                 current_mtime = os.path.getmtime(fp)
@@ -246,22 +278,21 @@ class ReadFileTool(_FsTool):
                 and entry.limit == limit
             ):
                 if current_mtime != entry.mtime:
-                    # File was modified externally - force full read and mark as not dedupable
+                    # 文件被外部改过：本次强制完整重读，并暂时禁用 dedup。
                     entry.can_dedup = False
                     self._file_states.record_read(fp, offset=offset, limit=limit)  # Update state with new mtime
                     # Continue to read full content (don't return dedup message)
                 else:
-                    # File unchanged - return dedup message
-                    # But only if content is actually unchanged (not just mtime)
+                    # 文件看起来没变，但还要进一步比对内容哈希，防止 mtime 没更新。
                     current_hash = _hash_file(str(fp))
                     if current_hash == entry.content_hash:
                         return f"[File unchanged since last read: {path}]"
                     else:
-                        # Content changed despite same mtime - force full read
+                        # 内容变了但 mtime 没变：仍然强制重读。
                         entry.can_dedup = False
                         self._file_states.record_read(fp, offset=offset, limit=limit)
             else:
-                # No previous state or marked as not dedupable - read full content
+                # 没有可用状态，或者状态标记为不可 dedup，就走完整读取。
                 self._file_states.record_read(fp, offset=offset, limit=limit)
                 # Force full read by setting can_dedup to False for this read
                 if entry:
@@ -272,16 +303,13 @@ class ReadFileTool(_FsTool):
             try:
                 text_content = raw.decode("utf-8")
             except UnicodeDecodeError:
-                # Binary file - return error message
+                # 二进制文件默认不当作普通文本读；图片除外。
                 mime = detect_image_mime(raw) or mimetypes.guess_type(path)[0]
                 if mime and mime.startswith("image/"):
                     return build_image_content_blocks(raw, mime, str(fp), f"(Image file: {path})")
                 return f"Error: Cannot read binary file {path} (MIME: {mime or 'unknown'}). Only UTF-8 text and images are supported."
 
-            # Normalize CRLF -> LF before line-splitting. Primarily a Windows
-            # concern (git checkouts with autocrlf, editors saving CRLF) but
-            # applied on all platforms so downstream StrReplace/Grep behavior
-            # is consistent regardless of where the file was written.
+            # 统一把 CRLF 归一成 LF，减少后续编辑/grep/替换时的跨平台差异。
             text_content = text_content.replace("\r\n", "\n")
 
             all_lines = text_content.splitlines()
@@ -319,6 +347,7 @@ class ReadFileTool(_FsTool):
             return f"Error reading file: {e}"
 
     def _read_pdf(self, fp: Path, pages: str | None) -> str:
+        """读取 PDF 文本内容。"""
         try:
             import fitz  # pymupdf
         except ImportError:
@@ -365,6 +394,7 @@ class ReadFileTool(_FsTool):
         return result
 
     def _read_office_doc(self, fp: Path) -> str:
+        """读取 Office 文档文本内容。"""
         from nanobot.utils.document import extract_text
 
         result = extract_text(fp)
@@ -397,7 +427,14 @@ class ReadFileTool(_FsTool):
     )
 )
 class WriteFileTool(_FsTool):
-    """Write content to a file."""
+    """整文件写入工具。
+
+    它适合：
+    - 创建新文件
+    - 有意识地整份覆盖某个文件
+
+    不适合复杂局部改动；那类更推荐 ``apply_patch``。
+    """
     _scopes = {"core", "subagent", "memory"}
 
     @property
@@ -414,6 +451,7 @@ class WriteFileTool(_FsTool):
         )
 
     async def execute(self, path: str | None = None, content: str | None = None, **kwargs: Any) -> str:
+        """执行整文件写入。"""
         try:
             if not path:
                 raise ValueError("Unknown path")
@@ -431,7 +469,7 @@ class WriteFileTool(_FsTool):
 
 
 # ---------------------------------------------------------------------------
-# edit_file
+# edit_file：基于“查找 old_text 并替换为 new_text”的窄修改工具
 # ---------------------------------------------------------------------------
 
 _QUOTE_TABLE = str.maketrans({
@@ -475,7 +513,7 @@ def _curly_single_quotes(text: str) -> str:
 
 
 def _preserve_quote_style(old_text: str, actual_text: str, new_text: str) -> str:
-    """Preserve curly quote style when a quote-normalized fallback matched."""
+    """在 quote-normalized 匹配成功时，尽量保留原文件的引号风格。"""
     if _normalize_quotes(old_text.strip()) != _normalize_quotes(actual_text.strip()) or old_text == actual_text:
         return new_text
 
@@ -492,7 +530,7 @@ def _leading_ws(line: str) -> str:
 
 
 def _reindent_like_match(old_text: str, actual_text: str, new_text: str) -> str:
-    """Preserve the outer indentation from the actual matched block."""
+    """尽量让替换后的文本沿用实际匹配块的外层缩进。"""
     old_lines = old_text.split("\n")
     actual_lines = actual_text.split("\n")
     if len(old_lines) != len(actual_lines):
@@ -624,7 +662,7 @@ def _find_quote_matches(content: str, old_text: str) -> list[_MatchSpan]:
 
 
 def _find_matches(content: str, old_text: str) -> list[_MatchSpan]:
-    """Locate all matches using progressively looser strategies."""
+    """按从严到松的策略逐级查找匹配。"""
     for matcher in (
         lambda: _find_exact_matches(content, old_text),
         lambda: _find_trim_matches(content, old_text),
@@ -642,7 +680,7 @@ def _collapse_internal_whitespace(text: str) -> str:
 
 
 def _diagnose_near_match(old_text: str, actual_text: str) -> list[str]:
-    """Return actionable hints describing why text was close but not exact."""
+    """生成“为什么很接近但没精确匹配上”的可操作提示。"""
     hints: list[str] = []
 
     if old_text.lower() == actual_text.lower() and old_text != actual_text:
@@ -658,7 +696,7 @@ def _diagnose_near_match(old_text: str, actual_text: str) -> list[str]:
 
 
 def _best_window(old_text: str, content: str) -> tuple[float, int, list[str], list[str]]:
-    """Find the closest line-window match and return ratio/start/snippet/hints."""
+    """找出最接近 old_text 的行窗口，便于报错诊断。"""
     lines = content.splitlines(keepends=True)
     old_lines = old_text.splitlines(keepends=True)
     window = max(1, len(old_lines))
@@ -679,14 +717,12 @@ def _best_window(old_text: str, content: str) -> tuple[float, int, list[str], li
 
 
 def _find_match(content: str, old_text: str) -> tuple[str | None, int]:
-    """Locate old_text in content with a multi-level fallback chain:
+    """查找 old_text 的兼容匹配入口。
 
-    1. Exact substring match
-    2. Line-trimmed sliding window (handles indentation differences)
-    3. Smart quote normalization (curly ↔ straight quotes)
-
-    Both inputs should use LF line endings (caller normalises CRLF).
-    Returns (matched_fragment, count) or (None, 0).
+    查找链路依次是：
+    1. 精确子串匹配
+    2. 去行首尾空白后的窗口匹配
+    3. 智能引号归一化匹配
     """
     matches = _find_matches(content, old_text)
     if not matches:
@@ -722,7 +758,7 @@ def _find_match(content: str, old_text: str) -> tuple[str | None, int]:
     )
 )
 class EditFileTool(_FsTool):
-    """Edit a file by replacing text with fallback matching."""
+    """通过 old_text -> new_text 替换来编辑文件。"""
     _scopes = {"core", "subagent", "memory"}
 
     _MAX_EDIT_FILE_SIZE = 1024 * 1024 * 1024  # 1 GiB
@@ -755,6 +791,13 @@ class EditFileTool(_FsTool):
         replace_all: bool = False, occurrence: int | None = None,
         line_hint: int | None = None, expected_replacements: int | None = None, **kwargs: Any,
     ) -> str:
+        """执行文件局部替换。
+
+        这是一个“给模型用的窄编辑器”，重点不是功能无限强，而是：
+        - 参数语义清晰
+        - 失败时能给模型足够明确的诊断
+        - 在多处匹配、缩进差异、引号差异时尽量可恢复
+        """
         try:
             if not path:
                 raise ValueError("Unknown path")
@@ -771,7 +814,7 @@ class EditFileTool(_FsTool):
 
             fp = self._resolve(path)
 
-            # Create-file semantics: old_text='' + file doesn't exist → create
+            # 特例：如果 old_text 为空且文件不存在，就把这次编辑视为“创建文件”。
             if not fp.exists():
                 if old_text == "":
                     fp.parent.mkdir(parents=True, exist_ok=True)
@@ -780,7 +823,7 @@ class EditFileTool(_FsTool):
                     return f"Successfully created {fp}"
                 return self._file_not_found_msg(path, fp)
 
-            # File size protection
+            # 超大文件拒绝走 edit_file，避免读改写成本过高或不稳定。
             try:
                 fsize = fp.stat().st_size
             except OSError:
@@ -788,7 +831,7 @@ class EditFileTool(_FsTool):
             if fsize > self._MAX_EDIT_FILE_SIZE:
                 return f"Error: File too large to edit ({fsize / (1024**3):.1f} GiB). Maximum is 1 GiB."
 
-            # Create-file: old_text='' but file exists and not empty → reject
+            # 如果 old_text 为空但文件已存在且非空，则拒绝，避免误把编辑当覆盖。
             if old_text == "":
                 raw = fp.read_bytes()
                 content = raw.decode("utf-8")
@@ -798,7 +841,7 @@ class EditFileTool(_FsTool):
                 self._file_states.record_write(fp)
                 return f"Successfully edited {fp}"
 
-            # Read-before-edit check
+            # 读后再改是推荐工作流；这里会在必要时给出提醒。
             warning = self._file_states.check_read(fp)
 
             raw = fp.read_bytes()
@@ -850,7 +893,7 @@ class EditFileTool(_FsTool):
 
             norm_new = new_text.replace("\r\n", "\n")
 
-            # Trailing whitespace stripping (skip markdown to preserve double-space line breaks)
+            # 普通文本会剥掉每行尾部空白；Markdown 例外，因为它可能用双空格表示换行。
             if fp.suffix.lower() not in self._MARKDOWN_EXTS:
                 norm_new = self._strip_trailing_ws(norm_new)
 
@@ -870,8 +913,7 @@ class EditFileTool(_FsTool):
                 replacement = _preserve_quote_style(norm_old, match.text, norm_new)
                 replacement = _reindent_like_match(norm_old, match.text, replacement)
 
-                # Delete-line cleanup: when deleting text (new_text=''), consume trailing
-                # newline to avoid leaving a blank line
+                # 删除文本时，如果刚好吞掉一整行，顺手吃掉尾随换行，避免留下空行。
                 end = match.end
                 if replacement == "" and not match.text.endswith("\n") and content[end:end + 1] == "\n":
                     end += 1
@@ -892,7 +934,7 @@ class EditFileTool(_FsTool):
             return f"Error editing file: {e}"
 
     def _file_not_found_msg(self, path: str, fp: Path) -> str:
-        """Build an error message with 'Did you mean ...?' suggestions."""
+        """生成带“你是不是想写这个路径？”建议的报错。"""
         parent = fp.parent
         suggestions: list[str] = []
         if parent.is_dir():
@@ -906,6 +948,7 @@ class EditFileTool(_FsTool):
 
     @staticmethod
     def _not_found_msg(old_text: str, content: str, path: str) -> str:
+        """生成 old_text 未命中时的高质量诊断信息。"""
         best_ratio, best_start, best_window_lines, hints = _best_window(old_text, content)
         if best_ratio > 0.5:
             diff = "\n".join(difflib.unified_diff(
@@ -949,7 +992,7 @@ class EditFileTool(_FsTool):
     )
 )
 class ListDirTool(_FsTool):
-    """List directory contents with optional recursion."""
+    """列目录工具。"""
     _scopes = {"core", "subagent"}
 
     _DEFAULT_MAX = 200
@@ -979,6 +1022,7 @@ class ListDirTool(_FsTool):
         self, path: str | None = None, recursive: bool = False,
         max_entries: int | None = None, **kwargs: Any,
     ) -> str:
+        """执行列目录。"""
         try:
             if path is None:
                 raise ValueError("Unknown path")

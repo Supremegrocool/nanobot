@@ -1,4 +1,12 @@
-"""Message tool for sending messages to users."""
+"""消息发送工具：让 Agent 主动给用户或其他会话发消息。
+
+它和“普通回复当前用户”不是一回事：
+
+- 普通回复：主 Agent 直接输出最终答案，由主流程回到当前聊天
+- ``message`` 工具：额外主动投递一条消息，常用于提醒、跨会话发送、附件分发
+
+所以如果只是回答当前问题，通常不该调用这个工具。
+"""
 
 from contextvars import ContextVar
 from pathlib import Path
@@ -46,7 +54,7 @@ from nanobot.config.paths import get_workspace_path
     )
 )
 class MessageTool(Tool, ContextAware):
-    """Tool to send messages to users on chat channels."""
+    """主动消息发送工具。"""
 
     def __init__(
         self,
@@ -100,39 +108,39 @@ class MessageTool(Tool, ContextAware):
         )
 
     def set_context(self, ctx: RequestContext) -> None:
-        """Set the current message context."""
+        """记录当前请求上下文，作为默认发送目标。"""
         self._default_channel.set(ctx.channel)
         self._default_chat_id.set(ctx.chat_id)
         self._default_message_id.set(ctx.message_id)
         self._default_metadata.set(dict(ctx.metadata or {}))
 
     def set_send_callback(self, callback: Callable[[OutboundMessage], Awaitable[None]]) -> None:
-        """Set the callback for sending messages."""
+        """注入真正执行发送的回调函数。"""
         self._send_callback = callback
 
     def start_turn(self) -> None:
-        """Reset per-turn send tracking."""
+        """开始新 turn 时重置本轮发送痕迹。"""
         self._sent_in_turn = False
         self._turn_delivered_media_var.set(())
 
     def turn_delivered_media_paths(self) -> list[str]:
-        """Absolute paths attached via this tool to the active chat in the current turn."""
+        """返回本轮通过该工具发到当前聊天的附件绝对路径。"""
         return list(self._turn_delivered_media_var.get())
 
     def set_record_channel_delivery(self, active: bool):
-        """Mark tool-sent messages as proactive channel deliveries."""
+        """开启/关闭“记录为主动渠道投递”的状态。"""
         return self._record_channel_delivery_var.set(active)
 
     def reset_record_channel_delivery(self, token) -> None:
-        """Restore previous proactive delivery recording state."""
+        """恢复之前的主动投递记录状态。"""
         self._record_channel_delivery_var.reset(token)
 
     def set_suppress_delivery(self, active: bool):
-        """Acknowledge but don't deliver tool sends (heartbeat internal check)."""
+        """让工具“确认发送但不真正投递”，供内部探活/自检使用。"""
         return self._suppress_delivery_var.set(active)
 
     def reset_suppress_delivery(self, token) -> None:
-        """Restore previous delivery-suppression state."""
+        """恢复之前的抑制发送状态。"""
         self._suppress_delivery_var.reset(token)
 
     @property
@@ -162,7 +170,7 @@ class MessageTool(Tool, ContextAware):
         )
 
     def _resolve_media(self, media: list[str]) -> list[str]:
-        """Resolve local media attachments and enforce workspace restriction when enabled."""
+        """解析附件路径，并在需要时执行工作区边界检查。"""
         resolved: list[str] = []
         access = current_tool_workspace(
             self._workspace,
@@ -171,11 +179,14 @@ class MessageTool(Tool, ContextAware):
         workspace = access.project_path or self._workspace
         for p in media:
             if p.startswith(("http://", "https://")):
+                # 远程 URL 直接透传，交给后续渠道层处理。
                 resolved.append(p)
             elif not access.restrict_to_workspace:
+                # 没有限制工作区时，相对路径默认基于当前 workspace 解释。
                 path = Path(p).expanduser()
                 resolved.append(p if path.is_absolute() else str(workspace / path))
             else:
+                # 开启工作区约束时，必须保证附件仍在允许范围内。
                 resolved.append(str(resolve_workspace_path(p, workspace, access.allowed_root)))
         return resolved
 
@@ -191,6 +202,7 @@ class MessageTool(Tool, ContextAware):
     ) -> str:
         from nanobot.utils.helpers import strip_think
 
+        # 任何发给用户的内容都不应该包含内部 think 痕迹。
         content = strip_think(content)
 
         if buttons is not None:
@@ -217,11 +229,9 @@ class MessageTool(Tool, ContextAware):
                 "(e.g. anon-…) are not chat ids."
             )
         chat_id = chat_id or default_chat_id
-        # Only inherit default message_id when targeting the same channel+chat.
-        # Cross-chat sends must not carry the original message_id, because
-        # some channels (e.g. Feishu) use it to determine the target
-        # conversation via their Reply API, which would route the message
-        # to the wrong chat entirely.
+        # 只有目标还是“当前这一聊天”时，才允许继承默认 message_id。
+        # 否则跨聊天投递若错误带上原 message_id，某些平台会把它当 reply 线索，
+        # 最终把消息路由到错误会话。
         same_target = channel == default_channel and chat_id == default_chat_id
         if same_target:
             message_id = message_id or self._default_message_id.get()
@@ -262,6 +272,8 @@ class MessageTool(Tool, ContextAware):
         try:
             await self._send_callback(msg)
             if channel == default_channel and chat_id == default_chat_id:
+                # 只对当前聊天记录“本轮已主动发送过内容”，
+                # 这样上层逻辑才能知道本轮是否额外投递过消息/附件。
                 self._sent_in_turn = True
                 if media:
                     prev = self._turn_delivered_media_var.get()

@@ -1,4 +1,12 @@
-"""Auto-discovery for built-in channel modules and external plugins."""
+"""渠道自动发现机制。
+
+这个模块负责回答：
+“当前有哪些可用渠道？哪些是内置的？哪些是插件提供的？”
+
+发现过程分两层：
+- 内置渠道：扫描 ``nanobot.channels`` 包
+- 外部插件：扫描 entry_points 里的 ``nanobot.channels`` 分组
+"""
 from __future__ import annotations
 
 import importlib
@@ -14,7 +22,7 @@ _INTERNAL = frozenset({"base", "manager", "registry"})
 
 
 def discover_channel_names() -> list[str]:
-    """Return all built-in channel module names by scanning the package (zero imports)."""
+    """通过扫描包目录返回所有内置渠道模块名，不触发真正导入。"""
     import nanobot.channels as pkg
 
     return [
@@ -25,7 +33,7 @@ def discover_channel_names() -> list[str]:
 
 
 def load_channel_class(module_name: str) -> type[BaseChannel]:
-    """Import *module_name* and return the first BaseChannel subclass found."""
+    """导入某个渠道模块，并返回其中第一个 ``BaseChannel`` 子类。"""
     from nanobot.channels.base import BaseChannel as _Base
 
     mod = importlib.import_module(f"nanobot.channels.{module_name}")
@@ -37,7 +45,7 @@ def load_channel_class(module_name: str) -> type[BaseChannel]:
 
 
 def discover_plugins(enabled_names: set[str] | None = None) -> dict[str, type[BaseChannel]]:
-    """Discover external channel plugins registered via entry_points."""
+    """发现通过 entry_points 注册的外部渠道插件。"""
     from importlib.metadata import entry_points
 
     plugins: dict[str, type[BaseChannel]] = {}
@@ -58,11 +66,10 @@ def discover_enabled(
     _names: list[str] | None = None,
     _include_all_external: bool = False,
 ) -> dict[str, type[BaseChannel]]:
-    """Return channels whose module names are in *enabled_names*.
+    """返回启用名单中的渠道类。
 
-    Uses cheap ``pkgutil.iter_modules`` to list names, then imports only
-    those that match — skipping the heavy third-party SDK imports of
-    unneeded channels.
+    这里先做廉价的模块名扫描，再只导入真正启用的渠道，
+    这样可以避免把一堆未启用渠道的第三方 SDK 都提前加载进来。
     """
     names = _names if _names is not None else discover_channel_names()
     result: dict[str, type[BaseChannel]] = {}
@@ -87,9 +94,9 @@ def discover_enabled(
 
 
 def discover_all() -> dict[str, type[BaseChannel]]:
-    """Return all channels: built-in (pkgutil) merged with external (entry_points).
+    """返回所有渠道：内置渠道 + 外部插件渠道。
 
-    Built-in channels take priority — an external plugin cannot shadow a built-in name.
+    约定内置渠道优先级更高，外部插件不能覆盖同名内置渠道。
     """
     names = discover_channel_names()
     return discover_enabled(set(names), _names=names, _include_all_external=True)

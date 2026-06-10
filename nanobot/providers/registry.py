@@ -1,13 +1,12 @@
-"""
-Provider Registry — single source of truth for LLM provider metadata.
+"""Provider 注册表：LLM 服务商元数据的单一事实来源。
 
-Adding a new provider:
-  1. Add a ProviderSpec to PROVIDERS below.
-  2. Add a field to ProvidersConfig in config/schema.py.
-  Done. Env vars, config matching, status display all derive from here.
+如果你想新增一个 Provider，通常只需要两步：
+1. 在下面的 ``PROVIDERS`` 里加一条 ``ProviderSpec``
+2. 在 ``config/schema.py`` 的 ``ProvidersConfig`` 里加对应字段
 
-Order matters — it controls match priority and fallback. Gateways first.
-Every entry writes out all fields so you can copy-paste as a template.
+之后大部分自动匹配、环境变量推断、状态展示都会跟着这里走。
+
+特别注意：``PROVIDERS`` 的顺序有意义，它会影响匹配优先级和 fallback 顺序。
 """
 
 from __future__ import annotations
@@ -20,77 +19,67 @@ from pydantic.alias_generators import to_snake
 
 @dataclass(frozen=True)
 class ProviderSpec:
-    """One LLM provider's metadata. See PROVIDERS below for real examples.
+    """单个 Provider 的元数据描述。
 
-    Placeholders in env_extras values:
-      {api_key}  — the user's API key
-      {api_base} — api_base from config, or this spec's default_api_base
+    你可以把它理解成“Provider 的配置说明书 + 匹配说明书”。
+    Factory、Config 自动匹配等逻辑都会参考这里。
     """
 
     # identity
-    name: str  # config field name, e.g. "dashscope"
-    keywords: tuple[str, ...]  # model-name keywords for matching (lowercase)
-    env_key: str  # env var for API key, e.g. "DASHSCOPE_API_KEY"
-    display_name: str = ""  # shown in `nanobot status`
+    name: str  # 配置字段名，例如 "dashscope"
+    keywords: tuple[str, ...]  # 模型名关键词，用于自动匹配
+    env_key: str  # API key 对应环境变量名
+    display_name: str = ""  # 给用户展示的名字
 
-    # which provider implementation to use
-    # "openai_compat" | "anthropic" | "azure_openai" | "openai_codex" | "github_copilot" | "bedrock"
+    # 选择哪种底层 Provider 实现
     backend: str = "openai_compat"
 
-    # extra env vars, e.g. (("ZHIPUAI_API_KEY", "{api_key}"),)
+    # 额外需要注入的环境变量
     env_extras: tuple[tuple[str, str], ...] = ()
 
-    # gateway / local detection
-    is_gateway: bool = False  # routes any model (OpenRouter, AiHubMix)
-    is_local: bool = False  # local deployment (vLLM, Ollama)
-    detect_by_key_prefix: str = ""  # match api_key prefix, e.g. "sk-or-"
-    detect_by_base_keyword: str = ""  # match substring in api_base URL
-    default_api_base: str = ""  # OpenAI-compatible base URL for this provider
+    # 网关 / 本地部署识别
+    is_gateway: bool = False  # 是否是可转发任意模型的网关型 Provider
+    is_local: bool = False  # 是否是本地部署 Provider
+    detect_by_key_prefix: str = ""  # 通过 api_key 前缀识别
+    detect_by_base_keyword: str = ""  # 通过 api_base 中的关键字识别
+    default_api_base: str = ""  # 默认 API Base
 
-    # gateway behavior
-    strip_model_prefix: bool = False  # strip "provider/" before sending to gateway
+    # 网关行为
+    strip_model_prefix: bool = False  # 发送给网关前是否移除 "provider/" 前缀
     supports_max_completion_tokens: bool = False
 
-    # per-model param overrides, e.g. (("kimi-k2.5", {"temperature": 1.0}),)
+    # 针对特定模型的参数覆盖
     model_overrides: tuple[tuple[str, dict[str, Any]], ...] = ()
 
-    # OAuth-based providers (e.g., OpenAI Codex) don't use API keys
+    # OAuth 类 Provider（如 OpenAI Codex）不依赖传统 API key
     is_oauth: bool = False
 
-    # Direct providers skip API-key validation (user supplies everything)
+    # Direct Provider 跳过 API key 校验
     is_direct: bool = False
 
-    # Provider is listed for shared credentials but cannot serve chat completions.
+    # 这个 Provider 只用于转写等能力，不能承载普通 chat completion
     is_transcription_only: bool = False
 
-    # Provider supports cache_control on content blocks (e.g. Anthropic prompt caching)
+    # 是否支持 content block 级别的 prompt caching
     supports_prompt_caching: bool = False
 
-    # How to inject the thinking on/off toggle into extra_body.
-    # ""              — no extra_body needed (default)
-    # "thinking_type" — {"thinking": {"type": "enabled"/"disabled"}}
-    #                   (DeepSeek, VolcEngine, BytePlus)
-    # "enable_thinking" — {"enable_thinking": true/false}  (DashScope)
-    # "reasoning_split" — {"reasoning_split": true/false}  (MiniMax)
+    # 如何向 extra_body 注入 thinking 开关
     thinking_style: str = ""
 
-    # Gateway-native reasoning control to pair with model-level thinking styles.
-    # "reasoning_effort" — {"reasoning": {"effort": <none|minimal|...>}}
-    #                      (OpenRouter)
+    # 网关原生 reasoning 控制方式
     gateway_reasoning_style: str = ""
 
-    # When True, treat the "reasoning" response field as formal content
-    # when "content" is empty.  Only set this for providers (e.g. StepFun)
-    # whose API returns the actual answer in "reasoning" instead of "content".
+    # 某些 Provider 把真正回答放在 reasoning 字段而不是 content 字段
     reasoning_as_content: bool = False
 
     @property
     def label(self) -> str:
+        """返回更适合展示给用户的 Provider 名称。"""
         return self.display_name or self.name.title()
 
 
 # ---------------------------------------------------------------------------
-# PROVIDERS — the registry. Order = priority. Copy any entry as template.
+# PROVIDERS 注册表本体。顺序 = 匹配优先级。
 # ---------------------------------------------------------------------------
 
 PROVIDERS: tuple[ProviderSpec, ...] = (
@@ -539,7 +528,7 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
 
 
 def find_by_name(name: str) -> ProviderSpec | None:
-    """Find a provider spec by config field name, e.g. "dashscope"."""
+    """按配置字段名查找 ProviderSpec。"""
     normalized = to_snake(name.replace("-", "_"))
     for spec in PROVIDERS:
         if spec.name == normalized:

@@ -1,4 +1,13 @@
-"""Image generation tool."""
+"""图片生成工具：给 Agent 一个统一的“生成/编辑图片并落成工件”的入口。
+
+这个工具本身并不直接实现某个平台的生图 API，而是负责：
+
+1. 读取当前配置，决定使用哪个 provider
+2. 校验参考图路径是否合法
+3. 调用 provider 生成图片
+4. 把返回图片保存为持久化 artifact
+5. 把 artifact 信息整理成工具结果返回给模型
+"""
 
 from __future__ import annotations
 
@@ -35,7 +44,7 @@ if TYPE_CHECKING:
 
 
 class ImageGenerationToolConfig(Base):
-    """Image generation tool configuration."""
+    """图片生成工具配置。"""
     enabled: bool = False
     provider: str = "openrouter"
     model: str = "openai/gpt-5.4-image-2"
@@ -70,7 +79,7 @@ class ImageGenerationToolConfig(Base):
     )
 )
 class ImageGenerationTool(Tool):
-    """Generate persistent image artifacts through the configured image provider."""
+    """通过配置好的图片 provider 生成持久化图片工件。"""
 
     config_key = "image_generation"
 
@@ -117,9 +126,11 @@ class ImageGenerationTool(Tool):
         )
 
     def _provider_config(self) -> ProviderConfig | None:
+        """取出当前选中 provider 的配置。"""
         return self.provider_configs.get(self.config.provider)
 
     def _provider_client(self) -> ImageGenerationProvider | None:
+        """根据当前配置实例化具体 provider 客户端。"""
         provider = self._provider_config()
         cls = get_image_gen_provider(self.config.provider)
         if cls is None:
@@ -133,6 +144,7 @@ class ImageGenerationTool(Tool):
         return cls(**kwargs)
 
     def _resolve_reference_image(self, value: str) -> str:
+        """解析并校验单张参考图路径。"""
         access = current_tool_workspace(self.workspace, restrict_to_workspace=True)
         workspace = access.project_path or self.workspace
         try:
@@ -157,6 +169,7 @@ class ImageGenerationTool(Tool):
         return str(resolved)
 
     def _resolve_reference_images(self, values: list[str] | None) -> list[str]:
+        """批量解析参考图路径。"""
         if not values:
             return []
         return [self._resolve_reference_image(value) for value in values if value]
@@ -170,6 +183,7 @@ class ImageGenerationTool(Tool):
         count: int | None = None,
         **kwargs: Any,
     ) -> str:
+        """生成图片，并把结果保存成 artifact 后返回。"""
         client = self._provider_client()
         if client is None:
             return f"Error: unsupported image generation provider '{self.config.provider}'"
@@ -185,6 +199,7 @@ class ImageGenerationTool(Tool):
             refs = self._resolve_reference_images(reference_images)
             artifacts: list[dict[str, Any]] = []
             while len(artifacts) < requested:
+                # 某些 provider 一次可能返回多张图，这里统一累积到用户要求的数量为止。
                 response = await client.generate(
                     prompt=prompt,
                     model=self.config.model,

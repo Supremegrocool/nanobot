@@ -1,4 +1,4 @@
-"""LLM provider abstraction module."""
+"""LLM Provider 抽象模块。"""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 
 
 def __getattr__(name: str):
-    """Lazily expose provider implementations without importing all backends up front."""
+    """按需懒暴露 provider 实现，避免启动时一次性导入全部后端。"""
     module_name = _LAZY_IMPORTS.get(name)
     if module_name is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

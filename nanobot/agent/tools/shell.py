@@ -1,4 +1,14 @@
-"""Shell execution tool."""
+"""Shell 执行工具：让 Agent 可以运行命令行命令。
+
+很多真实的 Agent 工作最后都会落到命令执行，例如：
+
+- 跑测试
+- 启动构建
+- 调 git / 包管理器 / 编译器
+- 拉起一个临时进程观察输出
+
+但它也是高风险工具，因此本文件里有大量安全边界与危险命令防护。
+"""
 
 from __future__ import annotations
 
@@ -41,7 +51,8 @@ from nanobot.security.workspace_policy import is_path_within
 _IS_WINDOWS = sys.platform == "win32"
 
 
-# Policy note appended to recoverable workspace-boundary guard errors.
+# 当命令被工作区边界策略拦下时，统一附带这段提示。
+# 目的不是让模型换个花样重试，而是明确这是一条硬性安全边界。
 _WORKSPACE_BOUNDARY_NOTE = (
     "\n\nNote: this is a hard policy boundary, not a transient failure. "
     "Do NOT retry with shell tricks (symlinks, base64 piping, alternative "
@@ -52,7 +63,7 @@ _WORKSPACE_BOUNDARY_NOTE = (
 
 
 class ExecToolConfig(Base):
-    """Shell exec tool configuration."""
+    """Shell 工具配置。"""
     enable: bool = True
     timeout: int = Field(default=60, ge=0)  # Hard timeout (s); 0 = no limit. Not capped by the per-call max.
     path_append: str = ""
@@ -128,7 +139,7 @@ class _PreparedCommand:
     )
 )
 class ExecTool(Tool):
-    """Tool to execute shell commands."""
+    """命令执行工具。"""
     _scopes = {"core", "subagent"}
 
     config_key = "exec"
@@ -249,6 +260,7 @@ class ExecTool(Tool):
         max_output_tokens: int | None = None,
         **kwargs: Any,
     ) -> str:
+        """执行 shell 命令，支持一次性模式和可轮询会话模式。"""
         command = command or cmd
         working_dir = working_dir or workdir
         if not command:
@@ -260,6 +272,8 @@ class ExecTool(Tool):
         if isinstance(prepared, str):
             return prepared
 
+        # 提供 yield_time_ms 时，进入“会话模式”：
+        # 如果命令在短时间内没结束，就返回 session_id 供后续轮询。
         if yield_time_ms is not None:
             return await self._execute_session(prepared, yield_time_ms, max_output_chars)
 
@@ -340,12 +354,12 @@ class ExecTool(Tool):
             return f"Error executing command: {exc}"
 
     def _resolve_timeout(self, timeout: int | None) -> int | None:
-        """Resolve the effective hard timeout in seconds (None = no limit).
+        """解析最终生效的硬超时时间。
 
-        A per-call timeout supplied by the model stays capped at _MAX_TIMEOUT so
-        the LLM cannot request unbounded execution. The config-level default
-        (self.timeout) may exceed that cap, and 0 disables the limit entirely
-        for trusted long-running tasks (#3595).
+        这里区分两层：
+
+        - 模型本次调用传入的 timeout：会被上限钳住
+        - 系统默认配置 timeout：管理员可以设置得更宽松
         """
         if timeout:
             return min(timeout, self._MAX_TIMEOUT)
@@ -361,6 +375,7 @@ class ExecTool(Tool):
         shell: str | None = None,
         login: bool | None = None,
     ) -> _PreparedCommand | str:
+        """准备命令、环境、工作目录，并在真正执行前完成安全检查。"""
         access = current_tool_workspace(
             self.working_dir,
             restrict_to_workspace=self.restrict_to_workspace,
@@ -369,11 +384,8 @@ class ExecTool(Tool):
         workspace_root = str(access.project_path) if access.project_path is not None else self.working_dir
         cwd = working_dir or workspace_root or os.getcwd()
 
-        # Prevent an LLM-supplied working_dir from escaping the configured
-        # workspace when restrict_to_workspace is enabled (#2826). Without
-        # this, a caller can pass working_dir="/etc" and then all absolute
-        # paths under /etc would pass the _guard_command check that anchors
-        # on cwd.
+        # 如果开启 restrict_to_workspace，就不能让模型把 working_dir
+        # 切到工作区外，否则很多基于 cwd 的路径防护都会被绕过。
         if access.restrict_to_workspace and workspace_root:
             try:
                 requested = Path(cwd).expanduser().resolve()
@@ -404,6 +416,8 @@ class ExecTool(Tool):
                     self.sandbox,
                 )
             else:
+                # 非 Windows 平台上，可以额外包一层 sandbox，
+                # 让执行环境比单纯路径检查更严格。
                 workspace = workspace_root or cwd
                 command = wrap_command(self.sandbox, command, workspace, cwd)
                 cwd = str(Path(workspace).resolve())
@@ -439,9 +453,10 @@ class ExecTool(Tool):
         *,
         stdin: int = asyncio.subprocess.DEVNULL,
     ) -> asyncio.subprocess.Process:
-        """Launch *command* in a platform-appropriate shell."""
+        """按平台差异启动子进程。"""
         if _IS_WINDOWS:
             if "\n" in command:
+                # 多行命令在 Windows 上更适合显式走 PowerShell。
                 return await asyncio.create_subprocess_exec(
                     "powershell", "-NoProfile", "-Command", command,
                     stdin=stdin,
@@ -475,6 +490,7 @@ class ExecTool(Tool):
 
     @staticmethod
     def _resolve_shell(shell: str | None) -> tuple[str | None, str | None]:
+        """解析并校验用户指定的 shell。"""
         if not shell:
             return None, None
         if _IS_WINDOWS:
@@ -500,7 +516,7 @@ class ExecTool(Tool):
 
     @staticmethod
     async def _kill_process(process: asyncio.subprocess.Process) -> None:
-        """Kill a subprocess and reap it to prevent zombies."""
+        """强制结束子进程，并尽量回收，避免僵尸进程。"""
         process.kill()
         try:
             with suppress(asyncio.TimeoutError):
@@ -513,14 +529,13 @@ class ExecTool(Tool):
                     logger.debug("Process already reaped or not found: {}", e)
 
     def _build_env(self) -> dict[str, str]:
-        """Build a minimal environment for subprocess execution.
+        """构建给子进程使用的最小环境变量集合。
 
-        On Unix, only HOME/LANG/TERM are passed; ``bash -l`` sources the
-        user's profile which sets PATH and other essentials.
+        Unix 下刻意少传环境变量，以降低敏感信息泄漏面。
+        PATH 等常见变量主要依赖 login shell 自己初始化。
 
-        On Windows, ``cmd.exe`` has no login-profile mechanism, so a curated
-        set of system variables (including PATH) is forwarded.  API keys and
-        other secrets are still excluded.
+        Windows 下没有完全对应的 login profile 机制，因此会手动传一组
+        更完整的系统变量，但默认仍不透传 API key 等敏感值。
         """
         if _IS_WINDOWS:
             sr = os.environ.get("SYSTEMROOT", r"C:\Windows")
@@ -567,13 +582,12 @@ class ExecTool(Tool):
         *,
         restrict_to_workspace: bool | None = None,
     ) -> str | None:
-        """Best-effort safety guard for potentially destructive commands."""
+        """对潜在危险命令做“尽力而为”的前置安全拦截。"""
         cmd = command.strip()
         lower = cmd.lower()
 
-        # allow_patterns take priority over deny_patterns so that users can
-        # exempt specific commands (e.g. "rm -rf" inside a build directory)
-        # from the hardcoded deny list via configuration.
+        # allow_patterns 优先于 deny_patterns，
+        # 这样管理员可以通过配置显式放行某些默认会被拦下的命令。
         explicitly_allowed = bool(self.allow_patterns) and any(
             re.search(p, lower) for p in self.allow_patterns
         )
@@ -608,9 +622,9 @@ class ExecTool(Tool):
             for raw in self._extract_absolute_paths(cmd):
                 try:
                     expanded = os.path.expandvars(raw.strip())
-                    # Match against the un-resolved path first.  On Linux,
-                    # /dev/stderr is a symlink to /proc/self/fd/2 and
-                    # ``Path.resolve()`` would mask the device-file intent.
+                    # 先检查未 resolve 的原始路径。
+                    # 例如 Linux 下 /dev/stderr resolve 后会变成 /proc/...，
+                    # 先 resolve 反而看不出它原本是允许的设备文件。
                     if self._is_benign_device_path(expanded):
                         continue
                     p = Path(expanded).expanduser().resolve()
@@ -634,19 +648,19 @@ class ExecTool(Tool):
 
     @classmethod
     def _is_benign_device_path(cls, path: str) -> bool:
-        """Return True for kernel device files that should never be workspace-blocked."""
+        """判断是否属于可安全豁免的设备文件路径。"""
         if path in cls._BENIGN_DEVICE_PATHS:
             return True
         return path.startswith("/dev/fd/")
 
     @staticmethod
     def _extract_absolute_paths(command: str) -> list[str]:
-        # Windows: match drive-root paths like `C:\` as well as `C:\path\to\file`, and UNC paths like `\\server\share`
-        # NOTE: `*` is required so `C:\` (nothing after the slash) is still extracted.
+        # 提取命令里可能出现的绝对路径，供工作区边界检查使用。
+        # Windows 既支持盘符路径，也支持 UNC 路径。
         win_paths = re.findall(
             r"(?<![A-Za-z])(?:[A-Za-z]:[^\s\"'|><;]*|\\\\[^\s\"'|><;]+(?:\\[^\s\"'|><;]+)*)",
             command
         )
-        posix_paths = re.findall(r"(?:^|[\s|>'\"])(/[^\s\"'>;|<]+)", command) # POSIX: /absolute only
-        home_paths = re.findall(r"(?:^|[\s>'\"])(~[^\s\"'>;|<]*)", command) # POSIX/Windows home shortcut: ~
+        posix_paths = re.findall(r"(?:^|[\s|>'\"])(/[^\s\"'>;|<]+)", command) # POSIX 绝对路径
+        home_paths = re.findall(r"(?:^|[\s>'\"])(~[^\s\"'>;|<]*)", command) # 家目录简写 ~
         return win_paths + posix_paths + home_paths

@@ -1,8 +1,10 @@
-"""Internal turn continuation helpers.
+"""内部 turn 续跑策略辅助函数。
 
-This module keeps budget-boundary continuation policy out of ``AgentLoop``.
-The loop calls a small set of helpers; those helpers decide whether an internal
-continuation is allowed and, when it is, queue the next turn directly.
+这个模块解决的是一个很具体的问题：
+
+“如果当前 turn 因为工具调用预算耗尽而被迫停下，但任务其实还没完成，要不要自动续跑？”
+
+为了不把这套策略写死在 ``AgentLoop`` 里，这里把相关判断和元数据操作独立出来。
 """
 
 from __future__ import annotations
@@ -37,17 +39,17 @@ _STRIPPED_INBOUND_META_KEYS = {
 
 
 def internal_continuation_inbound(metadata: Mapping[str, Any] | None) -> bool:
-    """True for an inbound message created by an internal continuation policy."""
+    """判断当前入站消息是否是“内部续跑策略”伪造出来的。"""
     return bool(metadata and metadata.get(INTERNAL_CONTINUATION_META) is True)
 
 
 def internal_continuation_pending(metadata: Mapping[str, Any] | None) -> bool:
-    """True when the current turn scheduled an invisible continuation slice."""
+    """判断当前 turn 是否已经安排了一个不可见的续跑切片。"""
     return bool(metadata and metadata.get(INTERNAL_CONTINUATION_PENDING_META) is True)
 
 
 def internal_continuation_run_started_at(metadata: Mapping[str, Any] | None) -> float | None:
-    """Return the user-visible run start propagated across continuation slices."""
+    """返回跨续跑切片传播的“用户可见开始时间”。"""
     if not metadata:
         return None
     value = metadata.get(INTERNAL_CONTINUATION_RUN_STARTED_AT_META)
@@ -58,7 +60,7 @@ def internal_continuation_run_started_at(metadata: Mapping[str, Any] | None) -> 
 
 
 def should_persist_user_message(metadata: Mapping[str, Any] | None) -> bool:
-    """Return whether this inbound message should be persisted as user input."""
+    """判断这条入站消息是否应该当作用户消息持久化进 session。"""
     return not internal_continuation_inbound(metadata)
 
 
@@ -69,7 +71,7 @@ def should_stream_budget_response(
     session_metadata: Mapping[str, Any] | None,
     message_metadata: Mapping[str, Any] | None = None,
 ) -> bool:
-    """Return whether the budget-boundary response should be sent to the user."""
+    """判断“达到预算边界时的回复”是否应该直接发给用户。"""
     if stop_reason != "max_iterations":
         return True
     return should_finalize_on_max_iterations(
@@ -85,11 +87,10 @@ def should_finalize_on_max_iterations(
     session_metadata: Mapping[str, Any] | None,
     message_metadata: Mapping[str, Any] | None = None,
 ) -> bool:
-    """Return whether a max-iteration boundary should produce a final response.
+    """判断在达到最大迭代数时，当前切片是否应该直接产出最终回复。
 
-    When a sustained goal can continue internally, the current runner slice
-    should stop without spending an extra no-tools finalization call. The next
-    queued continuation slice owns the eventual user-visible response.
+    如果当前是可内部续跑的持续目标，那么这一片段不应该再额外花一次
+    “无工具 finalization” 调用，而是把后续回复交给下一片续跑。
     """
     return not (
         pending_queue_available
@@ -101,7 +102,7 @@ def should_finalize_on_max_iterations(
 
 
 async def maybe_continue_turn(ctx: Any) -> bool:
-    """Queue an internal continuation for *ctx* when policy allows it."""
+    """如果策略允许，就为当前 turn 安排一个内部续跑消息。"""
     if ctx.session is None or ctx.pending_queue is None:
         return False
     if not _continuation_available(
@@ -121,6 +122,8 @@ async def maybe_continue_turn(ctx: Any) -> bool:
     _increment_goal_continuation_round(ctx.session.metadata)
 
     logger.info("Turn budget reached; scheduling internal continuation")
+    # 这里把当前 slice 伪装成“没有最终回答”，并往 pending_queue 里塞一条
+    # 系统续跑消息，让同一会话的后台任务在本轮结束后自动接着跑。
     ctx.msg.metadata[INTERNAL_CONTINUATION_PENDING_META] = True
     ctx.final_content = ""
     ctx.all_messages = messages
@@ -139,7 +142,7 @@ async def maybe_continue_turn(ctx: Any) -> bool:
 
 
 def prepare_save_boundary(ctx: Any) -> None:
-    """Prepare continuation bookkeeping and the history append boundary."""
+    """准备续跑相关 bookkeeping，并计算本 turn 写入历史的起始边界。"""
     if ctx.session is not None:
         clear_internal_continuation_state(ctx.session.metadata)
 
@@ -167,7 +170,7 @@ def _continuation_available(
 
 
 def clear_internal_continuation_state(metadata: MutableMapping[str, Any]) -> None:
-    """Reset policy bookkeeping once its owning runtime mode is inactive."""
+    """当持续目标模式失效时，清理内部续跑计数状态。"""
     if not sustained_goal_active(metadata):
         metadata.pop(_GOAL_CONTINUATION_ROUNDS_KEY, None)
 
@@ -179,7 +182,11 @@ def _save_skip_for_turn(
     history_count: int,
     user_persisted_early: bool,
 ) -> int:
-    """Return the persisted-message append boundary for this turn."""
+    """计算这次 turn 在保存消息时应该跳过多少前缀。
+
+    这是一个很关键的边界值，因为 AgentRunner 里的 ``messages`` 不只包含本轮新消息，
+    还包含历史回放和 system message。保存时必须只截取“本 turn 新增部分”。
+    """
     if internal_continuation_inbound(message_metadata):
         return initial_message_count
     return 1 + history_count + (1 if user_persisted_early else 0)
@@ -191,6 +198,7 @@ def _goal_continuation_available(
     message_metadata: Mapping[str, Any] | None = None,
     max_rounds: int = _MAX_GOAL_CONTINUATION_ROUNDS,
 ) -> bool:
+    """判断当前是否允许做持续目标续跑。"""
     if not sustained_goal_turn(session_metadata, message_metadata=message_metadata):
         return False
     if not sustained_goal_active(session_metadata):
@@ -203,6 +211,7 @@ def _goal_continuation_available(
 
 
 def _increment_goal_continuation_round(session_metadata: MutableMapping[str, Any]) -> None:
+    """续跑轮次 +1，防止无限内部续跑。"""
     try:
         rounds = int(session_metadata.get(_GOAL_CONTINUATION_ROUNDS_KEY) or 0)
     except (TypeError, ValueError):
@@ -215,6 +224,7 @@ def _internal_continuation_metadata(
     *,
     run_started_at: float | None = None,
 ) -> dict[str, Any]:
+    """构造内部续跑消息要携带的 metadata。"""
     metadata = dict(message_metadata or {})
     metadata[INTERNAL_CONTINUATION_META] = True
     metadata[INTERNAL_CONTINUATION_KIND_META] = _GOAL_CONTINUATION_KIND
@@ -226,6 +236,7 @@ def _internal_continuation_metadata(
 
 
 def _goal_continuation_prompt(metadata: Mapping[str, Any] | None) -> str:
+    """生成发给下一片续跑切片的系统式提示内容。"""
     lines = goal_state_runtime_lines(metadata)
     if lines:
         goal = "\n".join(lines)
@@ -249,7 +260,7 @@ def _strip_terminal_assistant(
     messages: list[dict[str, Any]],
     final_content: str | None,
 ) -> list[dict[str, Any]]:
-    """Drop the synthetic max-iteration assistant message before saving history."""
+    """保存历史前，移除因 max-iteration 产生的合成 assistant 结尾消息。"""
     if not messages:
         return messages
     last = messages[-1]

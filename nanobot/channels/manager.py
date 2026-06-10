@@ -1,4 +1,12 @@
-"""Channel manager for coordinating chat channels."""
+"""渠道管理器：统一协调所有聊天渠道。
+
+如果说 ``MessageBus`` 负责“消息流转的骨架”，那 ``ChannelManager`` 负责的就是：
+
+- 启动哪些渠道
+- 出站消息该发给哪个渠道
+- 是否需要重试发送
+- 流式增量消息如何合并，减少 API 调用
+"""
 
 from __future__ import annotations
 
@@ -22,7 +30,7 @@ if TYPE_CHECKING:
 
 
 def _default_webui_dist() -> Path | None:
-    """Return the absolute path to the bundled webui dist directory if it exists."""
+    """返回打包后 WebUI dist 目录的绝对路径；不存在则返回 ``None``。"""
     try:
         import nanobot.web as web_pkg  # type: ignore[import-not-found]
     except ImportError:
@@ -31,7 +39,7 @@ def _default_webui_dist() -> Path | None:
     return candidate if candidate.is_dir() else None
 
 
-# Retry delays for message sending (exponential backoff: 1s, 2s, 4s)
+# 发送失败后的重试等待时间，采用指数退避：1s -> 2s -> 4s
 _SEND_RETRY_DELAYS = (1, 2, 4)
 
 _BOOL_CAMEL_ALIASES: dict[str, str] = {
@@ -41,13 +49,12 @@ _BOOL_CAMEL_ALIASES: dict[str, str] = {
 }
 
 class ChannelManager:
-    """
-    Manages chat channels and coordinates message routing.
+    """聊天渠道总协调器。
 
-    Responsibilities:
-    - Initialize enabled channels (Telegram, WhatsApp, etc.)
-    - Start/stop channels
-    - Route outbound messages
+    它是“渠道层的总控台”，核心职责有三类：
+    - 初始化已启用渠道
+    - 启动/停止所有渠道
+    - 从 ``bus.outbound`` 消费消息并路由到目标渠道
     """
 
     def __init__(
@@ -77,13 +84,15 @@ class ChannelManager:
         self._init_channels()
 
     def _init_channels(self) -> None:
-        """Initialize channels discovered via pkgutil scan + entry_points plugins."""
+        """初始化已启用渠道。
+
+        发现来源既包括内置模块扫描，也包括 entry_points 插件。
+        但真正实例化时只导入配置里启用的渠道，避免无谓依赖开销。
+        """
         from nanobot.channels.registry import discover_channel_names, discover_enabled
 
-        # Collect enabled module names first, then only import those.
-        # Channel configs live in ChannelsConfig's extra fields (via
-        # extra="allow"), so we enumerate candidates from pkgutil scan
-        # (cheap, no imports) and any plugin keys in __pydantic_extra__.
+        # 先收集“候选渠道名”，再只导入真正启用的那些。
+        # 这样做可以避免未启用渠道的重依赖提前 import。
         names = discover_channel_names()
         candidate_names = set(names)
         extra = getattr(self.config.channels, "__pydantic_extra__", None) or {}
@@ -108,6 +117,8 @@ class ChannelManager:
             try:
                 kwargs: dict[str, Any] = {}
                 if cls.name == "websocket":
+                    # websocket 渠道比较特殊：它不只是“聊天渠道”，还会承载
+                    # WebUI 网关能力，所以需要额外组装 gateway 服务对象。
                     from nanobot.channels.websocket import WebSocketConfig
                     from nanobot.webui.gateway_services import build_gateway_services
 
@@ -147,6 +158,7 @@ class ChannelManager:
         self._validate_allow_from()
 
     def _validate_allow_from(self) -> None:
+        """检查渠道的 allowFrom 配置，并给出 pairing 模式提示。"""
         for name, ch in self.channels.items():
             cfg = ch.config
             if isinstance(cfg, dict):
@@ -157,15 +169,15 @@ class ChannelManager:
             else:
                 allow = getattr(cfg, "allow_from", None)
             if allow is None:
-                # allowFrom omitted → pairing-only mode.  Unapproved senders
-                # receive a pairing code instead of being silently ignored.
+                # 如果没配置 allowFrom，就进入“仅配对码授权”模式。
+                # 未授权用户不会被静默忽略，而是会收到 pairing code。
                 logger.info(
                     '"{}" has no allowFrom; unapproved users will receive a pairing code',
                     name,
                 )
 
     def _should_send_progress(self, channel_name: str, *, tool_hint: bool = False) -> bool:
-        """Return whether progress (or tool-hints) may be sent to *channel_name*."""
+        """判断某个渠道是否允许发送进度消息或工具提示。"""
         ch = self.channels.get(channel_name)
         if ch is None:
             logger.warning("Progress check for unknown channel: {}", channel_name)
@@ -173,11 +185,9 @@ class ChannelManager:
         return ch.send_tool_hints if tool_hint else ch.send_progress
 
     def _resolve_bool_override(self, section: Any, key: str, default: bool) -> bool:
-        """Return *key* from *section* if it is a bool, otherwise *default*.
+        """从渠道配置里读取布尔开关，读不到就回退默认值。
 
-        For dict configs also checks the camelCase alias (e.g. ``sendProgress``
-        for ``send_progress``) so raw JSON/TOML configs work alongside
-        Pydantic models.
+        同时兼容 snake_case 和 camelCase，方便直接读取原始 JSON/TOML 配置。
         """
         if isinstance(section, dict):
             value = section.get(key)
@@ -190,19 +200,19 @@ class ChannelManager:
         return value if isinstance(value, bool) else default
 
     async def _start_channel(self, name: str, channel: BaseChannel) -> None:
-        """Start a channel and log any exceptions."""
+        """启动单个渠道，并把异常记录下来。"""
         try:
             await channel.start()
         except Exception:
             logger.exception("Failed to start channel {}", name)
 
     async def start_all(self) -> None:
-        """Start all channels and the outbound dispatcher."""
+        """启动所有渠道，以及统一的出站消息分发协程。"""
         if not self.channels:
             logger.warning("No channels enabled")
             return
 
-        # Start outbound dispatcher
+        # 先启动统一出站分发器，再启动各个具体渠道。
         self._dispatch_task = asyncio.create_task(self._dispatch_outbound())
 
         # Start channels
@@ -213,11 +223,11 @@ class ChannelManager:
 
         self._notify_restart_done_if_needed()
 
-        # Wait for all to complete (they should run forever)
+        # 渠道通常都是常驻任务，因此这里会一直等待。
         await asyncio.gather(*tasks, return_exceptions=True)
 
     def _notify_restart_done_if_needed(self) -> None:
-        """Send restart completion message when runtime env markers are present."""
+        """如果环境变量里带着“重启通知标记”，则向对应聊天发送重启完成提示。"""
         notice = consume_restart_notice_from_env()
         if not notice:
             return
@@ -235,7 +245,7 @@ class ChannelManager:
         ))
 
     async def stop_all(self) -> None:
-        """Stop all channels and the dispatcher."""
+        """停止所有渠道以及出站分发器。"""
         logger.info("Stopping all channels...")
 
         # Stop dispatcher
@@ -254,10 +264,12 @@ class ChannelManager:
 
     @staticmethod
     def _fingerprint_content(content: str) -> str:
+        """为消息正文生成去空白后的稳定指纹，用于重复发送抑制。"""
         normalized = " ".join(content.split())
         return hashlib.sha1(normalized.encode("utf-8")).hexdigest() if normalized else ""
 
     def _should_suppress_outbound(self, msg: OutboundMessage) -> bool:
+        """判断某条出站消息是否应因“与已发送内容重复”而被抑制。"""
         metadata = msg.metadata or {}
         if metadata.get("_progress"):
             return False
@@ -280,16 +292,16 @@ class ChannelManager:
         return False
 
     async def _dispatch_outbound(self) -> None:
-        """Dispatch outbound messages to the appropriate channel."""
+        """持续消费出站队列，并把消息路由到对应渠道。"""
         logger.info("Outbound dispatcher started")
 
-        # Buffer for messages that couldn't be processed during delta coalescing
-        # (since asyncio.Queue doesn't support push_front)
+        # 因为 asyncio.Queue 没有 push_front，所以在流式合并过程中如果多拿了
+        # 一条不该当前处理的消息，只能先暂存到这个本地缓冲里。
         pending: list[OutboundMessage] = []
 
         while True:
             try:
-                # First check pending buffer before waiting on queue
+                # 先处理本地缓冲，再去队列阻塞等待新消息。
                 if pending:
                     msg = pending.pop(0)
                 else:
@@ -303,13 +315,9 @@ class ChannelManager:
                     or msg.metadata.get("_reasoning_end")
                     or msg.metadata.get("_reasoning")
                 ):
-                    # Reasoning rides its own plugin channel: only delivered
-                    # when the destination channel opts in via ``show_reasoning``
-                    # and overrides the streaming primitives. Channels without
-                    # a low-emphasis UI affordance keep the base no-op and the
-                    # content silently drops here. ``_reasoning`` (one-shot)
-                    # is accepted for backward compatibility with hooks that
-                    # haven't migrated to delta/end yet.
+                    # reasoning 有自己独立的一条展示通道：
+                    # 只有目标渠道明确支持 show_reasoning，且实现了对应接口，
+                    # 才会真正发送；否则就静默跳过。
                     channel = self.channels.get(msg.channel)
                     if channel is not None and channel.show_reasoning:
                         await self._send_with_retry(channel, msg)
@@ -335,16 +343,16 @@ class ChannelManager:
                 ):
                     continue
 
-                # Coalesce consecutive _stream_delta messages for the same (channel, chat_id)
-                # to reduce API calls and improve streaming latency
+                # 合并连续的流式增量片段，减少平台 API 调用次数，
+                # 也减少“队列里积压很多小碎片消息”带来的延迟。
                 if msg.metadata.get("_stream_delta") and not msg.metadata.get("_stream_end"):
                     msg, extra_pending = self._coalesce_stream_deltas(msg)
                     pending.extend(extra_pending)
 
                 channel = self.channels.get(msg.channel)
                 if channel:
-                    # Duplicate suppression is scoped to a known source message
-                    # so repeated content from separate turns is still delivered.
+                    # 去重只在“同一来源消息”范围内生效，
+                    # 不会误伤来自不同 turn 但内容恰好相同的回复。
                     if (
                         not msg.metadata.get("_stream_delta")
                         and not msg.metadata.get("_stream_end")
@@ -364,7 +372,7 @@ class ChannelManager:
 
     @staticmethod
     async def _send_once(channel: BaseChannel, msg: OutboundMessage) -> None:
-        """Send one outbound message without retry policy."""
+        """单次发送一条消息；这里不处理重试策略。"""
         if msg.metadata.get("_reasoning_end"):
             await channel.send_reasoning_end(msg.chat_id, msg.metadata)
         elif msg.metadata.get("_reasoning_delta"):
@@ -389,42 +397,39 @@ class ChannelManager:
     def _coalesce_stream_deltas(
         self, first_msg: OutboundMessage
     ) -> tuple[OutboundMessage, list[OutboundMessage]]:
-        """Merge consecutive _stream_delta messages for the same (channel, chat_id).
+        """合并同一目标的连续流式增量消息。
 
-        This reduces the number of API calls when the queue has accumulated multiple
-        deltas, which happens when LLM generates faster than the channel can process.
-
-        Returns:
-            tuple of (merged_message, list_of_non_matching_messages)
+        典型场景是：LLM 输出很快，但渠道发送较慢，队列里会积压很多碎片 delta。
+        这时把它们批量拼起来再发，会明显减少平台请求次数。
         """
         target_key = (first_msg.channel, first_msg.chat_id)
         combined_content = first_msg.content
         final_metadata = dict(first_msg.metadata or {})
         non_matching: list[OutboundMessage] = []
 
-        # Only merge consecutive deltas. As soon as we hit any other message,
-        # stop and hand that boundary back to the dispatcher via `pending`.
+        # 只合并“连续出现”的 delta。
+        # 一旦遇到其他类型消息，就立即停止，并把边界消息交回 pending。
         while True:
             try:
                 next_msg = self.bus.outbound.get_nowait()
             except asyncio.QueueEmpty:
                 break
 
-            # Check if this message belongs to the same stream
+            # 判断下一条消息是否仍属于同一条流。
             same_target = (next_msg.channel, next_msg.chat_id) == target_key
             is_delta = next_msg.metadata and next_msg.metadata.get("_stream_delta")
             is_end = next_msg.metadata and next_msg.metadata.get("_stream_end")
 
             if same_target and is_delta and not final_metadata.get("_stream_end"):
-                # Accumulate content
+                # 继续把内容拼接进当前批次。
                 combined_content += next_msg.content
-                # If we see _stream_end, remember it and stop coalescing this stream
+                # 如果已经看到流结束标记，就把结束状态带上并停止合并。
                 if is_end:
                     final_metadata["_stream_end"] = True
                     # Stream ended - stop coalescing this stream
                     break
             else:
-                # First non-matching message defines the coalescing boundary.
+                # 第一条不匹配消息定义了当前合并边界。
                 non_matching.append(next_msg)
                 break
 
@@ -437,9 +442,10 @@ class ChannelManager:
         return merged, non_matching
 
     async def _send_with_retry(self, channel: BaseChannel, msg: OutboundMessage) -> None:
-        """Send a message with retry on failure using exponential backoff.
+        """带指数退避重试地发送消息。
 
-        Note: CancelledError is re-raised to allow graceful shutdown.
+        这里统一实现重试策略，渠道本身只要在失败时抛异常即可。
+        注意 ``CancelledError`` 必须继续上抛，确保程序停机时能优雅退出。
         """
         max_attempts = max(self.config.channels.send_max_retries, 1)
 
@@ -467,11 +473,11 @@ class ChannelManager:
                     raise  # Propagate cancellation during sleep
 
     def get_channel(self, name: str) -> BaseChannel | None:
-        """Get a channel by name."""
+        """按名字获取渠道实例。"""
         return self.channels.get(name)
 
     def get_status(self) -> dict[str, Any]:
-        """Get status of all channels."""
+        """返回所有渠道的启用与运行状态。"""
         return {
             name: {
                 "enabled": True,
@@ -482,5 +488,5 @@ class ChannelManager:
 
     @property
     def enabled_channels(self) -> list[str]:
-        """Get list of enabled channel names."""
+        """返回已启用渠道名列表。"""
         return list(self.channels.keys())

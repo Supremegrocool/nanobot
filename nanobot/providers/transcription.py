@@ -1,9 +1,15 @@
-"""Provider-specific voice transcription adapters.
+"""语音转写 Provider 适配层。
 
-This module only knows how to call external transcription APIs such as Groq,
-OpenAI Whisper, OpenRouter, Xiaomi MiMo ASR, and AssemblyAI. Product-level config fallback,
-WebUI upload validation, and channel integration live in
-``nanobot.audio.transcription``.
+这个模块只负责“怎么调用外部转写 API”，例如：
+
+- OpenAI Whisper
+- Groq Whisper
+- OpenRouter
+- Xiaomi MiMo ASR
+- AssemblyAI
+
+它不负责产品层面的上传校验、WebUI 交互或渠道集成；
+那些更上层的逻辑在别的模块里。
 """
 
 import asyncio
@@ -43,12 +49,10 @@ _FORMAT_ALIASES = {
 
 
 def _resolve_transcription_url(api_base: str | None, default_url: str) -> str:
-    """Resolve the full transcription endpoint URL.
+    """解析完整的 transcription endpoint URL。
 
-    Accepts either a chat-style base (e.g. ``https://api.groq.com/openai/v1``)
-    or a complete URL already ending in ``/audio/transcriptions``. A chat-style
-    base — the form users naturally copy from their LLM provider config — gets
-    the path appended instead of being POSTed verbatim and 404ing (#3637).
+    这里既支持传入 chat 风格 base URL，也支持直接传完整转写 endpoint。
+    如果用户给的是 base URL，就自动补上 ``/audio/transcriptions``。
     """
     if not api_base:
         return default_url
@@ -59,7 +63,7 @@ def _resolve_transcription_url(api_base: str | None, default_url: str) -> str:
 
 
 def _resolve_chat_completions_url(api_base: str | None, default_url: str) -> str:
-    """Resolve a chat-completions endpoint for ASR providers using chat payloads."""
+    """为使用 chat payload 的 ASR provider 解析 chat-completions endpoint。"""
     if not api_base:
         return default_url
     base = api_base.rstrip("/")
@@ -89,15 +93,14 @@ def _audio_mime_type(path: Path) -> str:
 
 
 def _audio_format(path: Path) -> str:
-    """Map an audio file's extension to an OpenRouter ``format`` value."""
+    """把音频文件扩展名映射成 OpenRouter 所需的 ``format`` 值。"""
     ext = path.suffix.lstrip(".").lower()
     return _FORMAT_ALIASES.get(ext, ext)
 
 
-# Up to 3 retries (4 attempts total) with exponential backoff on transient
-# failures. Whisper endpoints occasionally return 502/503 under load, and
-# mobile-network transcription callers hit sporadic connect/read errors.
-# Without this, a voice message silently becomes the empty string.
+# 最多重试 3 次（共 4 次尝试），并采用指数退避。
+# 语音转写接口在高负载或移动网络环境下经常出现瞬时失败；
+# 如果完全不重试，一条语音消息很容易直接变成空字符串。
 _MAX_RETRIES = 3
 _BACKOFF_S = (1.0, 2.0, 4.0)
 _RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
@@ -203,15 +206,10 @@ async def _post_transcription_with_retry(
     provider_label: str,
     language: str | None = None,
 ) -> str:
-    """POST an audio file for transcription, retrying on transient errors.
+    """以 multipart 方式上传音频做转写，并在瞬时错误时自动重试。
 
-    Retries on connect/read/timeout failures and on 408/429/5xx responses.
-    Other errors (including 4xx such as 401/403) return "" immediately — the
-    caller's config is wrong and retrying only wastes quota.
-
-    When ``language`` is provided, it is forwarded as the ``language``
-    multipart field on every attempt (the dict is rebuilt per attempt so the
-    same field is present on retries).
+    会重试连接/读取/超时错误，以及 408/429/5xx 响应；
+    对于 401/403 这类明显配置错误，不会盲目重试。
     """
     try:
         data = path.read_bytes()
@@ -241,7 +239,7 @@ async def _post_json_transcription_with_retry(
     provider_label: str,
     language: str | None = None,
 ) -> str:
-    """POST base64 JSON audio for providers that do not accept multipart uploads."""
+    """给不支持 multipart 的 provider 发送 base64 JSON 音频。"""
     try:
         data = path.read_bytes()
     except OSError as e:
@@ -276,7 +274,7 @@ async def _post_xiaomi_mimo_asr_with_retry(
     provider_label: str,
     language: str | None = None,
 ) -> str:
-    """POST audio to Xiaomi MiMo ASR's chat-completions transcription API."""
+    """调用 Xiaomi MiMo 的 chat-completions 风格 ASR 接口。"""
     try:
         data = path.read_bytes()
     except OSError as e:
@@ -324,7 +322,7 @@ async def _post_stepfun_asr_with_retry(
     provider_label: str,
     language: str | None = None,
 ) -> str:
-    """POST audio to StepFun ASR SSE endpoint and collect final text."""
+    """调用 StepFun 的 SSE 语音转写接口，并收集最终文本。"""
     try:
         data = path.read_bytes()
     except OSError as e:
@@ -393,7 +391,7 @@ async def _post_stepfun_asr_with_retry(
                             break
                     if final_text is not None:
                         return final_text
-                    # Stream ended without a final event — retry if attempts remain
+                    # 流提前结束但没有 final event，若还有次数就重试。
                     if attempt < _MAX_RETRIES:
                         logger.warning(
                             "{} transcription: no final event (attempt {}/{})",
@@ -525,7 +523,7 @@ def _assemblyai_speech_models(model: str | None) -> list[str]:
 
 
 class AssemblyAITranscriptionProvider:
-    """Voice transcription provider using AssemblyAI's asynchronous REST API."""
+    """AssemblyAI 语音转写客户端。"""
 
     def __init__(
         self,
@@ -622,7 +620,7 @@ class AssemblyAITranscriptionProvider:
 
 
 class OpenAITranscriptionProvider:
-    """Voice transcription provider using OpenAI's Whisper API."""
+    """OpenAI Whisper 语音转写客户端。"""
 
     def __init__(
         self,
@@ -659,11 +657,7 @@ class OpenAITranscriptionProvider:
 
 
 class GroqTranscriptionProvider:
-    """
-    Voice transcription provider using Groq's Whisper API.
-
-    Groq offers extremely fast transcription with a generous free tier.
-    """
+    """Groq Whisper 语音转写客户端。"""
 
     def __init__(
         self,
@@ -682,15 +676,7 @@ class GroqTranscriptionProvider:
         logger.debug("Groq transcription endpoint: {}", self.api_url)
 
     async def transcribe(self, file_path: str | Path) -> str:
-        """
-        Transcribe an audio file using Groq.
-
-        Args:
-            file_path: Path to the audio file.
-
-        Returns:
-            Transcribed text.
-        """
+        """把音频文件交给 Groq 转写，并返回文本。"""
         if not self.api_key:
             logger.warning("Groq API key not configured for transcription")
             return ""
@@ -711,7 +697,7 @@ class GroqTranscriptionProvider:
 
 
 class OpenRouterTranscriptionProvider:
-    """Voice transcription provider using OpenRouter's speech-to-text endpoint."""
+    """OpenRouter 语音转写客户端。"""
 
     def __init__(
         self,
@@ -750,7 +736,7 @@ class OpenRouterTranscriptionProvider:
 
 
 class XiaomiMiMoTranscriptionProvider:
-    """Voice transcription provider using Xiaomi MiMo ASR."""
+    """Xiaomi MiMo ASR 语音转写客户端。"""
 
     def __init__(
         self,
@@ -789,7 +775,7 @@ class XiaomiMiMoTranscriptionProvider:
 
 
 class StepFunTranscriptionProvider:
-    """Voice transcription provider using StepFun ASR SSE endpoint."""
+    """StepFun SSE 语音转写客户端。"""
 
     _DEFAULT_URL = "https://api.stepfun.com/v1/audio/asr/sse"
 
@@ -801,7 +787,7 @@ class StepFunTranscriptionProvider:
         model: str | None = None,
     ):
         self.api_key = api_key or os.environ.get("STEPFUN_API_KEY")
-        # api_base accepts either a StepFun base URL or the full SSE endpoint.
+        # api_base 既可以是 StepFun 的 base URL，也可以直接是完整 SSE endpoint。
         self.api_url = _resolve_stepfun_asr_url(api_base)
         self.language = language or None
         self.model = model or "stepaudio-2.5-asr"

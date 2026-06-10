@@ -1,4 +1,4 @@
-"""Agent hook that adapts runner events into channel progress UI."""
+"""把 AgentRunner 事件适配成“用户可见进度 UI”的 Hook。"""
 
 from __future__ import annotations
 
@@ -20,7 +20,12 @@ from nanobot.utils.tool_hints import format_tool_hints
 
 
 class AgentProgressHook(AgentHook):
-    """Translate runner lifecycle events into user-visible progress signals."""
+    """把 Runner 生命周期事件翻译成用户可见进度信号。
+
+    这是 AgentRunner 和 ChannelManager/前端展示层之间的重要桥梁：
+    Runner 只管说“模型开始流式输出了”“即将调用这些工具”“本轮结束了”，
+    这个 Hook 负责把它们转换成 on_progress / on_stream 这类更贴近 UI 的事件。
+    """
 
     def __init__(
         self,
@@ -49,9 +54,9 @@ class AgentProgressHook(AgentHook):
         self._tool_hint_max_length = tool_hint_max_length
         self._set_tool_context = set_tool_context
         self._on_iteration = on_iteration
-        self._stream_buf = ""
+        self._stream_buf = ""  # 累积流式文本，用来做增量切片与 think 标签剥离
         self._think_extractor = IncrementalThinkExtractor()
-        self._reasoning_open = False
+        self._reasoning_open = False  # 标记当前是否已经打开 reasoning 段
 
     def wants_streaming(self) -> bool:
         return self._on_stream is not None
@@ -76,6 +81,8 @@ class AgentProgressHook(AgentHook):
         return name in sig.parameters
 
     async def on_stream(self, context: AgentHookContext, delta: str) -> None:
+        # 模型流式内容里可能夹带 <think>...</think> 一类内部思考标签，
+        # UI 展示给用户时需要把“答案正文”和“推理痕迹”拆开。
         prev_clean = strip_think(self._stream_buf)
         self._stream_buf += delta
         new_clean = strip_think(self._stream_buf)
@@ -85,8 +92,8 @@ class AgentProgressHook(AgentHook):
             context.streamed_reasoning = True
 
         if incremental:
-            # Answer text has started; close the reasoning segment so the UI can
-            # lock the bubble before the answer renders below it.
+            # 一旦正式答案开始输出，就关闭 reasoning 段。
+            # 这样前端可以先把“思考气泡”固定住，再在下方开始渲染答案正文。
             await self.emit_reasoning_end()
             if self._on_stream:
                 await self._on_stream(incremental)
@@ -134,7 +141,7 @@ class AgentProgressHook(AgentHook):
             )
 
     async def emit_reasoning(self, reasoning_content: str | None) -> None:
-        """Publish a reasoning chunk; channel plugins decide whether to render."""
+        """发布一段 reasoning 增量内容；具体要不要显示由渠道插件决定。"""
         if (
             self._on_progress
             and reasoning_content
@@ -144,7 +151,7 @@ class AgentProgressHook(AgentHook):
             await self._on_progress(reasoning_content, reasoning=True)
 
     async def emit_reasoning_end(self) -> None:
-        """Close the current reasoning stream segment, if any was open."""
+        """结束当前 reasoning 流片段。"""
         if self._reasoning_open and self._on_progress:
             self._reasoning_open = False
             await self._on_progress("", reasoning_end=True)

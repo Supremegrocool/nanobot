@@ -1,8 +1,17 @@
-"""Runtime event bus for agent state notifications.
+"""运行时事件总线：用于发布 Agent 内部状态变化通知。
 
-This bus is separate from :mod:`nanobot.bus.queue`: message bus events are
-user/chat delivery, while runtime events are in-process state notifications
-that optional subscribers such as WebUI adapters may render.
+注意它和 ``nanobot.bus.queue`` 不是一回事：
+
+- ``bus.queue`` 负责“真实聊天消息”的进出
+- 本模块负责“运行时状态事件”的进程内广播
+
+例如：
+- 某个 turn 开始了
+- 某个 turn 进入 running 状态
+- 某个会话的 goal 状态变了
+- 当前运行模型被切换了
+
+这些信息未必都要直接发给用户，但 WebUI、监控层、调试层往往需要订阅。
 """
 
 from __future__ import annotations
@@ -21,7 +30,7 @@ from nanobot.bus.events import InboundMessage
 
 @dataclass(frozen=True)
 class RuntimeEventContext:
-    """Routing context common to turn-scoped runtime events."""
+    """turn 级运行时事件的公共路由上下文。"""
 
     channel: str
     chat_id: str
@@ -31,14 +40,14 @@ class RuntimeEventContext:
 
 @dataclass(frozen=True)
 class SessionTurnStarted:
-    """A user/system turn has loaded its session and is about to build context."""
+    """表示一个用户/系统回合已经拿到 Session，即将开始构建上下文。"""
 
     context: RuntimeEventContext
 
 
 @dataclass(frozen=True)
 class TurnRunStatusChanged:
-    """Visible run status changed for a turn."""
+    """表示某个回合的可见运行状态发生变化。"""
 
     context: RuntimeEventContext
     status: str
@@ -47,7 +56,7 @@ class TurnRunStatusChanged:
 
 @dataclass(frozen=True)
 class TurnCompleted:
-    """A turn has delivered its final user-visible response."""
+    """表示某个回合已经产出最终用户可见回复。"""
 
     context: RuntimeEventContext
     latency_ms: int | None = None
@@ -56,7 +65,7 @@ class TurnCompleted:
 
 @dataclass(frozen=True)
 class GoalStateChanged:
-    """A session's sustained-goal state changed."""
+    """表示某个会话的持续目标（sustained goal）状态发生变化。"""
 
     context: RuntimeEventContext
     session_metadata: dict[str, Any] = field(default_factory=dict)
@@ -64,7 +73,7 @@ class GoalStateChanged:
 
 @dataclass(frozen=True)
 class RuntimeModelChanged:
-    """The active runtime model/preset changed."""
+    """表示当前运行使用的模型或预设被切换。"""
 
     model: str
     model_preset: str | None
@@ -89,11 +98,14 @@ _HandlerEntry = tuple[RuntimeEventType | None, RuntimeEventHandler]
 
 
 class RuntimeEventBus:
-    """Small in-process pub/sub bus for runtime state.
+    """轻量级进程内发布订阅总线。
 
-    Subscribers run in registration order. ``publish`` awaits async handlers so
-    callers can preserve ordering when a runtime event must follow a user
-    message. ``publish_nowait`` is available for synchronous call sites.
+    【适用场景】
+    当 Agent 内部想广播“状态变化”而不是“聊天消息”时，就走这里。
+
+    【两个发布方式】
+    - ``publish``：异步等待所有订阅者处理完成，适合对顺序敏感的场景
+    - ``publish_nowait``：只负责投递，不等待结果，适合同步上下文里快速通知
     """
 
     def __init__(self) -> None:
@@ -108,6 +120,7 @@ class RuntimeEventBus:
         self._handlers.append(entry)
 
         def _unsubscribe() -> None:
+            # 返回一个取消订阅函数，调用者自己决定何时解绑。
             with contextlib.suppress(ValueError):
                 self._handlers.remove(entry)
 
@@ -134,10 +147,10 @@ class RuntimeEventBus:
 
 
 class RuntimeEventPublisher:
-    """Convenience publisher for turn-scoped runtime events.
+    """面向 Agent 业务层的便捷发布器。
 
-    Agent code should decide when state transitions happen; this helper owns
-    the mechanics of building event contexts and carrying per-turn metadata.
+    AgentLoop 不需要手工拼每一种事件对象，只要调用这里的高层方法即可。
+    这样“什么时候发事件”由 Agent 逻辑决定，而“事件对象怎么组装”集中在这里。
     """
 
     def __init__(self, bus: RuntimeEventBus | None = None) -> None:
@@ -161,13 +174,16 @@ class RuntimeEventPublisher:
         )
 
     def record_turn_runtime(self, session_key: str, runtime: Any) -> None:
+        """缓存某个 turn 的运行时信息，供 turn 完成事件一并带出。"""
         self._turn_runtime[session_key] = runtime
 
     def record_turn_latency(self, session_key: str, latency_ms: int | None) -> None:
+        """缓存某个 turn 的耗时，等 turn 完成时一起发布。"""
         if latency_ms is not None:
             self._turn_latency_ms[session_key] = int(latency_ms)
 
     def clear_turn(self, session_key: str) -> None:
+        """清理某个 turn 的暂存发布数据。"""
         self._turn_latency_ms.pop(session_key, None)
         self._turn_runtime.pop(session_key, None)
 
@@ -236,7 +252,10 @@ class RuntimeEventPublisher:
 
 
 def ensure_runtime_event_publisher(owner: Any) -> RuntimeEventPublisher:
-    """Return an owner's runtime publisher, creating missing state lazily."""
+    """确保某个对象上存在 ``RuntimeEventPublisher``，没有就懒创建。
+
+    这是一种“按需补齐依赖”的写法，适合被多个入口复用的宿主对象。
+    """
     publisher = getattr(owner, "runtime_event_publisher", None)
     if isinstance(publisher, RuntimeEventPublisher):
         return publisher

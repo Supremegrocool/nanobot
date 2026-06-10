@@ -1,4 +1,11 @@
-"""Base LLM provider interface."""
+"""LLM Provider 抽象基类与通用数据结构。
+
+这个文件是 Provider 子系统的核心骨架。所有具体服务商实现最终都要遵守这里的抽象：
+
+- ``ToolCallRequest``：模型要求调用工具时的统一表示
+- ``LLMResponse``：一次模型响应的统一表示
+- ``LLMProvider``：所有 Provider 的通用接口与重试逻辑
+"""
 
 import asyncio
 import json
@@ -19,7 +26,11 @@ from nanobot.utils.helpers import image_placeholder_text
 
 @dataclass
 class ToolCallRequest:
-    """A tool call request from the LLM."""
+    """模型发出的工具调用请求。
+
+    不同 Provider 对工具调用的原始格式各不相同，但进入 AgentRunner 后，
+    都会先被标准化成这个结构。
+    """
     id: str
     name: str
     arguments: Any
@@ -28,7 +39,10 @@ class ToolCallRequest:
     function_provider_specific_fields: dict[str, Any] | None = None
 
     def to_openai_tool_call(self) -> dict[str, Any]:
-        """Serialize to an OpenAI-style tool_call payload."""
+        """序列化成 OpenAI 风格的 ``tool_call`` 字典。
+
+        这样后续历史回放和跨 Provider 兼容会更简单，因为可以统一使用一种结构。
+        """
         arguments = (
             self.arguments
             if isinstance(self.arguments, str)
@@ -52,11 +66,14 @@ class ToolCallRequest:
 
 
 def parse_tool_arguments(arguments: Any) -> Any:
-    """Parse provider tool arguments without guessing executable parameters.
+    """解析 Provider 返回的工具参数，但不做过度猜测。
 
-    Valid JSON object strings become dicts. Empty strings become no-arg calls.
-    Malformed JSON and JSON array/scalar values are preserved so ToolRegistry
-    can reject them before execution.
+    设计原则很重要：
+    - 合法 JSON 对象字符串可以转成 dict
+    - 空串可以视为无参调用
+    - 但畸形 JSON 或数组/标量，不在这里强行修复
+
+    真正“能不能执行”要交给 ToolRegistry 校验，避免 Provider 层替执行层瞎猜。
     """
     if arguments is None:
         return {}
@@ -75,11 +92,10 @@ def parse_tool_arguments(arguments: Any) -> Any:
 
 
 def tool_arguments_object_for_replay(arguments: Any) -> dict[str, Any]:
-    """Return object-shaped arguments for provider history replay only.
+    """仅用于“历史回放”场景，把参数整理成对象形态。
 
-    This compatibility path may repair malformed JSON because it only shapes
-    existing conversation history for provider protocols. Do not use it for
-    newly generated tool calls that are about to execute.
+    注意这里和 ``parse_tool_arguments`` 不同：它允许对畸形 JSON 做兼容修复，
+    因为它面对的是“旧历史重放协议兼容”，不是“即将执行的新工具调用”。
     """
     if arguments is None:
         return {}
@@ -103,13 +119,13 @@ def tool_arguments_object_for_replay(arguments: Any) -> dict[str, Any]:
 
 
 def tool_arguments_json_for_replay(arguments: Any) -> str:
-    """Return JSON object string arguments for provider history replay only."""
+    """仅用于历史回放：把参数转成 JSON 对象字符串。"""
     return json.dumps(tool_arguments_object_for_replay(arguments), ensure_ascii=False)
 
 
 @dataclass
 class LLMResponse:
-    """Response from an LLM provider."""
+    """一次 LLM 调用的统一响应结构。"""
     content: str | None
     tool_calls: list[ToolCallRequest] = field(default_factory=list)
     finish_reason: str = "stop"
@@ -127,13 +143,17 @@ class LLMResponse:
 
     @property
     def has_tool_calls(self) -> bool:
-        """Check if response contains tool calls."""
+        """判断响应中是否包含工具调用。"""
         return len(self.tool_calls) > 0
 
     @property
     def should_execute_tools(self) -> bool:
-        """Tools execute only when has_tool_calls AND finish_reason is a tool-capable stop.
-        Blocks gateway-injected calls under ``refusal`` / ``content_filter`` / ``error`` (#3220)."""
+        """判断当前响应是否应该进入“执行工具”阶段。
+
+        不只是“有 tool_calls 就执行”，还要看 finish_reason 是否允许。
+        例如某些网关会在 ``refusal`` / ``content_filter`` / ``error`` 情况下注入假工具调用，
+        这里要显式挡掉。
+        """
         if not self.has_tool_calls:
             return False
         return self.finish_reason in ("tool_calls", "function_call", "stop")
@@ -141,7 +161,7 @@ class LLMResponse:
 
 @dataclass(frozen=True)
 class GenerationSettings:
-    """Default generation settings."""
+    """生成参数默认值集合。"""
 
     temperature: float = 0.7
     max_tokens: int = 4096
@@ -152,7 +172,15 @@ _SYNTHETIC_USER_CONTENT = "(conversation continued)"
 
 
 class LLMProvider(ABC):
-    """Base class for LLM providers."""
+    """所有 LLM Provider 的抽象基类。
+
+    【你可以把它理解成什么】
+    它相当于“面向 AgentRunner 的统一模型驱动接口”。
+    上层不关心你底下接的是 OpenAI、Anthropic、Azure，还是本地 Ollama，
+    只关心：
+    - 给你 messages / tools / model
+    - 你返回统一的 ``LLMResponse``
+    """
 
     supports_progress_deltas = False
 
@@ -233,7 +261,12 @@ class LLMProvider(ABC):
 
     @staticmethod
     def _sanitize_empty_content(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Sanitize message content: fix empty blocks, strip internal _meta fields."""
+        """清洗待发给 Provider 的消息内容。
+
+        主要修两类问题：
+        - 空内容块 / 非法空 assistant 内容
+        - 内部专用 ``_meta`` 字段
+        """
         result: list[dict[str, Any]] = []
         for msg in messages:
             content = msg.get("content")
@@ -282,7 +315,7 @@ class LLMProvider(ABC):
 
     @staticmethod
     def _tool_name(tool: dict[str, Any]) -> str:
-        """Extract tool name from either OpenAI or Anthropic-style tool schemas."""
+        """兼容不同 Provider 风格，从工具 schema 中提取工具名。"""
         name = tool.get("name")
         if isinstance(name, str):
             return name
@@ -295,7 +328,7 @@ class LLMProvider(ABC):
 
     @classmethod
     def _tool_cache_marker_indices(cls, tools: list[dict[str, Any]]) -> list[int]:
-        """Return cache marker indices: builtin/MCP boundary and tail index."""
+        """返回适合做 prompt cache 标记的工具列表边界索引。"""
         if not tools:
             return []
 
@@ -317,7 +350,7 @@ class LLMProvider(ABC):
         messages: list[dict[str, Any]],
         allowed_keys: frozenset[str],
     ) -> list[dict[str, Any]]:
-        """Keep only provider-safe message keys and normalize assistant content."""
+        """只保留对 Provider 安全的消息字段，并规范 assistant 内容。"""
         sanitized = []
         for msg in messages:
             clean = {k: v for k, v in msg.items() if k in allowed_keys}
@@ -337,19 +370,9 @@ class LLMProvider(ABC):
         reasoning_effort: str | None = None,
         tool_choice: str | dict[str, Any] | None = None,
     ) -> LLMResponse:
-        """
-        Send a chat completion request.
+        """发送一次非流式对话请求。
 
-        Args:
-            messages: List of message dicts with 'role' and 'content'.
-            tools: Optional list of tool definitions.
-            model: Model identifier (provider-specific).
-            max_tokens: Maximum tokens in response.
-            temperature: Sampling temperature.
-            tool_choice: Tool selection strategy ("auto", "required", or specific tool dict).
-
-        Returns:
-            LLMResponse with content and/or tool calls.
+        这是所有具体 Provider 必须实现的核心接口。
         """
         pass
 
@@ -360,7 +383,7 @@ class LLMProvider(ABC):
 
     @classmethod
     def _is_transient_response(cls, response: LLMResponse) -> bool:
-        """Prefer structured error metadata, fallback to text markers for legacy providers."""
+        """判断某次错误是否属于“可重试的临时错误”。"""
         if response.error_should_retry is not None:
             return bool(response.error_should_retry)
 
@@ -379,12 +402,7 @@ class LLMProvider(ABC):
 
     @classmethod
     def is_arrearage_response(cls, response: LLMResponse) -> bool:
-        """Detect API-key arrearage / quota / billing errors that won't clear on retry.
-
-        These surface as HTTP 402 or as billing semantic tokens (e.g.
-        ``insufficient_quota``, ``payment_required``); reuses the same token and
-        text markers the 429 retry policy treats as non-retryable.
-        """
+        """检测“欠费/配额耗尽/账单异常”这类重试也无意义的错误。"""
         if response.error_status_code is not None and int(response.error_status_code) == 402:
             return True
 
@@ -435,6 +453,7 @@ class LLMProvider(ABC):
 
     @classmethod
     def _is_retryable_429_response(cls, response: LLMResponse) -> bool:
+        """细分 429：区分是真限流，还是余额/配额不足。"""
         type_token = cls._normalize_error_token(response.error_type)
         code_token = cls._normalize_error_token(response.error_code)
         semantic_tokens = {
@@ -457,11 +476,13 @@ class LLMProvider(ABC):
 
     @staticmethod
     def _enforce_role_alternation(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Merge consecutive same-role messages and drop trailing assistant messages.
+        """修正消息角色交替关系，适配更严格的 Provider 协议。
 
-        Some providers (OpenAI-compat, Azure, vLLM, Ollama, etc.) reject requests
-        where the last message is 'assistant' (prefill not supported) or two
-        consecutive non-system messages share the same role.
+        很多 Provider 不接受：
+        - 最后一条消息是 assistant
+        - 连续两条非 system 消息角色相同
+
+        所以这里会在真正请求前做一层协议修复。
         """
         if not messages:
             return messages
@@ -498,10 +519,8 @@ class LLMProvider(ABC):
         while merged and merged[-1].get("role") == "assistant":
             last_popped = merged.pop()
 
-        # If removing trailing assistant messages left only system messages,
-        # the request would be invalid for most providers (e.g. Zhipu/GLM
-        # error 1214).  Recover by converting the last popped assistant
-        # message to a user message so the LLM can still see the content.
+        # 如果删掉结尾 assistant 后只剩 system 消息，很多 Provider 又会拒绝。
+        # 这时宁可把最后一条 assistant 临时转成 user，也要保证协议合法。
         if (
             merged
             and last_popped is not None
@@ -511,11 +530,8 @@ class LLMProvider(ABC):
             recovered["role"] = "user"
             merged.append(recovered)
 
-        # Safety net: ensure the first non-system message is not a bare
-        # ``assistant`` message.  Providers like GLM reject system→assistant
-        # with error 1214.  This can happen when upstream truncation (e.g.
-        # _snip_history) drops the only user message.  Insert a synthetic
-        # user message to keep the sequence valid.
+        # 额外兜底：防止截断后变成 system -> assistant 开头。
+        # 某些 Provider（如 GLM）会直接拒绝这种序列。
         for i, msg in enumerate(merged):
             if msg.get("role") != "system":
                 if msg.get("role") == "assistant" and not msg.get("tool_calls"):
@@ -526,7 +542,7 @@ class LLMProvider(ABC):
 
     @staticmethod
     def _strip_image_content(messages: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
-        """Replace image_url blocks with text placeholder. Returns None if no images found."""
+        """把图片块替换成文本占位，必要时用于错误恢复。"""
         found = False
         result = []
         for msg in messages:
@@ -548,12 +564,7 @@ class LLMProvider(ABC):
 
     @staticmethod
     def _strip_image_content_inplace(messages: list[dict[str, Any]]) -> bool:
-        """Replace image_url blocks with text placeholder *in-place*.
-
-        Mutates the content lists of the original message dicts so that
-        callers holding references to those dicts also see the stripped
-        version.
-        """
+        """原地把图片块替换成文本占位。"""
         found = False
         for msg in messages:
             content = msg.get("content")
@@ -567,7 +578,7 @@ class LLMProvider(ABC):
         return found
 
     async def _safe_chat(self, **kwargs: Any) -> LLMResponse:
-        """Call chat() and convert unexpected exceptions to error responses."""
+        """包装 ``chat()``：把异常转成标准 ``LLMResponse(error)``。"""
         try:
             return await self.chat(**kwargs)
         except asyncio.CancelledError:
@@ -588,17 +599,10 @@ class LLMProvider(ABC):
         on_thinking_delta: Callable[[str], Awaitable[None]] | None = None,
         on_tool_call_delta: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> LLMResponse:
-        """Stream a chat completion, calling *on_content_delta* for each text chunk.
+        """发送一次流式对话请求。
 
-        *on_thinking_delta* is reserved for providers that expose incremental
-        thinking/reasoning on the wire; the default fallback invokes neither
-        callback for native deltas (only the optional single *on_content_delta*
-        after :meth:`chat`).
-
-        Returns the same ``LLMResponse`` as :meth:`chat`.  The default
-        implementation falls back to a non-streaming call and delivers the
-        full content as a single delta.  Providers that support native
-        streaming should override this method.
+        默认实现会退化成非流式 ``chat``，然后把整段内容一次性当作一个 delta 发出去。
+        真正支持原生流式的 Provider 应该重写它。
         """
         _ = on_thinking_delta, on_tool_call_delta
         response = await self.chat(
@@ -611,7 +615,7 @@ class LLMProvider(ABC):
         return response
 
     async def _safe_chat_stream(self, **kwargs: Any) -> LLMResponse:
-        """Call chat_stream() and convert unexpected exceptions to error responses."""
+        """包装 ``chat_stream()``：把异常转成标准错误响应。"""
         try:
             return await self.chat_stream(**kwargs)
         except asyncio.CancelledError:
@@ -634,7 +638,7 @@ class LLMProvider(ABC):
         retry_mode: str = "standard",
         on_retry_wait: Callable[[str], Awaitable[None]] | None = None,
     ) -> LLMResponse:
-        """Call chat_stream() with retry on transient provider failures."""
+        """带重试地调用 ``chat_stream()``。"""
         if max_tokens is self._SENTINEL or max_tokens is None:
             max_tokens = self.generation.max_tokens
         if temperature is self._SENTINEL or temperature is None:
@@ -680,14 +684,10 @@ class LLMProvider(ABC):
         retry_mode: str = "standard",
         on_retry_wait: Callable[[str], Awaitable[None]] | None = None,
     ) -> LLMResponse:
-        """Call chat() with retry on transient provider failures.
+        """带重试地调用 ``chat()``。
 
-        Parameters default to ``self.generation`` when not explicitly passed,
-        so callers no longer need to thread temperature / max_tokens /
-        reasoning_effort through every layer. Explicit ``None`` is also
-        normalized to the provider's generation defaults so that downstream
-        ``_build_kwargs`` never sees ``None`` for ``max_tokens`` / ``temperature``
-        (which would crash ``max(1, max_tokens)``).
+        如果调用方没有显式传 ``max_tokens / temperature / reasoning_effort``，
+        这里会自动使用 ``self.generation`` 中的默认值。
         """
         if max_tokens is self._SENTINEL or max_tokens is None:
             max_tokens = self.generation.max_tokens
@@ -711,6 +711,7 @@ class LLMProvider(ABC):
 
     @classmethod
     def _extract_retry_after(cls, content: str | None) -> float | None:
+        """从错误文本里提取“建议重试等待时间”。"""
         text = (content or "").lower()
         patterns = (
             r"retry after\s+(\d+(?:\.\d+)?)\s*(ms|milliseconds|s|sec|secs|seconds|m|min|minutes)?",
@@ -738,6 +739,7 @@ class LLMProvider(ABC):
 
     @classmethod
     def _extract_retry_after_from_headers(cls, headers: Any) -> float | None:
+        """从 HTTP 响应头中提取 retry-after。"""
         if not headers:
             return None
 
@@ -778,6 +780,7 @@ class LLMProvider(ABC):
 
     @classmethod
     def _extract_retry_after_from_response(cls, response: LLMResponse) -> float | None:
+        """统一从结构化字段或文本中提取 retry-after。"""
         if response.error_retry_after_s is not None and response.error_retry_after_s > 0:
             return response.error_retry_after_s
         if response.retry_after is not None and response.retry_after > 0:
@@ -792,6 +795,7 @@ class LLMProvider(ABC):
         persistent: bool,
         on_retry_wait: Callable[[str], Awaitable[None]] | None = None,
     ) -> None:
+        # 对长时间等待做分段 sleep，这样可以周期性向外报告“仍在重试等待中”。
         remaining = max(0.0, delay)
         while remaining > 0:
             if on_retry_wait:
@@ -820,6 +824,14 @@ class LLMProvider(ABC):
         last_response: LLMResponse | None = None
         last_error_key: str | None = None
         identical_error_count = 0
+        """通用重试主循环。
+
+        这是 Provider 层非常重要的一段公共逻辑：
+        - 判断错误是否可重试
+        - 处理标准模式和 persistent 模式
+        - 支持 retry-after
+        - 在必要时做“去图片重试”这类恢复动作
+        """
         while True:
             attempt += 1
             response = await call(**kw)
@@ -839,6 +851,8 @@ class LLMProvider(ABC):
                 identical_error_count = 1 if error_key else 0
 
             if not self._is_transient_response(response):
+                # 某些 Provider 失败只是因为图片内容不被接受；
+                # 这时尝试去掉图片再重试一次，尽量保住当前 turn。
                 stripped = self._strip_image_content(original_messages)
                 if stripped is not None and stripped != kw["messages"]:
                     logger.warning(
@@ -901,5 +915,5 @@ class LLMProvider(ABC):
 
     @abstractmethod
     def get_default_model(self) -> str:
-        """Get the default model for this provider."""
+        """返回该 Provider 的默认模型名。"""
         pass

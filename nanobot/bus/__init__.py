@@ -1,4 +1,4 @@
-"""Message bus module for decoupled channel-agent communication."""
+"""消息总线模块：用于解耦渠道层与 Agent 核心之间的通信。"""
 
 from nanobot.bus.events import InboundMessage, OutboundMessage
 from nanobot.bus.queue import MessageBus

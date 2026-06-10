@@ -1,4 +1,12 @@
-"""Tool registry for dynamic tool management."""
+"""工具注册表：统一管理 Agent 可调用工具。
+
+模型并不会直接调用 Python 函数，而是先输出“我要调用哪个工具 + 参数是什么”。
+这个注册表就是工具系统的中央目录，负责回答三类问题：
+
+1. 当前有哪些工具可用？
+2. 某个工具的 schema 定义是什么？
+3. 模型给出的工具调用能否被解析、校验并执行？
+"""
 
 import json
 from typing import Any
@@ -7,10 +15,10 @@ from nanobot.agent.tools.base import Tool
 
 
 class ToolRegistry:
-    """
-    Registry for agent tools.
+    """Agent 工具中心注册表。
 
-    Allows dynamic registration and execution of tools.
+    所有内置工具、MCP 包装工具、插件工具最终都会注册到这里，
+    AgentRunner 再通过它完成工具定义获取与真实执行。
     """
 
     def __init__(self):
@@ -18,22 +26,26 @@ class ToolRegistry:
         self._cached_definitions: list[dict[str, Any]] | None = None
 
     def register(self, tool: Tool) -> None:
-        """Register a tool."""
+        """注册一个工具，并清空 schema 缓存。"""
         self._tools[tool.name] = tool
         self._cached_definitions = None
 
     def unregister(self, name: str) -> None:
-        """Unregister a tool by name."""
+        """按名字注销工具，并清空 schema 缓存。"""
         self._tools.pop(name, None)
         self._cached_definitions = None
 
     def get(self, name: str) -> Tool | None:
-        """Get a tool by name."""
+        """按名字获取工具实例。"""
         return self._tools.get(name)
 
     @staticmethod
     def _lookup_key(name: str) -> str:
-        """Normalize names for suggestions only; never for execution."""
+        """生成“建议匹配键”。
+
+        注意这里只用于“拼写建议”，绝不会用于真正执行。
+        工具执行必须严格按原始名字匹配，避免模糊匹配带来风险。
+        """
         return "".join(ch.lower() for ch in name if ch.isalnum())
 
     def _suggest_name(self, name: str) -> str | None:
@@ -50,12 +62,12 @@ class ToolRegistry:
         return None
 
     def has(self, name: str) -> bool:
-        """Check if a tool is registered."""
+        """判断某个工具是否已注册。"""
         return name in self._tools
 
     @staticmethod
     def _schema_name(schema: dict[str, Any]) -> str:
-        """Extract a normalized tool name from either OpenAI or flat schemas."""
+        """从不同风格的 schema 结构里提取工具名。"""
         fn = schema.get("function")
         if isinstance(fn, dict):
             name = fn.get("name")
@@ -65,11 +77,15 @@ class ToolRegistry:
         return name if isinstance(name, str) else ""
 
     def get_definitions(self) -> list[dict[str, Any]]:
-        """Get tool definitions with stable ordering for cache-friendly prompts.
+        """返回工具定义列表，并尽量保持稳定顺序。
 
-        Built-in tools are sorted first as a stable prefix, then MCP tools are
-        sorted and appended.  The result is cached until the next
-        register/unregister call.
+        【为什么强调稳定顺序】
+        工具定义会进入 prompt。顺序越稳定，越有利于 prompt cache 和结果可复现。
+
+        【排序策略】
+        - 内置工具排前面
+        - MCP 工具排后面
+        - 两组内部再按名字排序
         """
         if self._cached_definitions is not None:
             return self._cached_definitions
@@ -94,7 +110,7 @@ class ToolRegistry:
         name: str,
         params: Any,
     ) -> tuple[Tool | None, Any, str | None]:
-        """Resolve, cast, and validate one tool call."""
+        """解析、类型转换并校验一次工具调用。"""
         tool = self._tools.get(name)
         if not tool:
             suggestion = self._suggest_name(str(name))
@@ -121,6 +137,7 @@ class ToolRegistry:
 
     @classmethod
     def _coerce_argument_value(cls, value: Any) -> Any:
+        """把字符串形式的 JSON 参数尽量还原成真实对象。"""
         if value is None:
             return {}
         if not isinstance(value, str):
@@ -147,6 +164,7 @@ class ToolRegistry:
 
     @classmethod
     def _unwrap_arguments_payload(cls, tool: Tool, params: Any) -> Any:
+        """兼容某些 provider 把参数再包一层 ``arguments`` 的情况。"""
         if not isinstance(params, dict) or set(params) != {"arguments"}:
             return params
         properties = (tool.parameters or {}).get("properties", {})
@@ -155,7 +173,11 @@ class ToolRegistry:
         return cls._coerce_argument_value(params.get("arguments"))
 
     async def execute(self, name: str, params: Any) -> Any:
-        """Execute a tool by name with given parameters."""
+        """按名字执行工具。
+
+        这里除了真正执行，还负责把常见错误包装成“可让模型继续恢复”的文本，
+        这样模型看到报错后还能改参数再试，而不是整轮直接崩掉。
+        """
         hint = "\n\n[Analyze the error above and try a different approach.]"
         tool, params, error = self.prepare_call(name, params)
         if error:
@@ -172,7 +194,7 @@ class ToolRegistry:
 
     @property
     def tool_names(self) -> list[str]:
-        """Get list of registered tool names."""
+        """返回当前已注册工具名列表。"""
         return list(self._tools.keys())
 
     def __len__(self) -> int:

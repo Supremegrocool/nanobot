@@ -1,4 +1,14 @@
-"""MCP client: connects to MCP servers and wraps their tools as native nanobot tools."""
+"""MCP 客户端：把外部 MCP 服务器接入为 nanobot 原生工具。
+
+这是理解 nanobot “怎么连接第三方工具生态”的关键文件之一。
+
+它主要负责：
+
+1. 连接配置里的 MCP server
+2. 枚举 server 暴露的 tools / resources / prompts
+3. 包装成 nanobot 统一的 ``Tool`` 接口
+4. 在断线或配置热更新时，负责重连与重注册
+"""
 
 import asyncio
 import os
@@ -23,9 +33,8 @@ from nanobot.bus.events import (
 )
 from nanobot.security.network import validate_url_target
 
-# Transient connection errors that warrant a single retry.
-# These typically happen when an MCP server restarts or a network
-# connection is interrupted between calls.
+# 这些异常通常表示“瞬时连接故障”，适合自动重试一次。
+# 常见场景是 MCP server 刚重启，或两次调用之间网络短暂中断。
 _TRANSIENT_EXC_NAMES: frozenset[str] = frozenset((
     "ClosedResourceError",
     "BrokenResourceError",
@@ -39,25 +48,25 @@ _TRANSIENT_EXC_NAMES: frozenset[str] = frozenset((
 
 _WINDOWS_SHELL_LAUNCHERS: frozenset[str] = frozenset(("npx", "npm", "pnpm", "yarn", "bunx"))
 
-# Characters allowed in tool names by model providers (Anthropic, OpenAI, etc.).
-# Replace anything outside [a-zA-Z0-9_-] with underscore and collapse runs.
+# 各家模型 API 对工具名字符集都有要求。
+# 因此这里会把非法字符替换为下划线，并折叠连续下划线。
 _SANITIZE_RE = re.compile(r"_+")
 _RELOAD_LOCKS: WeakKeyDictionary[Any, asyncio.Lock] = WeakKeyDictionary()
 _ReconnectCallback = Callable[[str, str, Tool], Awaitable[Tool | None]]
 
 
 def _sanitize_name(name: str) -> str:
-    """Sanitize an MCP-derived name for model API compatibility."""
+    """把 MCP 派生名称清洗成模型 API 可接受的工具名。"""
     return _SANITIZE_RE.sub("_", re.sub(r"[^a-zA-Z0-9_-]", "_", name))
 
 
 def _is_transient(exc: BaseException) -> bool:
-    """Check if an exception looks like a transient connection error."""
+    """判断异常是否像“可重试的瞬时连接错误”。"""
     return type(exc).__name__ in _TRANSIENT_EXC_NAMES
 
 
 def _is_session_terminated(exc: BaseException) -> bool:
-    """Return True when the MCP SDK reports a dead client session."""
+    """判断异常是否意味着 MCP client session 已经失效。"""
     messages = [str(exc)]
     error = getattr(exc, "error", None)
     if error is not None:
@@ -70,12 +79,10 @@ def _is_session_terminated(exc: BaseException) -> bool:
 
 
 async def _probe_http_url(url: str, timeout: float = 3.0) -> bool:
-    """Quick TCP probe to check if an HTTP MCP server is reachable.
+    """先做一次轻量 TCP 探测，判断 HTTP MCP 服务是否可达。
 
-    Avoids entering ``streamable_http_client`` / ``sse_client`` when the port is
-    closed — those transports use anyio task groups whose cleanup can raise
-    ``RuntimeError`` / ``ExceptionGroup`` that escape the caller's try/except
-    and crash the event loop.
+    这样可以避免在端口根本没开时直接进入更重的 transport 初始化流程，
+    减少 anyio 清理异常把错误抛到事件循环外的风险。
     """
     parsed = urllib.parse.urlparse(url)
     host = parsed.hostname or "127.0.0.1"
@@ -96,7 +103,7 @@ async def _probe_http_url(url: str, timeout: float = 3.0) -> bool:
 
 
 async def _validate_mcp_request_url(request: httpx.Request) -> None:
-    """Validate each outgoing MCP HTTP request, including redirect targets."""
+    """校验每一个发往 MCP HTTP 服务的请求 URL。"""
     ok, error = validate_url_target(str(request.url))
     if not ok:
         raise httpx.RequestError(
@@ -106,7 +113,7 @@ async def _validate_mcp_request_url(request: httpx.Request) -> None:
 
 
 def _windows_command_basename(command: str) -> str:
-    """Return the lowercase basename for a Windows command or path."""
+    """提取 Windows 命令/路径的 basename，并转成小写。"""
     return command.replace("\\", "/").rsplit("/", maxsplit=1)[-1].lower()
 
 
@@ -115,7 +122,7 @@ def _normalize_windows_stdio_command(
     args: list[str] | None,
     env: dict[str, str] | None,
 ) -> tuple[str, list[str], dict[str, str] | None]:
-    """Wrap Windows shell launchers so MCP stdio servers start reliably."""
+    """在 Windows 上包装某些 shell 启动器，保证 stdio 型 MCP server 稳定启动。"""
     normalized_args = list(args or [])
     if os.name != "nt":
         return command, normalized_args, env
@@ -142,7 +149,7 @@ def _normalize_windows_stdio_command(
 
 
 def _extract_nullable_branch(options: Any) -> tuple[dict[str, Any], bool] | None:
-    """Return the single non-null branch for nullable unions."""
+    """从可空联合类型里提取唯一的“非 null 分支”。"""
     if not isinstance(options, list):
         return None
 
@@ -162,7 +169,7 @@ def _extract_nullable_branch(options: Any) -> tuple[dict[str, Any], bool] | None
 
 
 def _normalize_schema_for_openai(schema: Any) -> dict[str, Any]:
-    """Normalize only nullable JSON Schema patterns for tool definitions."""
+    """把 MCP schema 规范化成更适合 OpenAI 工具定义的形式。"""
     if not isinstance(schema, dict):
         return {"type": "object", "properties": {}}
 
@@ -203,7 +210,11 @@ def _normalize_schema_for_openai(schema: Any) -> dict[str, Any]:
 
 
 class _MCPWrapperBase(Tool):
-    """Common reconnect handling for wrappers bound to one MCP server session."""
+    """所有 MCP 包装工具的公共基类。
+
+    这里最重要的职责不是“执行工具”，而是记住自己属于哪个 server，
+    并在 session 断掉时协助触发定向重连。
+    """
 
     _plugin_discoverable = False
 
@@ -244,7 +255,7 @@ class _MCPWrapperBase(Tool):
 
 
 class MCPToolWrapper(_MCPWrapperBase):
-    """Wraps a single MCP server tool as a nanobot Tool."""
+    """把单个 MCP tool 包装成 nanobot 的 ``Tool``。"""
 
     _plugin_discoverable = False
 
@@ -286,8 +297,8 @@ class MCPToolWrapper(_MCPWrapperBase):
                 )
                 return f"(MCP tool call timed out after {self._tool_timeout}s)"
             except asyncio.CancelledError:
-                # MCP SDK's anyio cancel scopes can leak CancelledError on timeout/failure.
-                # Re-raise only if our task was externally cancelled (e.g. /stop).
+                # MCP SDK 底层 anyio cancel scope 在超时/失败时，偶尔会把
+                # CancelledError 冒出来。只有真的是外部取消时才继续向上抛。
                 task = asyncio.current_task()
                 if task is not None and task.cancelling() > 0:
                     raise
@@ -311,7 +322,7 @@ class MCPToolWrapper(_MCPWrapperBase):
                         )
                         await asyncio.sleep(1)  # Brief backoff before retry
                         continue
-                    # Second transient failure — give up with retry-specific message
+                    # 第二次瞬时失败还没恢复，就放弃重试并返回明确错误。
                     logger.exception(
                         "MCP tool '{}' failed after retry: {}",
                         self._name,
@@ -326,7 +337,7 @@ class MCPToolWrapper(_MCPWrapperBase):
                 )
                 return f"(MCP tool call failed: {type(exc).__name__})"
             else:
-                # Success — extract result
+                # 成功后，把 MCP 返回的内容块统一转换成字符串结果。
                 parts = []
                 for block in result.content:
                     if isinstance(block, types.TextContent):
@@ -339,7 +350,7 @@ class MCPToolWrapper(_MCPWrapperBase):
 
 
 class MCPResourceWrapper(_MCPWrapperBase):
-    """Wraps an MCP resource URI as a read-only nanobot Tool."""
+    """把 MCP resource URI 包装成只读 nanobot 工具。"""
 
     _plugin_discoverable = False
 
@@ -440,7 +451,7 @@ class MCPResourceWrapper(_MCPWrapperBase):
 
 
 class MCPPromptWrapper(_MCPWrapperBase):
-    """Wraps an MCP prompt as a read-only nanobot Tool."""
+    """把 MCP prompt 包装成只读 nanobot 工具。"""
 
     _plugin_discoverable = False
 
@@ -455,7 +466,8 @@ class MCPPromptWrapper(_MCPWrapperBase):
         )
         self._prompt_timeout = prompt_timeout
 
-        # Build parameters from prompt arguments
+        # 用 prompt 的参数声明来构造工具参数 schema，
+        # 这样模型可以像调普通工具一样填写参数。
         properties: dict[str, Any] = {}
         required: list[str] = []
         for arg in prompt_def.arguments or []:
@@ -578,11 +590,10 @@ class MCPPromptWrapper(_MCPWrapperBase):
 async def connect_mcp_servers(
     mcp_servers: dict, registry: ToolRegistry
 ) -> dict[str, AsyncExitStack]:
-    """Connect to configured MCP servers and register their tools, resources, prompts.
+    """连接配置中的 MCP server，并注册其 tools/resources/prompts。
 
-    Returns a dict mapping server name -> its dedicated AsyncExitStack.
-    Each server gets its own stack to prevent cancel scope conflicts
-    when multiple MCP servers are configured.
+    返回 ``server_name -> AsyncExitStack`` 的映射。
+    每个 server 独占一个 exit stack，避免多个 MCP 连接共享同一清理栈时互相影响。
     """
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.sse import sse_client
@@ -794,7 +805,7 @@ async def connect_mcp_servers(
 
 
 def session_extra(metadata: Mapping[str, Any] | None) -> dict[str, Any]:
-    """Return persisted session kwargs for MCP preset attachments."""
+    """提取需要随 session 持久化保存的 MCP preset 附加信息。"""
     mcp_presets = metadata.get("mcp_presets") if isinstance(metadata, Mapping) else None
     return {"mcp_presets": mcp_presets} if isinstance(mcp_presets, list) and mcp_presets else {}
 
@@ -807,7 +818,7 @@ def runtime_lines(
     connected_server_names: set[str] | None = None,
     skip: bool = False,
 ) -> list[str]:
-    """Return model-visible MCP preset annotations for the current turn."""
+    """生成当前 turn 暴露给模型看的 MCP preset 注释文本。"""
     if skip:
         return []
     if configured_server_names is None:
@@ -857,7 +868,7 @@ def runtime_lines(
 
 
 async def connect_missing_servers(state: Any, registry: ToolRegistry) -> None:
-    """Connect configured MCP servers that are not currently live."""
+    """把已配置但当前未连上的 MCP server 补连上。"""
     missing_servers = {
         name: cfg for name, cfg in state._mcp_servers.items() if name not in state._mcp_stacks
     }
@@ -884,7 +895,7 @@ async def connect_missing_servers(state: Any, registry: ToolRegistry) -> None:
 
 
 async def reload_servers(state: Any, registry: ToolRegistry) -> dict[str, Any]:
-    """Reconcile live MCP connections with the current config file."""
+    """根据最新配置文件，对在线 MCP 连接做热重载对账。"""
     async with _reload_lock(state):
         try:
             from nanobot.config.loader import load_config, resolve_config_env_vars
@@ -969,7 +980,7 @@ async def reload_servers(state: Any, registry: ToolRegistry) -> dict[str, Any]:
 
 
 async def request_mcp_reload(bus: Any, *, timeout: float = 15.0) -> dict[str, Any]:
-    """Ask the running agent loop to reconcile live MCP connections."""
+    """请求运行中的 AgentLoop 重新对账 MCP 连接。"""
     loop = asyncio.get_running_loop()
     ack: asyncio.Future[dict[str, Any]] = loop.create_future()
     await bus.publish_inbound(

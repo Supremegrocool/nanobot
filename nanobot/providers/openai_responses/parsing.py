@@ -1,4 +1,10 @@
-"""Parse Responses API SSE streams and SDK response objects."""
+"""Responses API 解析层：把原始流/对象转换成 nanobot 统一结果。
+
+nanobot 内部很多地方仍然偏向使用“类似 Chat Completions”的统一抽象，
+而 OpenAI Responses API 的事件流、tool call、reasoning 表示方式并不一样。
+
+这个模块的职责就是做这层翻译。
+"""
 
 from __future__ import annotations
 
@@ -20,7 +26,7 @@ FINISH_REASON_MAP = {
 
 
 def map_finish_reason(status: str | None) -> str:
-    """Map a Responses API status string to a Chat-Completions-style finish_reason."""
+    """把 Responses API 状态映射成 Chat Completions 风格的 finish_reason。"""
     return FINISH_REASON_MAP.get(status or "completed", "stop")
 
 
@@ -65,7 +71,7 @@ def _tool_arguments_source(*values: Any) -> Any:
 
 
 async def iter_sse(response: httpx.Response) -> AsyncGenerator[dict[str, Any], None]:
-    """Yield parsed JSON events from a Responses API SSE stream."""
+    """逐条产出 Responses API SSE 流中的 JSON 事件。"""
     buffer: list[str] = []
 
     def _flush() -> dict[str, Any] | None:
@@ -91,7 +97,7 @@ async def iter_sse(response: httpx.Response) -> AsyncGenerator[dict[str, Any], N
             continue
         buffer.append(line)
 
-    # Flush any remaining buffer at EOF (#10)
+    # 流结束时把缓冲区里最后还没刷出的事件补刷出来。
     if buffer:
         event = _flush()
         if event is not None:
@@ -103,7 +109,7 @@ async def consume_sse(
     on_content_delta: Callable[[str], Awaitable[None]] | None = None,
     on_tool_call_delta: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
 ) -> tuple[str, list[ToolCallRequest], str]:
-    """Consume a Responses API SSE stream into ``(content, tool_calls, finish_reason)``."""
+    """消费 SSE 流，并提取文本、工具调用和 finish_reason。"""
     content, tool_calls, finish_reason, _, _ = await consume_sse_with_reasoning(
         response,
         on_content_delta=on_content_delta,
@@ -118,7 +124,7 @@ async def consume_sse_with_reasoning(
     on_tool_call_delta: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     on_reasoning_delta: Callable[[str], Awaitable[None]] | None = None,
 ) -> tuple[str, list[ToolCallRequest], str, dict[str, int], str | None]:
-    """Consume a Responses API SSE stream, including visible reasoning summaries."""
+    """消费 SSE 流，并额外收集可见 reasoning 摘要。"""
     content = ""
     tool_calls: list[ToolCallRequest] = []
     tool_call_buffers: dict[str, dict[str, Any]] = {}
@@ -250,6 +256,7 @@ async def consume_sse_with_reasoning(
 
 
 def _extract_reasoning_summary_from_output(output: Any) -> str | None:
+    """从 Responses ``output`` 结构中提取 reasoning summary 文本。"""
     parts: list[str] = []
     for item in output or []:
         if not isinstance(item, dict):
@@ -267,7 +274,7 @@ def _extract_reasoning_summary_from_output(output: Any) -> str | None:
 
 
 def parse_response_output(response: Any) -> LLMResponse:
-    """Parse an SDK ``Response`` object into an ``LLMResponse``."""
+    """把 SDK ``Response`` 对象解析成统一的 ``LLMResponse``。"""
     if not isinstance(response, dict):
         dump = getattr(response, "model_dump", None)
         response = dump() if callable(dump) else vars(response)
@@ -327,7 +334,7 @@ async def consume_sdk_stream(
     on_content_delta: Callable[[str], Awaitable[None]] | None = None,
     on_tool_call_delta: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
 ) -> tuple[str, list[ToolCallRequest], str, dict[str, int], str | None]:
-    """Consume an SDK async stream from ``client.responses.create(stream=True)``."""
+    """消费 OpenAI SDK 的异步 Responses 流。"""
     content = ""
     tool_calls: list[ToolCallRequest] = []
     tool_call_buffers: dict[str, dict[str, Any]] = {}

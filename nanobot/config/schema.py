@@ -1,4 +1,15 @@
-"""Configuration schema using Pydantic."""
+"""基于 Pydantic 的配置模型定义。
+
+这个文件是 nanobot 配置系统的“结构真相来源（single source of truth）”。
+用户写在 ``config.json`` 里的内容，最终都要在这里找到对应的数据模型。
+
+学习这个文件时，建议你把它当成“项目有哪些可调开关”的总目录：
+- ``agents``：Agent 主行为
+- ``channels``：聊天渠道
+- ``providers``：模型服务商
+- ``tools``：工具能力
+- ``api / gateway``：对外服务
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -19,32 +30,36 @@ if TYPE_CHECKING:
 
 
 class Base(BaseModel):
-    """Base model that accepts both camelCase and snake_case keys."""
+    """所有配置模型的基础类。
+
+    通过 ``alias_generator=to_camel``，它能同时接受：
+    - Python 代码里常见的 ``snake_case``
+    - JSON 配置里常见的 ``camelCase``
+    """
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
 
 class ChannelsConfig(Base):
-    """Configuration for chat channels.
+    """聊天渠道总配置。
 
-    Built-in and plugin channel configs are stored as extra fields (dicts).
-    Each channel parses its own config in __init__.
-    Per-channel "streaming": true enables streaming output (requires send_delta impl).
+    这里既包含“所有渠道共享的公共开关”，也允许把具体渠道配置作为额外字段挂进来。
+    例如 ``channels.telegram``、``channels.discord``、插件渠道等。
     """
 
     model_config = ConfigDict(extra="allow")
 
-    send_progress: bool = True  # stream agent's text progress to the channel
-    send_tool_hints: bool = False  # stream tool-call hints (e.g. read_file("…"))
-    show_reasoning: bool = True  # surface model reasoning when channel implements it
-    extract_document_text: bool = True  # extract text from document attachments before sending to the model
-    send_max_retries: int = Field(default=3, ge=0, le=10)  # Max delivery attempts (initial send included)
-    transcription_provider: str = "groq"  # Deprecated: use top-level transcription.provider
-    transcription_language: str | None = Field(default=None, pattern=r"^[a-z]{2,3}$")  # Deprecated: use top-level transcription.language
+    send_progress: bool = True  # 是否把“生成中进度”推送给渠道
+    send_tool_hints: bool = False  # 是否把工具调用提示（如 read_file(...)）推送给渠道
+    show_reasoning: bool = True  # 如果渠道支持，是否展示模型 reasoning / thinking
+    extract_document_text: bool = True  # 是否在把附件交给模型前先提取文档文本
+    send_max_retries: int = Field(default=3, ge=0, le=10)  # 发送失败时的最大尝试次数（含首次）
+    transcription_provider: str = "groq"  # 已废弃：请改用顶层 transcription.provider
+    transcription_language: str | None = Field(default=None, pattern=r"^[a-z]{2,3}$")  # 已废弃：请改用顶层 transcription.language
 
 
 class TranscriptionConfig(Base):
-    """Cross-channel audio transcription configuration."""
+    """跨渠道音频转写配置。"""
 
     enabled: bool = True
     provider: str | None = None  # Validated by nanobot.audio.transcription_registry.
@@ -55,29 +70,33 @@ class TranscriptionConfig(Base):
 
 
 class DreamConfig(Base):
-    """Dream memory consolidation configuration."""
+    """Dream 记忆整合配置。
+
+    Dream 可以理解为一个“后台整理记忆”的周期任务，
+    它会把零散历史逐步浓缩成更适合长期记忆保存的形式。
+    """
 
     _HOUR_MS = 3_600_000
 
-    enabled: bool = True  # Register the periodic Dream consolidation job on startup
-    interval_h: int = Field(default=2, ge=1)  # Every 2 hours by default
-    cron: str | None = Field(default=None, exclude=True)  # Legacy cron expression override
+    enabled: bool = True  # 启动时是否注册 Dream 周期任务
+    interval_h: int = Field(default=2, ge=1)  # 默认每 2 小时执行一次
+    cron: str | None = Field(default=None, exclude=True)  # 旧版 cron 表达式覆盖入口
     model_override: str | None = Field(
         default=None,
         validation_alias=AliasChoices("modelOverride", "model", "model_override"),
-    )  # Override model for Dream sessions (pending implementation)
-    max_batch_size: int = Field(default=20, ge=1)  # Deprecated: no longer used
-    max_iterations: int = Field(default=15, ge=1)  # Deprecated: no longer used
-    annotate_line_ages: bool = True  # Deprecated: no longer used
+    )  # 为 Dream 会话单独指定模型（预留能力，尚未完全实现）
+    max_batch_size: int = Field(default=20, ge=1)  # 已废弃：不再使用
+    max_iterations: int = Field(default=15, ge=1)  # 已废弃：不再使用
+    annotate_line_ages: bool = True  # 已废弃：不再使用
 
     def build_schedule(self, timezone: str) -> CronSchedule:
-        """Build the runtime schedule, preferring the legacy cron override if present."""
+        """构建运行时调度对象，优先兼容旧版 cron 配置。"""
         if self.cron:
             return CronSchedule(kind="cron", expr=self.cron, tz=timezone)
         return CronSchedule(kind="every", every_ms=self.interval_h * self._HOUR_MS)
 
     def describe_schedule(self) -> str:
-        """Return a human-readable summary for logs and startup output."""
+        """返回适合日志和启动提示的人类可读调度描述。"""
         if self.cron:
             return f"cron {self.cron} (legacy)"
         hours = self.interval_h
@@ -85,7 +104,7 @@ class DreamConfig(Base):
 
 
 class InlineFallbackConfig(Base):
-    """One inline fallback model configuration."""
+    """单个内联兜底模型配置。"""
 
     model: str
     provider: str
@@ -99,7 +118,11 @@ FallbackCandidate = str | InlineFallbackConfig
 
 
 class ModelPresetConfig(Base):
-    """A named set of model + generation parameters for quick switching."""
+    """模型预设配置。
+
+    它把“模型名 + provider + 生成参数”打包成一个可命名、可切换的预设。
+    这样运行时切模型不需要改一堆散字段。
+    """
 
     label: str | None = None
     model: str
@@ -119,13 +142,21 @@ class ModelPresetConfig(Base):
 
 
 class AgentDefaults(Base):
-    """Default agent configuration."""
+    """Agent 默认行为配置。
+
+    这是最值得新同学优先阅读的配置块之一，因为它决定了：
+    - 默认用哪个模型
+    - 最多允许调多少轮工具
+    - 上下文窗口预算
+    - 会话是否自动压缩
+    - 是否启用统一会话
+    """
 
     workspace: str = "~/.nanobot/workspace"
-    model_preset: str | None = None  # Active preset name — takes precedence over fields below
+    model_preset: str | None = None  # 当前激活的预设名；一旦设置，优先级高于下面散字段
     model: str = "anthropic/claude-opus-4-5"
     provider: str = (
-        "auto"  # Provider name (e.g. "anthropic", "openrouter") or "auto" for auto-detection
+        "auto"  # provider 名称，如 anthropic/openrouter；auto 表示自动匹配
     )
     max_tokens: int = 8192
     context_window_tokens: int = 65_536
@@ -142,41 +173,41 @@ class AgentDefaults(Base):
         le=500,
         validation_alias=AliasChoices("toolHintMaxLength"),
         serialization_alias="toolHintMaxLength",
-    )  # Max characters for tool hint display (e.g. "$ cd …/project && npm test")
-    reasoning_effort: str | None = None  # low / medium / high / adaptive / none — LLM thinking effort; None preserves the provider default
-    timezone: str = "UTC"  # IANA timezone, e.g. "Asia/Shanghai", "America/New_York"
-    bot_name: str = "nanobot"  # Display name shown in CLI prompts (e.g. "{name} is thinking...")
-    bot_icon: str = "🐈"  # Short icon (emoji or text) shown next to the bot name in CLI; "" to omit
-    unified_session: bool = False  # Share one session across all channels (single-user multi-device)
-    disabled_skills: list[str] = Field(default_factory=list)  # Skill names to exclude from loading (e.g. ["summarize", "skill-creator"])
+    )  # 工具提示展示给用户时允许的最大字符数
+    reasoning_effort: str | None = None  # 模型思考强度：low / medium / high / adaptive / none
+    timezone: str = "UTC"  # IANA 时区名，例如 Asia/Shanghai
+    bot_name: str = "nanobot"  # CLI 中展示给用户看的机器人名字
+    bot_icon: str = "🐈"  # CLI 中机器人名字旁边显示的短图标；空串表示不显示
+    unified_session: bool = False  # 是否跨渠道共享一个会话（单用户多设备场景）
+    disabled_skills: list[str] = Field(default_factory=list)  # 要禁用的技能名列表
     session_ttl_minutes: int = Field(
         default=0,
         ge=0,
         validation_alias=AliasChoices("idleCompactAfterMinutes", "sessionTtlMinutes"),
         serialization_alias="idleCompactAfterMinutes",
-    )  # Auto-compact idle threshold in minutes (0 = disabled)
+    )  # 会话空闲多久后自动压缩，单位分钟；0 表示关闭
     max_messages: int = Field(
         default=120,
         ge=0,
-    )  # Max messages to replay from session history (0 = use default 120, respects token budget)
+    )  # 从 session 历史最多回放多少条消息到模型上下文
     consolidation_ratio: float = Field(
         default=0.5,
         ge=0.1,
         le=0.95,
         validation_alias=AliasChoices("consolidationRatio"),
         serialization_alias="consolidationRatio",
-    )  # Consolidation target ratio (0.5 = 50% of budget retained after compression)
+    )  # 压缩目标比例，例如 0.5 表示压缩后保留约 50% 预算
     dream: DreamConfig = Field(default_factory=DreamConfig)
 
 
 class AgentsConfig(Base):
-    """Agent configuration."""
+    """Agent 配置总入口。"""
 
     defaults: AgentDefaults = Field(default_factory=AgentDefaults)
 
 
 class ProviderConfig(Base):
-    """LLM provider configuration."""
+    """单个 LLM Provider 的通用配置。"""
 
     api_key: str | None = Field(default=None, repr=False)
     api_base: str | None = None
@@ -187,14 +218,17 @@ class ProviderConfig(Base):
 
 
 class BedrockProviderConfig(ProviderConfig):
-    """AWS Bedrock Runtime provider configuration."""
+    """AWS Bedrock 专用配置。"""
 
     region: str | None = None  # AWS region, falls back to AWS_REGION/AWS_DEFAULT_REGION/profile
     profile: str | None = None  # Optional AWS shared config profile
 
 
 class ProvidersConfig(Base):
-    """Configuration for LLM providers."""
+    """所有 Provider 的配置集合。
+
+    这里列出的字段不只是“可选服务商列表”，也是自动匹配和状态展示的配置基础。
+    """
 
     custom: ProviderConfig = Field(default_factory=ProviderConfig)  # Any OpenAI-compatible endpoint
     azure_openai: ProviderConfig = Field(default_factory=ProviderConfig)  # Azure OpenAI (model = deployment name)
@@ -237,6 +271,7 @@ class ProvidersConfig(Base):
 
     @model_validator(mode="after")
     def _validate_api_type_scope(self) -> "ProvidersConfig":
+        """限制 ``api_type`` 目前只允许出现在 providers.openai 下。"""
         for name in self.__class__.model_fields:
             if name == "openai":
                 continue
@@ -247,7 +282,7 @@ class ProvidersConfig(Base):
 
 
 class HeartbeatConfig(Base):
-    """Heartbeat service configuration (now backed by cron)."""
+    """Heartbeat 服务配置。"""
 
     enabled: bool = True
     interval_s: int = 30 * 60  # 30 minutes
@@ -255,48 +290,52 @@ class HeartbeatConfig(Base):
 
 
 class ApiConfig(Base):
-    """OpenAI-compatible API server configuration."""
+    """OpenAI 兼容 API 服务配置。"""
 
-    host: str = "127.0.0.1"  # Safer default: local-only bind.
+    host: str = "127.0.0.1"  # 更安全的默认值：只监听本机
     port: int = 8900
     timeout: float = 120.0  # Per-request timeout in seconds.
 
 
 class GatewayConfig(Base):
-    """Gateway/server configuration."""
+    """Gateway / WebUI 服务配置。"""
 
-    host: str = "127.0.0.1"  # Safer default: local-only bind.
+    host: str = "127.0.0.1"  # 更安全的默认值：只监听本机
     port: int = 18790
     heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
 
 
 class MCPServerConfig(Base):
-    """MCP server connection configuration (stdio or HTTP)."""
+    """MCP 服务器连接配置。
 
-    type: Literal["stdio", "sse", "streamableHttp"] | None = None  # auto-detected if omitted
-    command: str = ""  # Stdio: command to run (e.g. "npx")
-    args: list[str] = Field(default_factory=list)  # Stdio: command arguments
-    env: dict[str, str] = Field(default_factory=dict)  # Stdio: extra env vars
-    cwd: str = ""  # Stdio: working directory for MCP server runtime artifacts
-    url: str = ""  # HTTP/SSE: endpoint URL
-    headers: dict[str, str] = Field(default_factory=dict)  # HTTP/SSE: custom headers
-    tool_timeout: int = 30  # seconds before a tool call is cancelled
-    enabled_tools: list[str] = Field(default_factory=lambda: ["*"])  # Only register these tools; accepts raw MCP names or wrapped mcp_<server>_<tool> names; ["*"] = all tools; [] = no tools
+    支持两大类传输方式：
+    - stdio：把某个本地命令当成 MCP Server 启起来
+    - HTTP/SSE：连接远程 MCP Server
+    """
+
+    type: Literal["stdio", "sse", "streamableHttp"] | None = None  # 省略时自动推断传输方式
+    command: str = ""  # stdio 模式下要启动的命令
+    args: list[str] = Field(default_factory=list)  # stdio 模式下命令参数
+    env: dict[str, str] = Field(default_factory=dict)  # stdio 模式下额外环境变量
+    cwd: str = ""  # stdio 模式下工作目录
+    url: str = ""  # HTTP/SSE 模式下服务地址
+    headers: dict[str, str] = Field(default_factory=dict)  # HTTP/SSE 模式下自定义请求头
+    tool_timeout: int = 30  # 一次 MCP 工具调用超时时间（秒）
+    enabled_tools: list[str] = Field(default_factory=lambda: ["*"])  # 允许注册哪些 MCP 工具
 
 
 def _lazy_default(module_path: str, class_name: str) -> Any:
-    """Deferred import helper for ToolsConfig default factories."""
+    """延迟导入工具配置类，避免循环导入。"""
     import importlib
     module = importlib.import_module(module_path)
     return getattr(module, class_name)()
 
 
 class ToolsConfig(Base):
-    """Tools configuration.
+    """工具系统配置。
 
-    Field types for tool-specific sub-configs are resolved via model_rebuild()
-    at the bottom of this file to avoid circular imports (tool modules import
-    Base from schema.py).
+    工具模块本身又会反向 import ``schema.py`` 里的 ``Base``，
+    所以这里采用“延迟解析字段类型”的方式来避免循环导入。
     """
 
     web: WebToolsConfig = Field(default_factory=lambda: _lazy_default("nanobot.agent.tools.web", "WebToolsConfig"))
@@ -306,7 +345,7 @@ class ToolsConfig(Base):
     image_generation: ImageGenerationToolConfig = Field(
         default_factory=lambda: _lazy_default("nanobot.agent.tools.image_generation", "ImageGenerationToolConfig"),
     )
-    restrict_to_workspace: bool = False  # policy intent: keep tool access inside workspace when possible
+    restrict_to_workspace: bool = False  # 是否尽量把工具访问限制在 workspace 内
     webui_allow_local_service_access: bool = Field(
         default=True,
         validation_alias=AliasChoices(
@@ -315,13 +354,13 @@ class ToolsConfig(Base):
             "allowLocalPreviewAccess",
             "allow_local_preview_access",
         ),
-    )  # allow WebUI Full Access shell checks against localhost services; legacy allowLocalPreviewAccess still reads
+    )  # 是否允许 WebUI Full Access 访问 localhost 服务
     mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
-    ssrf_whitelist: list[str] = Field(default_factory=list)  # CIDR ranges to exempt from SSRF blocking (e.g. ["100.64.0.0/10"] for Tailscale)
+    ssrf_whitelist: list[str] = Field(default_factory=list)  # 免于 SSRF 拦截的 CIDR 白名单
 
 
 class Config(BaseSettings):
-    """Root configuration for nanobot."""
+    """nanobot 根配置对象。"""
 
     agents: AgentsConfig = Field(default_factory=AgentsConfig)
     channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
@@ -336,12 +375,14 @@ class Config(BaseSettings):
     )
 
     def __init__(self, **values: Any) -> None:
+        """初始化根配置前，先确保工具子配置类型已解析完成。"""
         if not type(self).__pydantic_complete__:
             _resolve_tool_config_refs()
         super().__init__(**values)
 
     @model_validator(mode="after")
     def _validate_model_preset(self) -> "Config":
+        """校验默认预设与 fallback 预设引用是否合法。"""
         if "default" in self.model_presets:
             raise ValueError("model_preset name 'default' is reserved for agents.defaults")
         name = self.agents.defaults.model_preset
@@ -353,7 +394,7 @@ class Config(BaseSettings):
         return self
 
     def resolve_default_preset(self) -> ModelPresetConfig:
-        """Return the implicit `default` preset from agents.defaults fields."""
+        """从 ``agents.defaults`` 散字段合成隐式的 ``default`` 预设。"""
         d = self.agents.defaults
         return ModelPresetConfig(
             model=d.model, provider=d.provider, max_tokens=d.max_tokens,
@@ -362,7 +403,7 @@ class Config(BaseSettings):
         )
 
     def resolve_preset(self, name: str | None = None) -> ModelPresetConfig:
-        """Return effective model params from a named preset or the implicit default."""
+        """按名称解析生效中的模型预设；空名时回退到隐式 default。"""
         name = self.agents.defaults.model_preset if name is None else name
         if not name or name == "default":
             return self.resolve_default_preset()
@@ -372,7 +413,7 @@ class Config(BaseSettings):
 
     @property
     def workspace_path(self) -> Path:
-        """Get expanded workspace path."""
+        """返回展开 ``~`` 之后的工作区路径。"""
         return Path(self.agents.defaults.workspace).expanduser()
 
     def _match_provider(
@@ -380,7 +421,17 @@ class Config(BaseSettings):
         *,
         preset: ModelPresetConfig | None = None,
     ) -> tuple["ProviderConfig | None", str | None]:
-        """Match provider config and its registry name. Returns (config, spec_name)."""
+        """匹配某个模型应使用哪个 provider 配置。
+
+        返回 ``(provider_config, provider_name)``。
+
+        这是整个 provider 自动匹配逻辑的核心入口，匹配顺序大致是：
+        1. 如果 preset 明确指定 provider，则直接按名字找
+        2. 根据模型前缀匹配，例如 ``anthropic/...``
+        3. 根据模型关键词匹配，例如包含 ``claude`` / ``gpt`` / ``qwen``
+        4. 对本地 provider 做特殊兜底
+        5. 最后从“已配置好 key 的 provider”里选择一个可用兜底
+        """
         from nanobot.providers.registry import PROVIDERS, find_by_name
 
         resolved = preset or self.resolve_preset()
@@ -401,7 +452,8 @@ class Config(BaseSettings):
             kw = kw.lower()
             return kw in model_lower or kw.replace("-", "_") in model_normalized
 
-        # Explicit provider prefix wins — prevents `github-copilot/...codex` matching openai_codex.
+        # 显式 provider 前缀优先，避免类似
+        # `github-copilot/...codex` 被误判成 openai_codex。
         for spec in PROVIDERS:
             if spec.is_transcription_only:
                 continue
@@ -410,7 +462,7 @@ class Config(BaseSettings):
                 if spec.is_oauth or spec.is_local or spec.is_direct or p.api_key:
                     return p, spec.name
 
-        # Match by keyword (order follows PROVIDERS registry)
+        # 再按关键词匹配，优先级顺序由 PROVIDERS 注册表决定。
         for spec in PROVIDERS:
             if spec.is_transcription_only:
                 continue
@@ -419,10 +471,9 @@ class Config(BaseSettings):
                 if spec.is_oauth or spec.is_local or spec.is_direct or p.api_key:
                     return p, spec.name
 
-        # Fallback: configured local providers can route models without
-        # provider-specific keywords (for example plain "llama3.2" on Ollama).
-        # Prefer providers whose detect_by_base_keyword matches the configured api_base
-        # (e.g. Ollama's "11434" in "http://localhost:11434") over plain registry order.
+        # 本地 provider 的兜底逻辑：
+        # 有些模型名本身不带 provider 关键词，例如 ollama 上的 "llama3.2"。
+        # 这时优先根据 api_base 特征来判断。
         local_fallback: tuple[ProviderConfig, str] | None = None
         for spec in PROVIDERS:
             if not spec.is_local:
@@ -437,8 +488,8 @@ class Config(BaseSettings):
         if local_fallback:
             return local_fallback
 
-        # Fallback: gateways first, then others (follows registry order)
-        # OAuth providers are NOT valid fallbacks — they require explicit model selection
+        # 最后兜底：按 PROVIDERS 顺序找一个已配置好的 provider。
+        # 但 OAuth provider 不能做兜底，因为它们通常要求显式模型选择。
         for spec in PROVIDERS:
             if spec.is_oauth or spec.is_transcription_only:
                 continue
@@ -453,7 +504,7 @@ class Config(BaseSettings):
         *,
         preset: ModelPresetConfig | None = None,
     ) -> ProviderConfig | None:
-        """Get matched provider config (api_key, api_base, extra_headers). Falls back to first available."""
+        """获取匹配到的 ProviderConfig。"""
         p, _ = self._match_provider(model, preset=preset)
         return p
 
@@ -463,7 +514,7 @@ class Config(BaseSettings):
         *,
         preset: ModelPresetConfig | None = None,
     ) -> str | None:
-        """Get the registry name of the matched provider (e.g. "deepseek", "openrouter")."""
+        """获取匹配到的 provider 注册名，例如 ``deepseek``。"""
         _, name = self._match_provider(model, preset=preset)
         return name
 
@@ -473,7 +524,7 @@ class Config(BaseSettings):
         *,
         preset: ModelPresetConfig | None = None,
     ) -> str | None:
-        """Get API key for the given model. Falls back to first available key."""
+        """获取某个模型对应 provider 的 API key。"""
         p = self.get_provider(model, preset=preset)
         return p.api_key if p else None
 
@@ -483,7 +534,10 @@ class Config(BaseSettings):
         *,
         preset: ModelPresetConfig | None = None,
     ) -> str | None:
-        """Get API base URL for the given model, falling back to the provider default when present."""
+        """获取某个模型对应 provider 的 API Base。
+
+        如果用户配置里没填 ``api_base``，则回退到 provider 注册表中的默认值。
+        """
         from nanobot.providers.registry import find_by_name
 
         p, name = self._match_provider(model, preset=preset)
@@ -499,11 +553,10 @@ class Config(BaseSettings):
 
 
 def _resolve_tool_config_refs() -> None:
-    """Resolve forward references in ToolsConfig by importing tool config classes.
+    """解析 ToolsConfig 里的前向引用类型。
 
-    Must be called after all modules are loaded (breaks circular imports).
-    Re-exports the classes into this module's namespace so existing imports
-    like ``from nanobot.config.schema import ExecToolConfig`` continue to work.
+    因为工具模块会反向依赖 ``schema.py``，这里只能在模块加载后再把实际工具配置类
+    导入进来，并触发 ``model_rebuild()`` 完成类型绑定。
     """
     import sys
 
@@ -513,7 +566,7 @@ def _resolve_tool_config_refs() -> None:
     from nanobot.agent.tools.shell import ExecToolConfig
     from nanobot.agent.tools.web import WebFetchConfig, WebSearchConfig, WebToolsConfig
 
-    # Re-export into this module's namespace
+    # 重新导出到当前模块命名空间，兼容历史导入路径。
     mod = sys.modules[__name__]
     mod.ExecToolConfig = ExecToolConfig  # type: ignore[attr-defined]
     mod.CliAppsToolConfig = CliAppsToolConfig  # type: ignore[attr-defined]
@@ -527,9 +580,8 @@ def _resolve_tool_config_refs() -> None:
     Config.model_rebuild()
 
 
-# Eagerly resolve when the import chain allows it (no circular deps at this
-# point).  If it fails (first import triggers a cycle), the rebuild will
-# happen lazily when Config/ToolsConfig is first used at runtime.
+# 如果当前导入链允许，就尽早解析；
+# 如果一开始还是撞上循环导入，就等第一次真正用到 Config/ToolsConfig 时再懒解析。
 try:
     _resolve_tool_config_refs()
 except ImportError:

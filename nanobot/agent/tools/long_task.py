@@ -1,17 +1,12 @@
-"""Sustained goal tools on the main agent (Codex-style).
+"""持续目标工具：在当前会话上跟踪“长任务目标”。
 
-Follow the built-in **long-goal** skill for lifecycle rules and how to phrase
-objectives (especially **idempotent**, compaction-safe goals). Load that skill
-from the skills listing (path shown there) before composing ``long_task.goal`` text.
+这里的 long task 不是“立刻启动一个后台线程跑完所有事”，而是：
 
-``long_task`` registers an objective on the session (JSON-serializable metadata).
-Active objectives are mirrored each turn into the Runtime Context block (see
-``nanobot.session.goal_state.goal_state_runtime_lines``) so compaction cannot hide them.
-Work proceeds in ordinary agent turns (same runner, compaction as configured).
-Call ``complete_goal`` when the sustained objective should stop being tracked:
-finished successfully, or cancelled / superseded / redirected—in every case the recap should match reality.
+1. 先把长期目标登记到 session metadata
+2. 后续每个普通 turn 继续围绕这个目标推进
+3. 完成或取消时，再显式调用 ``complete_goal`` 收尾
 
-There is **no** sub-agent orchestrator and **no** special WebSocket ``agent_ui`` stream.
+所以它更像“长期任务状态管理器”，而不是“异步执行器”。
 """
 
 from __future__ import annotations
@@ -40,7 +35,7 @@ def _iso_now() -> str:
 
 
 class _GoalToolsMixin(ContextAware):
-    """Shared routing context + Session lookup."""
+    """持续目标工具共用的上下文与会话查找逻辑。"""
 
     def __init__(
         self,
@@ -49,9 +44,8 @@ class _GoalToolsMixin(ContextAware):
     ) -> None:
         self._sessions = sessions
         self._runtime_events = runtime_events
-        # Each subclass gets its own ContextVar so concurrent tasks across
-        # different tool types (LongTaskTool vs CompleteGoalTool) do not
-        # interfere with each other.
+        # 每个工具子类单独持有自己的 ContextVar，
+        # 避免 long_task 和 complete_goal 并发时串上下文。
         self._request_ctx: ContextVar[RequestContext | None] = ContextVar(
             f"{self.__class__.__name__}_request_ctx",
             default=None,
@@ -70,7 +64,7 @@ class _GoalToolsMixin(ContextAware):
         return self._sessions.get_or_create(key)
 
     async def _publish_goal_state_changed(self, metadata: dict[str, Any]) -> None:
-        """Publish authoritative goal metadata as a runtime event."""
+        """把最新 goal 状态作为运行时事件广播出去。"""
         runtime_events = self._runtime_events
         rc = self._request_ctx.get()
         if runtime_events is None or rc is None:
@@ -109,7 +103,7 @@ class _GoalToolsMixin(ContextAware):
     )
 )
 class LongTaskTool(Tool, _GoalToolsMixin):
-    """Begin or replace focus on a long-running objective stored on the session."""
+    """在当前会话上登记一个持续目标。"""
 
     def __init__(
         self,
@@ -191,7 +185,7 @@ class LongTaskTool(Tool, _GoalToolsMixin):
     )
 )
 class CompleteGoalTool(Tool, _GoalToolsMixin):
-    """Mark the active sustained goal finished after all required work is verified."""
+    """把当前活动持续目标标记为结束。"""
 
     def __init__(
         self,

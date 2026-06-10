@@ -1,4 +1,4 @@
-"""Spawn tool for creating background subagents."""
+"""子 Agent 启动工具：给主 Agent 一个“把任务外包出去”的入口。"""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     )
 )
 class SpawnTool(Tool, ContextAware):
-    """Tool to spawn a subagent for background task execution."""
+    """后台子 Agent 启动工具。"""
 
     def __init__(self, manager: "SubagentManager"):
         self._manager = manager
@@ -48,7 +48,7 @@ class SpawnTool(Tool, ContextAware):
         return cls(manager=ctx.subagent_manager)
 
     def set_context(self, ctx: RequestContext) -> None:
-        """Set the origin context for subagent announcements."""
+        """记录当前请求来源，方便子 Agent 完成后回传到原会话。"""
         self._origin_channel.set(ctx.channel)
         self._origin_chat_id.set(ctx.chat_id)
         self._session_key.set(ctx.session_key or f"{ctx.channel}:{ctx.chat_id}")
@@ -75,7 +75,7 @@ class SpawnTool(Tool, ContextAware):
         temperature: float | None = None,
         **kwargs: Any,
     ) -> str:
-        """Spawn a subagent to execute the given task."""
+        """创建一个子 Agent 去执行给定任务。"""
         running = self._manager.get_running_count()
         limit = self._manager.max_concurrent_subagents
         if running >= limit:
@@ -84,6 +84,7 @@ class SpawnTool(Tool, ContextAware):
                 f"({running}/{limit} running). Wait for a running subagent "
                 f"to complete before spawning a new one."
             )
+        # 把当前工作区访问范围也传递给子 Agent，让它继承本轮安全边界。
         return await self._manager.spawn(
             task=task,
             label=label,

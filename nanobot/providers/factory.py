@@ -1,4 +1,11 @@
-"""Create LLM providers from config."""
+"""根据配置创建 LLM Provider。
+
+这个模块负责把“配置层的 provider 信息”真正变成“可用的 Provider 实例”。
+它还负责：
+- 应用 model preset
+- 构建 fallback provider 链
+- 生成 runtime snapshot
+"""
 
 from __future__ import annotations
 
@@ -13,6 +20,11 @@ from nanobot.providers.registry import find_by_name
 
 @dataclass(frozen=True)
 class ProviderSnapshot:
+    """Provider 运行时快照。
+
+    它把当前生效的 provider、model、上下文窗口和签名打包在一起，
+    方便 AgentLoop 在运行时热切换模型配置。
+    """
     provider: LLMProvider
     model: str
     context_window_tokens: int
@@ -25,6 +37,7 @@ def _resolve_model_preset(
     preset_name: str | None = None,
     preset: ModelPresetConfig | None = None,
 ) -> ModelPresetConfig:
+    """解析本次要使用的模型预设。"""
     return preset if preset is not None else config.resolve_preset(preset_name)
 
 
@@ -35,7 +48,7 @@ def _make_provider_core(
     preset: ModelPresetConfig | None = None,
     model: str | None = None,
 ) -> LLMProvider:
-    """Create a plain LLM provider without failover wrapping."""
+    """创建一个“纯 Provider”，不包 fallback 逻辑。"""
     resolved = _resolve_model_preset(config, preset_name=preset_name, preset=preset)
     model = model or resolved.model
     provider_name = config.get_provider_name(model, preset=resolved)
@@ -45,6 +58,7 @@ def _make_provider_core(
         raise ValueError(f"Provider '{provider_name}' only supports transcription.")
     backend = spec.backend if spec else "openai_compat"
 
+    # 这里先做 provider 级基本校验，再进入具体实现分支。
     if backend == "azure_openai":
         if not p or not p.api_base:
             raise ValueError("Azure OpenAI requires api_base in config.")
@@ -112,6 +126,7 @@ def _inline_fallback_preset(
     primary: ModelPresetConfig,
     fallback: InlineFallbackConfig,
 ) -> ModelPresetConfig:
+    """把内联 fallback 配置扩展成完整的 ``ModelPresetConfig``。"""
     return ModelPresetConfig(
         model=fallback.model,
         provider=fallback.provider,
@@ -129,6 +144,7 @@ def _inline_fallback_preset(
 
 
 def _resolve_fallback_presets(config: Config, primary: ModelPresetConfig) -> list[ModelPresetConfig]:
+    """解析主预设对应的所有 fallback 预设。"""
     presets: list[ModelPresetConfig] = []
     for fallback in config.agents.defaults.fallback_models:
         if isinstance(fallback, str):
@@ -145,10 +161,10 @@ def make_provider(
     preset: ModelPresetConfig | None = None,
     model: str | None = None,
 ) -> LLMProvider:
-    """Create the LLM provider implied by config.
+    """创建最终对外可用的 Provider。
 
-    When *model* is given, it overrides the resolved/preset model — used by
-    the failover path to create providers for fallback models.
+    如果配置了 fallback_models，这里返回的可能不是单个 provider，
+    而是包了一层 ``FallbackProvider`` 的组合对象。
     """
     resolved = _resolve_model_preset(config, preset_name=preset_name, preset=preset)
     provider = _make_provider_core(config, preset_name=preset_name, preset=preset, model=model)
@@ -172,7 +188,11 @@ def provider_signature(
     preset_name: str | None = None,
     preset: ModelPresetConfig | None = None,
 ) -> tuple[object, ...]:
-    """Return the config fields that affect the active provider chain."""
+    """返回足以标识当前 provider 链配置的签名元组。
+
+    这个签名会被用来判断：
+    “当前运行时 provider 配置是否真的变化了，需要热更新吗？”
+    """
     resolved = _resolve_model_preset(config, preset_name=preset_name, preset=preset)
     p = config.get_provider(resolved.model, preset=resolved)
     fallback_presets = _resolve_fallback_presets(config, resolved)
@@ -223,6 +243,7 @@ def build_provider_snapshot(
     preset_name: str | None = None,
     preset: ModelPresetConfig | None = None,
 ) -> ProviderSnapshot:
+    """构建完整 ProviderSnapshot。"""
     resolved = _resolve_model_preset(config, preset_name=preset_name, preset=preset)
     fallback_windows = [
         fallback.context_window_tokens
@@ -241,6 +262,7 @@ def load_provider_snapshot(
     *,
     preset_name: str | None = None,
 ) -> ProviderSnapshot:
+    """从磁盘配置文件加载并构建 ProviderSnapshot。"""
     from nanobot.config.loader import load_config, resolve_config_env_vars
 
     return build_provider_snapshot(

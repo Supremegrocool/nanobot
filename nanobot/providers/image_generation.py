@@ -1,4 +1,13 @@
-"""Image generation provider helpers."""
+"""图片生成 Provider 抽象与适配层。
+
+上层工具希望拿到的是统一接口：
+
+- 输入：prompt、模型名、可选参考图、比例/尺寸提示
+- 输出：若干张图片，以及可选说明文本
+
+而不同平台的返回格式、鉴权方式、能力边界都不同。
+这个模块就是把这些差异屏蔽掉。
+"""
 
 from __future__ import annotations
 
@@ -44,12 +53,12 @@ _OLLAMA_ASPECT_RATIO_RE = re.compile(r"^\s*(\d+)\s*:\s*(\d+)\s*$")
 
 
 class ImageGenerationError(RuntimeError):
-    """Raised when the image generation provider cannot return images."""
+    """图片生成 provider 无法返回可用图片时抛出的统一异常。"""
 
 
 @dataclass(frozen=True)
 class GeneratedImageResponse:
-    """Images and optional text returned by the provider."""
+    """图片生成 provider 的统一返回结构。"""
 
     images: list[str]
     content: str
@@ -57,7 +66,7 @@ class GeneratedImageResponse:
 
 
 def _read_image_b64(path: str | Path) -> tuple[str, str]:
-    """Return ``(mime, base64)`` for the image at ``path``."""
+    """读取本地图片，并返回 ``(mime, base64)``。"""
     p = Path(path).expanduser()
     raw = p.read_bytes()
     mime = detect_image_mime(raw)
@@ -67,13 +76,13 @@ def _read_image_b64(path: str | Path) -> tuple[str, str]:
 
 
 def image_path_to_data_url(path: str | Path) -> str:
-    """Convert a local image path to an image data URL."""
+    """把本地图片路径转换成 data URL。"""
     mime, encoded = _read_image_b64(path)
     return f"data:{mime};base64,{encoded}"
 
 
 def image_path_to_inline_data(path: str | Path) -> dict[str, str]:
-    """Convert a local image path to a Gemini ``inlineData`` payload dict."""
+    """把本地图片路径转换成 Gemini ``inlineData`` 负载字典。"""
     mime, encoded = _read_image_b64(path)
     return {"mimeType": mime, "data": encoded}
 
@@ -91,12 +100,10 @@ def _b64_image_data_url(value: str) -> str:
 
 
 def _aihubmix_size(aspect_ratio: str | None, image_size: str | None) -> str:
-    """Return an OpenAI Images API size string for AIHubMix.
+    """为 AIHubMix 计算 OpenAI Images 风格的 size 字符串。
 
-    The WebUI emits compact size hints like ``1K`` for OpenRouter. AIHubMix's
-    Images API expects OpenAI-style dimensions or ``auto``, so only pass
-    through explicit dimension strings and otherwise derive the closest
-    supported orientation from aspect ratio.
+    WebUI 可能给出 ``1K`` 这类紧凑尺寸提示，但 AIHubMix 期望的是
+    ``1024x1024`` 这种显式尺寸或 ``auto``，因此这里要做一次转换。
     """
     if image_size and "x" in image_size.lower():
         return image_size
@@ -132,17 +139,17 @@ async def _download_image_data_url(
 
 
 # ---------------------------------------------------------------------------
-# Registry
+# Provider 注册表
 # ---------------------------------------------------------------------------
 
 _IMAGE_GEN_PROVIDERS: dict[str, type[ImageGenerationProvider]] = {}
 
 
 def register_image_gen_provider(cls: type[ImageGenerationProvider]) -> None:
-    """Register an image provider at import time only.
+    """在模块导入阶段注册一个图片生成 provider。
 
-    The registry is populated by module side effects so provider discovery
-    stays lazy and consistent across the process.
+    这里使用“导入即注册”的模式，让 provider 发现保持惰性，
+    同时避免在进程里到处手工维护注册表。
     """
     name = cls.provider_name
     if not name:
@@ -169,12 +176,12 @@ def image_gen_provider_configs(config: Any) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Base class
+# 抽象基类
 # ---------------------------------------------------------------------------
 
 
 class ImageGenerationProvider(ABC):
-    """Base class for image generation provider clients."""
+    """所有图片生成 provider 的抽象基类。"""
 
     provider_name: str = ""
     missing_key_message: str = ""
@@ -245,7 +252,7 @@ class ImageGenerationProvider(ABC):
 
 
 class OpenRouterImageGenerationClient(ImageGenerationProvider):
-    """Small async client for OpenRouter Chat Completions image generation."""
+    """OpenRouter 生图客户端。"""
 
     provider_name = "openrouter"
     missing_key_message = (
@@ -336,7 +343,7 @@ class OpenRouterImageGenerationClient(ImageGenerationProvider):
 
 
 class AIHubMixImageGenerationClient(ImageGenerationProvider):
-    """Small async client for AIHubMix unified image generation."""
+    """AIHubMix 生图客户端。"""
 
     provider_name = "aihubmix"
     missing_key_message = (
@@ -434,7 +441,7 @@ class AIHubMixImageGenerationClient(ImageGenerationProvider):
 
 
 def _http_error_detail(response: httpx.Response) -> str:
-    """Extract a readable error message from an HTTP error response."""
+    """从 HTTP 错误响应中提取更可读的错误文本。"""
     try:
         data = response.json()
         if isinstance(data, dict):
@@ -506,7 +513,7 @@ def _ollama_images_from_payload(payload: dict[str, Any]) -> list[str]:
 
 
 class OllamaImageGenerationClient(ImageGenerationProvider):
-    """Async client for Ollama native image generation models."""
+    """Ollama 原生生图模型的异步客户端。"""
 
     provider_name = "ollama"
     default_timeout = 300.0
@@ -582,7 +589,7 @@ class OllamaImageGenerationClient(ImageGenerationProvider):
 
 
 class GeminiImageGenerationClient(ImageGenerationProvider):
-    """Async client for Gemini/Imagen image generation via the Generative Language API."""
+    """通过 Generative Language API 调用 Gemini/Imagen 生图的异步客户端。"""
 
     provider_name = "gemini"
     missing_key_message = (
@@ -594,9 +601,9 @@ class GeminiImageGenerationClient(ImageGenerationProvider):
         return "https://generativelanguage.googleapis.com/v1beta"
 
     def _resolve_base_url(self, api_base: str | None) -> str:
-        # Gemini chat completions use the registry's OpenAI-compatible shim.
-        # Image generation must hit the native Generative Language API, so we
-        # intentionally bypass the shared registry lookup here.
+        # Gemini 的普通聊天补全可能走注册表里的 OpenAI 兼容适配；
+        # 但图片生成必须直连原生 Generative Language API，
+        # 所以这里刻意绕过共享注册表查找逻辑。
         if api_base:
             return api_base.rstrip("/")
         return self._default_base_url()
@@ -806,7 +813,7 @@ _MINIMAX_ASPECT_RATIO_SIZES = {
 
 
 class MiniMaxImageGenerationClient(ImageGenerationProvider):
-    """Async client for MiniMax image generation API."""
+    """MiniMax 图片生成 API 的异步客户端。"""
 
     provider_name = "minimax"
     missing_key_message = (
@@ -903,7 +910,7 @@ def _minimax_images_from_payload(payload: dict[str, Any]) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# OpenAI image generation
+# OpenAI 系图片生成
 # ---------------------------------------------------------------------------
 
 _OPENAI_DALLE2_SUPPORTED_SIZES = {"256x256", "512x512", "1024x1024"}
@@ -938,7 +945,7 @@ _OPENAI_GPT_IMAGE_ASPECT_RATIO_SIZES = {
 
 
 class OpenAIImageGenerationClient(ImageGenerationProvider):
-    """OpenAI Images API using an API key (``providers.openai.apiKey``)."""
+    """基于 API key 的 OpenAI Images API 客户端。"""
 
     provider_name = "openai"
     missing_key_message = (
@@ -950,7 +957,7 @@ class OpenAIImageGenerationClient(ImageGenerationProvider):
 
     @staticmethod
     def _strip_model_prefix(model: str) -> str:
-        """Remove ``openai/`` prefix if present (OpenRouter convention)."""
+        """如果模型名前带有 ``openai/`` 前缀，就去掉它。"""
         if model.startswith("openai/") or model.startswith("openai_codex/"):
             return model.split("/", 1)[1]
         return model
@@ -996,7 +1003,7 @@ class OpenAIImageGenerationClient(ImageGenerationProvider):
             body["size"] = size
 
         body.update(self.extra_body)
-        # Drop null-valued params so extraBody can opt out of defaults like response_format.
+        # 丢掉值为 null 的参数，让 extraBody 可以显式覆盖或关闭默认参数。
         body = {key: value for key, value in body.items() if value is not None}
 
         logger.info("OpenAI Images API request: POST {}/images/generations body={}", self.api_base, body)
@@ -1036,7 +1043,7 @@ class OpenAIImageGenerationClient(ImageGenerationProvider):
 
 
 class CustomImageGenerationClient(ImageGenerationProvider):
-    """OpenAI-compatible Images API for user-configured custom providers."""
+    """面向用户自定义 provider 的 OpenAI 兼容 Images API 客户端。"""
 
     provider_name = "custom"
     missing_base_message = (
@@ -1129,16 +1136,15 @@ class CustomImageGenerationClient(ImageGenerationProvider):
 
 
 # ---------------------------------------------------------------------------
-# OpenAI Codex image generation
+# OpenAI Codex 图片生成
 # ---------------------------------------------------------------------------
 
 
 class CodexImageGenerationClient(ImageGenerationProvider):
-    """OpenAI image generation via Codex subscription OAuth.
+    """通过 Codex 订阅 OAuth 调用 OpenAI 图片生成。
 
-    Uses the Codex Responses API with the ``image_generation`` tool
-    (the same mechanism ChatGPT uses internally).  No API key required —
-    the Codex OAuth token from ``oauth_cli_kit`` is used instead.
+    这里走的是 Codex Responses API 的 ``image_generation`` 工具链路，
+    不依赖传统 API key，而依赖 Codex OAuth token。
     """
 
     provider_name = "openai_codex"
@@ -1151,7 +1157,7 @@ class CodexImageGenerationClient(ImageGenerationProvider):
         return "https://chatgpt.com/backend-api"
 
     def _codex_model(self, model: str) -> str:
-        """Strip the ``openai-codex/`` prefix if present."""
+        """如果模型名前带有 ``openai-codex/`` 前缀，就去掉它。"""
         if model.startswith(("openai-codex/", "openai_codex/")):
             return model.split("/", 1)[1]
         return model
@@ -1241,7 +1247,7 @@ def _openai_size(
     aspect_ratio: str | None,
     image_size: str | None,
 ) -> str:
-    """Resolve aspect ratio or image_size to an OpenAI Images API size string."""
+    """把比例或尺寸提示解析成 OpenAI Images API 需要的 size 字符串。"""
     sizes, supported_sizes = _openai_size_options(model)
     explicit_size = _normalize_openai_image_size(image_size)
     if explicit_size and _openai_explicit_size_supported(
@@ -1298,9 +1304,9 @@ async def _openai_images_from_payload(
     client: httpx.AsyncClient,
     payload: dict[str, Any],
 ) -> list[str]:
-    """Extract images from OpenAI Images API response.
+    """从 OpenAI Images API 响应中提取图片。
 
-    Handles both ``b64_json`` (preferred) and ``url`` (downloaded) formats.
+    同时兼容 ``b64_json`` 和 ``url`` 两种返回形式。
     """
     images: list[str] = []
     for item in payload.get("data") or []:
@@ -1317,7 +1323,7 @@ async def _openai_images_from_payload(
 
 
 def _codex_responses_images_from_payload(payload: dict[str, Any]) -> list[str]:
-    """Extract images from Codex Responses API ``image_generation_call`` output."""
+    """从 Codex Responses API 的 ``image_generation_call`` 输出中提取图片。"""
     images: list[str] = []
     for item in payload.get("output") or []:
         if not isinstance(item, dict):
@@ -1338,9 +1344,9 @@ def _codex_responses_images_from_payload(payload: dict[str, Any]) -> list[str]:
 async def _parse_codex_sse_images(
     response: httpx.Response,
 ) -> tuple[list[str], str]:
-    """Parse a Codex Responses API SSE stream for image generation output.
+    """解析 Codex Responses API 的 SSE 生图输出流。
 
-    Returns ``(images, content_text)``.
+    返回 ``(images, content_text)``。
     """
     import json as _json
 
@@ -1373,7 +1379,7 @@ async def _parse_codex_sse_images(
             continue
         buffer.append(line)
 
-    # flush remaining
+    # 流结束时，把缓冲区里剩余事件补刷出来。
     if buffer:
         data_lines = [bl[5:].strip() for bl in buffer if bl.startswith("data:")]
         raw = "".join(data_lines)
@@ -1418,7 +1424,7 @@ def _collect_text_from_sse_event(event: dict[str, Any], text_parts: list[str]) -
 
 
 # ---------------------------------------------------------------------------
-# StepFun (阶跃星辰) image generation
+# StepFun（阶跃星辰）图片生成
 # ---------------------------------------------------------------------------
 
 _STEPFUN_ASPECT_RATIO_SIZES = {
@@ -1431,11 +1437,9 @@ _STEPFUN_ASPECT_RATIO_SIZES = {
 
 
 class StepFunImageGenerationClient(ImageGenerationProvider):
-    """Async client for StepFun (阶跃星辰) image generation.
+    """StepFun（阶跃星辰）图片生成的异步客户端。
 
-    Supports:
-    - Text-to-image via step-image-edit-2 (default model)
-    - Reference-image-guided generation via style_reference (step-1x-medium)
+    支持文生图，以及基于参考图的引导式生成。
     """
 
     provider_name = "stepfun"
@@ -1472,12 +1476,12 @@ class StepFunImageGenerationClient(ImageGenerationProvider):
             "n": 1,
         }
 
-        # Map aspect ratio / image_size to StepFun size string
+        # 把比例/尺寸提示映射成 StepFun 需要的 size 字符串。
         size = _stepfun_size(aspect_ratio, image_size)
         if size:
             body["size"] = size
 
-        # step-1x-medium supports style_reference for reference-image-guided generation
+        # step-1x-medium 支持 style_reference，可用于参考图引导生成。
         refs = list(reference_images or [])
         if refs and "1x" in model:
             body["style_reference"] = {
@@ -1512,11 +1516,9 @@ def _stepfun_size(
     aspect_ratio: str | None,
     image_size: str | None,
 ) -> str:
-    """Resolve aspect ratio / image_size to StepFun size string.
+    """把比例/尺寸提示解析成 StepFun 所需的 size 字符串。
 
-    StepFun expects ``WIDTHxHEIGHT`` (note: width x height, not the more
-    common ``HxW`` order used by other providers).  The accepted sizes are
-    ``1024x1024``, ``768x1360``, ``896x1184``, ``1360x768``, ``1184x896``.
+    StepFun 期望的是 ``WIDTHxHEIGHT`` 格式，且支持的尺寸集合比较固定。
     """
     if image_size and "x" in image_size.lower():
         return image_size
@@ -1526,10 +1528,7 @@ def _stepfun_size(
 
 
 def _stepfun_images_from_payload(payload: dict[str, Any]) -> list[str]:
-    """Extract base64 images from StepFun API response.
-
-    StepFun returns images in ``data[].b64_json`` (base64 strings).
-    """
+    """从 StepFun API 响应中提取 base64 图片。"""
     images: list[str] = []
     for item in payload.get("data") or []:
         if not isinstance(item, dict):
@@ -1541,7 +1540,7 @@ def _stepfun_images_from_payload(payload: dict[str, Any]) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Zhipu (智谱) image generation
+# Zhipu（智谱）图片生成
 # ---------------------------------------------------------------------------
 
 _ZHIPU_TIMEOUT_S = 300.0
@@ -1556,13 +1555,7 @@ _ZHIPU_ASPECT_RATIO_SIZES = {
 
 
 class ZhipuImageGenerationClient(ImageGenerationProvider):
-    """Async client for Zhipu (智谱) image generation API.
-
-    Supports:
-    - Text-to-image via glm-image, cogview-4, cogview-3-flash, etc.
-    - Aspect ratio selection
-    - Watermark control
-    """
+    """Zhipu（智谱）图片生成 API 的异步客户端。"""
 
     provider_name = "zhipu"
     missing_key_message = "Zhipu API key is not configured. Set providers.zhipu.apiKey."
@@ -1652,11 +1645,7 @@ def _zhipu_size(
     aspect_ratio: str | None,
     image_size: str | None,
 ) -> str:
-    """Resolve aspect ratio / image_size to Zhipu size string.
-
-    Zhipu glm-image model supports: 1280x1280 (default), 1568x1056,
-    1056x1568, 1472x1088, 1088x1472, 1728x960, 960x1728.
-    """
+    """把比例/尺寸提示解析成 Zhipu 所需的 size 字符串。"""
     if image_size and "x" in image_size.lower():
         return image_size
     if aspect_ratio and aspect_ratio in _ZHIPU_ASPECT_RATIO_SIZES:
@@ -1668,10 +1657,9 @@ async def _zhipu_images_from_payload(
     client: httpx.AsyncClient,
     payload: dict[str, Any],
 ) -> list[str]:
-    """Extract image data URLs from Zhipu API response.
+    """从 Zhipu API 响应中提取图片 data URL。
 
-    Zhipu returns images as temporary URLs that expire after 30 days.
-    We download and re-encode as base64 data URLs.
+    Zhipu 返回的是临时 URL，这里会下载后重新编码成 base64 data URL。
     """
     images: list[str] = []
     for item in payload.get("data") or []:
@@ -1684,7 +1672,7 @@ async def _zhipu_images_from_payload(
 
 
 # ---------------------------------------------------------------------------
-# Provider registration
+# Provider 注册
 # ---------------------------------------------------------------------------
 
 register_image_gen_provider(AIHubMixImageGenerationClient)

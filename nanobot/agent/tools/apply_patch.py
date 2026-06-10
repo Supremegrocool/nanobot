@@ -1,4 +1,13 @@
-"""Apply file edits by providing structured edit instructions."""
+"""结构化补丁工具：让 Agent 以声明式编辑方式修改文件。
+
+和直接通过 shell 跑 ``sed`` / ``echo`` / 脚本不同，这个工具把修改动作
+表达为结构化数据，因此更容易做到：
+
+- 路径合法性校验
+- 精确替换
+- 多文件批量修改
+- 失败回滚
+"""
 
 from __future__ import annotations
 
@@ -21,6 +30,7 @@ from nanobot.agent.tools.schema import (
 
 @dataclass(slots=True)
 class _PatchSummary:
+    """记录单个文件补丁结果的摘要。"""
     action: str
     path: str
     added: int = 0
@@ -28,6 +38,7 @@ class _PatchSummary:
 
 
 class _PatchError(ValueError):
+    """补丁输入非法或应用失败时使用的内部异常。"""
     pass
 
 
@@ -35,6 +46,7 @@ _ABSOLUTE_WINDOWS_RE = re.compile(r"^[A-Za-z]:[\\/]")
 
 
 def _validate_relative_path(path: str) -> str:
+    """校验补丁路径必须是相对路径，且不能越界。"""
     normalized = path.strip()
     if not normalized:
         raise _PatchError("patch path cannot be empty")
@@ -48,18 +60,21 @@ def _validate_relative_path(path: str) -> str:
 
 
 def _lines_to_text(lines: list[str]) -> str:
+    """把行数组重新拼成带结尾换行的文本。"""
     if not lines:
         return ""
     return "\n".join(lines) + "\n"
 
 
 def _text_line_count(text: str) -> int:
+    """统计文本的逻辑行数。"""
     if not text:
         return 0
     return len(text.splitlines())
 
 
 def _line_diff_stats(before: str, after: str) -> tuple[int, int]:
+    """粗略统计修改带来的新增/删除行数。"""
     before_lines = before.replace("\r\n", "\n").splitlines()
     after_lines = after.replace("\r\n", "\n").splitlines()
     added = 0
@@ -76,7 +91,7 @@ def _line_diff_stats(before: str, after: str) -> tuple[int, int]:
 
 
 def _append_text(content: str, addition: str) -> str:
-    """Append text without merging it into an unterminated final line."""
+    """追加文本时，避免把新内容错误拼到旧文件最后一行后面。"""
     base = content.replace("\r\n", "\n")
     extra = addition.replace("\r\n", "\n")
     if base and extra and not base.endswith("\n") and not extra.startswith("\n"):
@@ -88,6 +103,7 @@ def _append_text(content: str, addition: str) -> str:
 
 
 def _format_summary(summary: _PatchSummary) -> str:
+    """把补丁摘要格式化成返回给模型的文本。"""
     stats = ""
     if summary.added or summary.deleted:
         stats = f" (+{summary.added}/-{summary.deleted})"
@@ -125,7 +141,7 @@ def _format_summary(summary: _PatchSummary) -> str:
     )
 )
 class ApplyPatchTool(_FsTool):
-    """Apply file edits by providing structured edit instructions."""
+    """根据结构化编辑列表应用补丁。"""
     _scopes = {"core", "subagent"}
 
     @property
@@ -148,6 +164,7 @@ class ApplyPatchTool(_FsTool):
         dry_run: bool = False,
         **kwargs: Any,
     ) -> str:
+        """校验并应用一组文件修改；失败时尽量回滚。"""
         try:
             if not edits:
                 raise _PatchError("must provide edits")
@@ -168,6 +185,7 @@ class ApplyPatchTool(_FsTool):
                 source = self._resolve(path)
 
                 if action == "add":
+                    # add 的语义是“新建文件”或“向现有文件追加内容”。
                     new_text = edit.get("new_text")
                     if new_text is None:
                         raise _PatchError(f"new_text required for add: {path}")
@@ -211,6 +229,8 @@ class ApplyPatchTool(_FsTool):
                     )
 
                 elif action == "replace":
+                    # replace 要求 old_text 精确存在且只出现一次，
+                    # 否则宁可失败，也不冒险改错位置。
                     old_text = edit.get("old_text") or ""
                     if not old_text:
                         raise _PatchError(f"old_text required for replace: {path}")
@@ -265,6 +285,7 @@ class ApplyPatchTool(_FsTool):
                     raise _PatchError(f"unknown action: {action}")
 
             if dry_run:
+                # dry_run 只做校验和摘要预览，不真正写盘。
                 return "Patch dry-run succeeded:\n" + "\n".join(
                     _format_summary(summary) for summary in summaries
                 )
@@ -278,6 +299,8 @@ class ApplyPatchTool(_FsTool):
                     path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_text(content, encoding="utf-8", newline="")
             except Exception:
+                # 多文件写入中途失败时，尽量恢复到修改前状态，
+                # 让这次补丁尽可能接近“全成或全不成”。
                 for path, data in backups.items():
                     if data is None:
                         if path.exists():
