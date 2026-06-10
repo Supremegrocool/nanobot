@@ -1,4 +1,18 @@
-"""Napcat (OneBot v11) channel for QQ, over WebSocket."""
+"""NapCat QQ 渠道适配器。
+
+【中文名称】NapCat QQ 渠道适配器
+
+【功能说明】
+负责通过 NapCat HTTP/WebSocket 协议接入 QQ 消息、群聊、图片和文件，并把 nanobot 回复转换成 QQ 消息段。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的渠道适配器代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 from __future__ import annotations
 
@@ -31,39 +45,88 @@ _DOWNLOAD_TIMEOUT = aiohttp.ClientTimeout(total=60)
 _ACTION_TIMEOUT = 20.0
 
 
-# `"mention"` (only @mentions / replies) | `"open"` (every message) | float p
-# in [0, 1]: mentions/replies always reply; other messages reply with probability
-# p. 0.0 ≡ "mention", 1.0 ≡ "open".
+# 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 GroupPolicy = Literal["mention", "open"] | Annotated[float, Field(ge=0.0, le=1.0)]
 
 
 class NapcatConfig(Base):
-    """Napcat (OneBot v11) channel configuration."""
+    """NapcatConfig 类。
+
+    【中文名称】NapcatConfig
+
+    【功能说明】
+    这是 NapCat QQ 渠道适配器 中的核心数据结构或服务类。负责通过 NapCat HTTP/WebSocket 协议接入 QQ 消息、群聊、图片和文件，并把 nanobot 回复转换成 QQ 消息段。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     enabled: bool = False
     ws_url: str = "ws://127.0.0.1:3001"
     access_token: str = ""
     allow_from: list[str] = Field(default_factory=list)
     group_policy: GroupPolicy = "mention"
-    # Per-group overrides keyed by stringified group_id, e.g. {"123456": "open"}.
-    # Falls back to `group_policy` when a group_id isn't listed.
+    # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     group_policy_overrides: dict[str, GroupPolicy] = Field(default_factory=dict)
     welcome_new_members: bool = True
-    # Hard cap for inbound image downloads. Bigger images are dropped.
+    # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     max_image_bytes: int = Field(default=20 * 1024 * 1024, ge=1)
 
 
 class NapcatChannel(BaseChannel):
-    """Napcat / OneBot v11 channel."""
+    """NapcatChannel 类。
+
+    【中文名称】NapcatChannel
+
+    【功能说明】
+    这是 NapCat QQ 渠道适配器 中的核心数据结构或服务类。负责通过 NapCat HTTP/WebSocket 协议接入 QQ 消息、群聊、图片和文件，并把 nanobot 回复转换成 QQ 消息段。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     name = "napcat"
     display_name = "Napcat (QQ)"
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
+        """执行 `default_config`。
+
+        【中文名称】default_config
+
+        【功能说明】
+        这是 NapCat QQ 渠道适配器 中的一个步骤函数，用来支撑：负责通过 NapCat HTTP/WebSocket 协议接入 QQ 消息、群聊、图片和文件，并把 nanobot 回复转换成 QQ 消息段。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return NapcatConfig().model_dump(by_alias=True)
 
     def __init__(self, config: Any, bus: MessageBus):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 NapCat QQ 渠道适配器 中的一个步骤函数，用来支撑：负责通过 NapCat HTTP/WebSocket 协议接入 QQ 消息、群聊、图片和文件，并把 nanobot 回复转换成 QQ 消息段。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - config: 调用方传入的 `config` 数据；具体类型以函数签名为准。
+        - bus: 调用方传入的 `bus` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if isinstance(config, dict):
             config = NapcatConfig.model_validate(config)
         super().__init__(config, bus)
@@ -78,11 +141,25 @@ class NapcatChannel(BaseChannel):
         self._bot_outbound_ids: deque[int] = deque(maxlen=2000)
         self._background_tasks: set[asyncio.Task[None]] = set()
 
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
+    # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     async def start(self) -> None:
+        """异步执行 `start`。
+
+        【中文名称】start
+
+        【功能说明】
+        这是 NapCat QQ 渠道适配器 中的一个步骤函数，用来支撑：负责通过 NapCat HTTP/WebSocket 协议接入 QQ 消息、群聊、图片和文件，并把 nanobot 回复转换成 QQ 消息段。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self.config.ws_url:
             logger.error("napcat: ws_url not configured")
             return
@@ -90,11 +167,11 @@ class NapcatChannel(BaseChannel):
         self._running = True
         self._http = aiohttp.ClientSession(timeout=_DOWNLOAD_TIMEOUT)
 
-        backoff = iter((5, 10))  # then 30s forever
+        backoff = iter((5, 10))  # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         while self._running:
             try:
                 await self._run_once()
-                backoff = iter((5, 10))  # reset after a clean session
+                backoff = iter((5, 10))  # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             except asyncio.CancelledError:
                 raise
             except Exception as e:
@@ -103,6 +180,20 @@ class NapcatChannel(BaseChannel):
                 await asyncio.sleep(next(backoff, 30))
 
     async def _run_once(self) -> None:
+        """异步执行 `_run_once`。
+
+        【中文名称】_run_once
+
+        【功能说明】
+        这是 NapCat QQ 渠道适配器 中的一个步骤函数，用来支撑：负责通过 NapCat HTTP/WebSocket 协议接入 QQ 消息、群聊、图片和文件，并把 nanobot 回复转换成 QQ 消息段。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         headers = []
         if self.config.access_token:
             headers.append(("Authorization", f"Bearer {self.config.access_token}"))
@@ -112,9 +203,9 @@ class NapcatChannel(BaseChannel):
             self._ws = ws
             logger.info("napcat: connected")
             try:
-                # Validate the connection before entering the dispatch loop.
-                # Napcat may interleave meta_event frames before our echo
-                # response, so dispatch any non-matching frames as we go.
+                # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+                # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+                # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 echo = uuid.uuid4().hex
                 await ws.send(
                     json.dumps(
@@ -149,6 +240,20 @@ class NapcatChannel(BaseChannel):
                 self._fail_pending(RuntimeError("napcat: websocket disconnected"))
 
     async def stop(self) -> None:
+        """异步执行 `stop`。
+
+        【中文名称】stop
+
+        【功能说明】
+        这是 NapCat QQ 渠道适配器 中的一个步骤函数，用来支撑：负责通过 NapCat HTTP/WebSocket 协议接入 QQ 消息、群聊、图片和文件，并把 nanobot 回复转换成 QQ 消息段。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self._running = False
         if self._ws is not None:
             try:
@@ -171,17 +276,45 @@ class NapcatChannel(BaseChannel):
         self._background_tasks.clear()
 
     def _fail_pending(self, err: BaseException) -> None:
+        """执行 `_fail_pending`。
+
+        【中文名称】_fail_pending
+
+        【功能说明】
+        这是 NapCat QQ 渠道适配器 中的一个步骤函数，用来支撑：负责通过 NapCat HTTP/WebSocket 协议接入 QQ 消息、群聊、图片和文件，并把 nanobot 回复转换成 QQ 消息段。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - err: 调用方传入的 `err` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         for fut in self._pending.values():
             if not fut.done():
                 fut.set_exception(err)
         self._pending.clear()
 
-    # ------------------------------------------------------------------
-    # Frame dispatch
-    # ------------------------------------------------------------------
+    # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     async def _dispatch_frame(self, raw: str | bytes) -> None:
-        # logger.debug("dispatch frame {}", raw)
+        # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        """异步执行 `_dispatch_frame`。
+
+        【中文名称】_dispatch_frame
+
+        【功能说明】
+        这是 NapCat QQ 渠道适配器 中的一个步骤函数，用来支撑：负责通过 NapCat HTTP/WebSocket 协议接入 QQ 消息、群聊、图片和文件，并把 nanobot 回复转换成 QQ 消息段。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - raw: 调用方传入的 `raw` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         try:
             payload = json.loads(raw)
         except json.JSONDecodeError:
@@ -190,7 +323,7 @@ class NapcatChannel(BaseChannel):
         if not isinstance(payload, dict):
             return
 
-        # Action response: identified by `echo` and absence of post_type.
+        # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if "echo" in payload and payload.get("post_type") is None:
             echo = payload.get("echo")
             fut = self._pending.pop(echo, None) if isinstance(echo, str) else None
@@ -211,10 +344,39 @@ class NapcatChannel(BaseChannel):
             self._create_background_task(self._on_notice(payload), "notice")
 
     def _create_background_task(self, coro: Any, kind: str) -> None:
+        """执行 `_create_background_task`。
+
+        【中文名称】_create_background_task
+
+        【功能说明】
+        这是 NapCat QQ 渠道适配器 中的一个步骤函数，用来支撑：负责通过 NapCat HTTP/WebSocket 协议接入 QQ 消息、群聊、图片和文件，并把 nanobot 回复转换成 QQ 消息段。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - coro: 调用方传入的 `coro` 数据；具体类型以函数签名为准。
+        - kind: 调用方传入的 `kind` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         task = asyncio.create_task(coro)
         self._background_tasks.add(task)
 
         def _done(done: asyncio.Task[None]) -> None:
+            """执行 `_done`。
+
+            【中文名称】_done
+
+            【功能说明】
+            这是 NapCat QQ 渠道适配器 中的一个步骤函数，用来支撑：负责通过 NapCat HTTP/WebSocket 协议接入 QQ 消息、群聊、图片和文件，并把 nanobot 回复转换成 QQ 消息段。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - done: 调用方传入的 `done` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             self._background_tasks.discard(done)
             try:
                 done.result()
@@ -225,11 +387,25 @@ class NapcatChannel(BaseChannel):
 
         task.add_done_callback(_done)
 
-    # ------------------------------------------------------------------
-    # Inbound: messages
-    # ------------------------------------------------------------------
+    # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     async def _on_message(self, ev: dict[str, Any]) -> None:
+        """异步执行 `_on_message`。
+
+        【中文名称】_on_message
+
+        【功能说明】
+        这是 NapCat QQ 渠道适配器 中的一个步骤函数，用来支撑：负责通过 NapCat HTTP/WebSocket 协议接入 QQ 消息、群聊、图片和文件，并把 nanobot 回复转换成 QQ 消息段。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - ev: 调用方传入的 `ev` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         msg_id = ev.get("message_id")
         if isinstance(msg_id, int):
             if msg_id in self._processed_ids:
@@ -295,9 +471,23 @@ class NapcatChannel(BaseChannel):
 
     @staticmethod
     def _normalize_segments(message: Any) -> list[dict[str, Any]]:
-        # Napcat defaults to array format. Treat raw strings as a single text
-        # segment rather than parsing CQ codes — that path is fragile and
-        # users can configure napcat to emit arrays.
+        # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        """执行 `_normalize_segments`。
+
+        【中文名称】_normalize_segments
+
+        【功能说明】
+        这是 NapCat QQ 渠道适配器 中的一个步骤函数，用来支撑：负责通过 NapCat HTTP/WebSocket 协议接入 QQ 消息、群聊、图片和文件，并把 nanobot 回复转换成 QQ 消息段。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - message: 调用方传入的 `message` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if isinstance(message, list):
             return [seg for seg in message if isinstance(seg, dict)]
         if isinstance(message, str) and message:
@@ -307,6 +497,20 @@ class NapcatChannel(BaseChannel):
     def _parse_segments(
         self, segments: list[dict[str, Any]]
     ) -> tuple[str, list[dict[str, Any]], bool, int | None]:
+        """执行 `_parse_segments`。
+
+        【中文名称】_parse_segments
+
+        【功能说明】
+        这是 NapCat QQ 渠道适配器 中的一个步骤函数，用来支撑：负责通过 NapCat HTTP/WebSocket 协议接入 QQ 消息、群聊、图片和文件，并把 nanobot 回复转换成 QQ 消息段。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - segments: 调用方传入的 `segments` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         parts: list[str] = []
         images: list[dict[str, Any]] = []
         mentioned_self = False
@@ -320,9 +524,9 @@ class NapcatChannel(BaseChannel):
                 if txt := data.get("text"):
                     parts.append(str(txt))
             elif stype == "image":
-                # OneBot exposes the downloadable image at `url`. Napcat
-                # additionally provides `file` (e.g. <md5>.png) and
-                # `file_size` (bytes, sometimes a string).
+                # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+                # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+                # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 url = data.get("url")
                 if isinstance(url, str) and url.startswith(("http://", "https://")):
                     images.append(
@@ -355,6 +559,22 @@ class NapcatChannel(BaseChannel):
     def _should_reply_in_group(
         self, *, group_id: Any, mentioned_self: bool, replying_to_bot: bool
     ) -> bool:
+        """执行 `_should_reply_in_group`。
+
+        【中文名称】_should_reply_in_group
+
+        【功能说明】
+        这是 NapCat QQ 渠道适配器 中的一个步骤函数，用来支撑：负责通过 NapCat HTTP/WebSocket 协议接入 QQ 消息、群聊、图片和文件，并把 nanobot 回复转换成 QQ 消息段。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - group_id: 调用方传入的 `group_id` 数据；具体类型以函数签名为准。
+        - mentioned_self: 调用方传入的 `mentioned_self` 数据；具体类型以函数签名为准。
+        - replying_to_bot: 调用方传入的 `replying_to_bot` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if mentioned_self or replying_to_bot:
             return True
         policy = self.config.group_policy_overrides.get(str(group_id), self.config.group_policy)
@@ -362,7 +582,7 @@ class NapcatChannel(BaseChannel):
             return True
         if policy == "mention":
             return False
-        # Probability case: float in [0.0, 1.0].
+        # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         return random.random() < float(policy)
 
     @staticmethod
@@ -372,14 +592,44 @@ class NapcatChannel(BaseChannel):
         nickname: str,
         user_id: Any,
     ) -> str:
+        """执行 `_format_group_content`。
+
+        【中文名称】_format_group_content
+
+        【功能说明】
+        这是 NapCat QQ 渠道适配器 中的一个步骤函数，用来支撑：负责通过 NapCat HTTP/WebSocket 协议接入 QQ 消息、群聊、图片和文件，并把 nanobot 回复转换成 QQ 消息段。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+        - nickname: 调用方传入的 `nickname` 数据；具体类型以函数签名为准。
+        - user_id: 调用方传入的 `user_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         label = nickname or str(user_id)
         return f"{label}: {text}"
 
-    # ------------------------------------------------------------------
-    # Inbound: notices (member joined etc.)
-    # ------------------------------------------------------------------
+    # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     async def _on_notice(self, ev: dict[str, Any]) -> None:
+        """异步执行 `_on_notice`。
+
+        【中文名称】_on_notice
+
+        【功能说明】
+        这是 NapCat QQ 渠道适配器 中的一个步骤函数，用来支撑：负责通过 NapCat HTTP/WebSocket 协议接入 QQ 消息、群聊、图片和文件，并把 nanobot 回复转换成 QQ 消息段。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - ev: 调用方传入的 `ev` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if ev.get("notice_type") != "group_increase" or not self.config.welcome_new_members:
             return
 
@@ -397,9 +647,9 @@ class NapcatChannel(BaseChannel):
 
         nickname = await self._lookup_member_name(group_id_int, user_id_int)
 
-        # Note: this routes through is_allowed(). For group bots set
-        # `allow_from: ["*"]` (or include the joining user's id) for welcomes
-        # to fire — same trust model as a regular inbound message.
+        # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         await self._handle_message(
             sender_id=str(user_id),
             chat_id=f"group:{group_id}",
@@ -411,24 +661,51 @@ class NapcatChannel(BaseChannel):
         )
 
     async def _lookup_member_name(self, group_id: int, user_id: int) -> str:
-        """Lookup group member nickname. Fallback to user id."""
+        """异步执行 `_lookup_member_name`。
+
+        【中文名称】_lookup_member_name
+
+        【功能说明】
+        这是 NapCat QQ 渠道适配器 中的一个步骤函数，用来支撑：负责通过 NapCat HTTP/WebSocket 协议接入 QQ 消息、群聊、图片和文件，并把 nanobot 回复转换成 QQ 消息段。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - group_id: 调用方传入的 `group_id` 数据；具体类型以函数签名为准。
+        - user_id: 调用方传入的 `user_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         try:
             resp = await self._call_action(
                 "get_group_member_info",
                 {"group_id": group_id, "user_id": user_id, "no_cache": True},
             )
             data = resp.get("data", {})
-            # logger.debug("get_group_member_info: {}", resp)
+            # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             return data.get("card") or data.get("nickname") or str(user_id)
         except Exception as e:
             logger.warning("napcat: get_group_member_info failed: {}", e)
             return str(user_id)
 
-    # ------------------------------------------------------------------
-    # Outbound
-    # ------------------------------------------------------------------
+    # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     async def send(self, msg: OutboundMessage) -> None:
+        """异步执行 `send`。
+
+        【中文名称】send
+
+        【功能说明】
+        这是 NapCat QQ 渠道适配器 中的一个步骤函数，用来支撑：负责通过 NapCat HTTP/WebSocket 协议接入 QQ 消息、群聊、图片和文件，并把 nanobot 回复转换成 QQ 消息段。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - msg: 调用方传入的 `msg` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if self._ws is None:
             logger.warning("napcat: not connected, dropping outbound message")
             return
@@ -461,6 +738,20 @@ class NapcatChannel(BaseChannel):
             self._bot_outbound_ids.append(int(mid))
 
     async def _build_image_segment(self, ref: str) -> dict[str, Any] | None:
+        """异步执行 `_build_image_segment`。
+
+        【中文名称】_build_image_segment
+
+        【功能说明】
+        这是 NapCat QQ 渠道适配器 中的一个步骤函数，用来支撑：负责通过 NapCat HTTP/WebSocket 协议接入 QQ 消息、群聊、图片和文件，并把 nanobot 回复转换成 QQ 消息段。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - ref: 调用方传入的 `ref` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         ref = (ref or "").strip()
         if not ref:
             return None
@@ -470,8 +761,8 @@ class NapcatChannel(BaseChannel):
                 logger.warning("napcat: rejected remote image '{}': {}", ref, err)
                 return None
             return {"type": "image", "data": {"file": ref}}
-        # Local path → base64 so it works even when napcat runs on a
-        # different host/container than nanobot.
+        # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         path = Path(os.path.expanduser(ref)).resolve()
         if not path.is_file():
             logger.warning("napcat: local image not found: {}", path)
@@ -485,6 +776,22 @@ class NapcatChannel(BaseChannel):
         params: dict[str, Any],
         timeout: float = _ACTION_TIMEOUT,
     ) -> dict[str, Any]:
+        """异步执行 `_call_action`。
+
+        【中文名称】_call_action
+
+        【功能说明】
+        这是 NapCat QQ 渠道适配器 中的一个步骤函数，用来支撑：负责通过 NapCat HTTP/WebSocket 协议接入 QQ 消息、群聊、图片和文件，并把 nanobot 回复转换成 QQ 消息段。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - action: 调用方传入的 `action` 数据；具体类型以函数签名为准。
+        - params: 调用方传入的 `params` 数据；具体类型以函数签名为准。
+        - timeout: 调用方传入的 `timeout` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if self._ws is None:
             raise RuntimeError("napcat: not connected")
         echo = uuid.uuid4().hex
@@ -506,15 +813,29 @@ class NapcatChannel(BaseChannel):
         finally:
             self._pending.pop(echo, None)
 
-    # ------------------------------------------------------------------
-    # Image download
-    # ------------------------------------------------------------------
+    # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     async def _download_image(self, info: dict[str, Any]) -> str | None:
+        """异步执行 `_download_image`。
+
+        【中文名称】_download_image
+
+        【功能说明】
+        这是 NapCat QQ 渠道适配器 中的一个步骤函数，用来支撑：负责通过 NapCat HTTP/WebSocket 协议接入 QQ 消息、群聊、图片和文件，并把 nanobot 回复转换成 QQ 消息段。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - info: 调用方传入的 `info` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         url = info.get("url")
         if not isinstance(url, str):
             return None
-        # logger.debug("napcat: downloading image from {}", url)
+        # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if self._http is None:
             return None
         ok, err = validate_url_target(url)
@@ -523,7 +844,7 @@ class NapcatChannel(BaseChannel):
             return None
         max_bytes = self.config.max_image_bytes
 
-        # Reject upfront when napcat tells us the size and it's too big.
+        # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         try:
             declared_size = int(info["file_size"])
             if declared_size > max_bytes:
@@ -545,9 +866,9 @@ class NapcatChannel(BaseChannel):
                 if resp.status >= 400:
                     logger.warning("napcat: image download status={} url={}", resp.status, url)
                     return None
-                # Stream until EOF, capping memory at max_bytes. Don't use
-                # content.read(max_bytes+1) — it returns only what's currently
-                # buffered, which truncates chunked responses mid-image.
+                # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+                # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+                # 说明：这里处理 NapCat QQ 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 buf = bytearray()
                 truncated = False
                 async for chunk in resp.content.iter_chunked(64 * 1024):

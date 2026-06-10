@@ -1,4 +1,18 @@
-"""Provider wrapper that transparently fails over to fallback models on error."""
+"""Fallback Provider 实现。
+
+【中文名称】Fallback Provider 实现
+
+【功能说明】
+负责按顺序尝试多个模型 Provider，在主模型失败时自动切换备用模型并保留统一调用接口。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的模型 Provider代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 from __future__ import annotations
 
@@ -10,7 +24,7 @@ from loguru import logger
 
 from nanobot.providers.base import LLMProvider, LLMResponse
 
-# Circuit breaker tuned to match OpenAICompatProvider's Responses API breaker.
+# 说明：这里处理 Fallback Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
 _PRIMARY_FAILURE_THRESHOLD = 3
 _PRIMARY_COOLDOWN_S = 60
 _MISSING = object()
@@ -56,23 +70,17 @@ _FALLBACK_ERROR_TOKENS = (
 
 
 class FallbackProvider(LLMProvider):
-    """Wrap a primary provider and transparently failover to fallback models.
+    """FallbackProvider 类。
 
-    When the primary model returns a fallbackable error before content has been
-    streamed, the wrapper tries each fallback model in order. Streamed timeout
-    errors are the recovery exception: the caller may close the current stream
-    segment, then the wrapper continues failover with later deltas in a new
-    segment. Each fallback model may reside on a different provider — a factory
-    callable creates the underlying provider on-the-fly.
+    【中文名称】FallbackProvider
 
-    Key design:
-    - Failover is request-scoped (the wrapper itself is stateless between turns).
-    - Skipped when content was already streamed to avoid duplicate output,
-      except timeout recovery can resume in a new stream segment.
-    - Recursive failover is prevented by the factory returning plain providers.
-    - Primary provider is circuit-broken after repeated failures to avoid
-      wasting requests on a known-bad endpoint.
-    """
+    【功能说明】
+    这是 Fallback Provider 实现 中的核心数据结构或服务类。负责按顺序尝试多个模型 Provider，在主模型失败时自动切换备用模型并保留统一调用接口。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     supports_stream_recover_callback = True
 
@@ -82,6 +90,22 @@ class FallbackProvider(LLMProvider):
         fallback_presets: list[Any],
         provider_factory: Callable[[Any], LLMProvider],
     ):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 Fallback Provider 实现 中的一个步骤函数，用来支撑：负责按顺序尝试多个模型 Provider，在主模型失败时自动切换备用模型并保留统一调用接口。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - primary: 调用方传入的 `primary` 数据；具体类型以函数签名为准。
+        - fallback_presets: 调用方传入的 `fallback_presets` 数据；具体类型以函数签名为准。
+        - provider_factory: 调用方传入的 `provider_factory` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self._primary = primary
         self._fallback_presets = list(fallback_presets)
         self._provider_factory = provider_factory
@@ -91,29 +115,111 @@ class FallbackProvider(LLMProvider):
 
     @property
     def generation(self):
+        """执行 `generation`。
+
+        【中文名称】generation
+
+        【功能说明】
+        这是 Fallback Provider 实现 中的一个步骤函数，用来支撑：负责按顺序尝试多个模型 Provider，在主模型失败时自动切换备用模型并保留统一调用接口。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return self._primary.generation
 
     @generation.setter
     def generation(self, value):
+        """执行 `generation`。
+
+        【中文名称】generation
+
+        【功能说明】
+        这是 Fallback Provider 实现 中的一个步骤函数，用来支撑：负责按顺序尝试多个模型 Provider，在主模型失败时自动切换备用模型并保留统一调用接口。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self._primary.generation = value
 
     def get_default_model(self) -> str:
+        """执行 `get_default_model`。
+
+        【中文名称】get_default_model
+
+        【功能说明】
+        这是 Fallback Provider 实现 中的一个步骤函数，用来支撑：负责按顺序尝试多个模型 Provider，在主模型失败时自动切换备用模型并保留统一调用接口。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return self._primary.get_default_model()
 
     @property
     def supports_progress_deltas(self) -> bool:
+        """执行 `supports_progress_deltas`。
+
+        【中文名称】supports_progress_deltas
+
+        【功能说明】
+        这是 Fallback Provider 实现 中的一个步骤函数，用来支撑：负责按顺序尝试多个模型 Provider，在主模型失败时自动切换备用模型并保留统一调用接口。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return bool(getattr(self._primary, "supports_progress_deltas", False))
 
     def _primary_available(self) -> bool:
-        """Return True if the primary provider is not currently tripped."""
+        """执行 `_primary_available`。
+
+        【中文名称】_primary_available
+
+        【功能说明】
+        这是 Fallback Provider 实现 中的一个步骤函数，用来支撑：负责按顺序尝试多个模型 Provider，在主模型失败时自动切换备用模型并保留统一调用接口。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if self._primary_tripped_at is None:
             return True
         if time.monotonic() - self._primary_tripped_at >= _PRIMARY_COOLDOWN_S:
-            # Half-open: allow one probe attempt.
+            # 说明：这里处理 Fallback Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
             return True
         return False
 
     async def chat(self, **kwargs: Any) -> LLMResponse:
+        """异步执行 `chat`。
+
+        【中文名称】chat
+
+        【功能说明】
+        这是 Fallback Provider 实现 中的一个步骤函数，用来支撑：负责按顺序尝试多个模型 Provider，在主模型失败时自动切换备用模型并保留统一调用接口。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - **kwargs: 调用方传入的 `kwargs` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self._has_fallbacks:
             return await self._primary.chat(**kwargs)
         return await self._try_with_fallback(
@@ -121,6 +227,20 @@ class FallbackProvider(LLMProvider):
         )
 
     async def chat_stream(self, **kwargs: Any) -> LLMResponse:
+        """异步执行 `chat_stream`。
+
+        【中文名称】chat_stream
+
+        【功能说明】
+        这是 Fallback Provider 实现 中的一个步骤函数，用来支撑：负责按顺序尝试多个模型 Provider，在主模型失败时自动切换备用模型并保留统一调用接口。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - **kwargs: 调用方传入的 `kwargs` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         on_stream_recover = kwargs.pop("on_stream_recover", None)
         if not self._has_fallbacks:
             return await self._primary.chat_stream(**kwargs)
@@ -129,6 +249,20 @@ class FallbackProvider(LLMProvider):
         original_delta = kwargs.get("on_content_delta")
 
         async def _tracking_delta(text: str) -> None:
+            """异步执行 `_tracking_delta`。
+
+            【中文名称】_tracking_delta
+
+            【功能说明】
+            这是 Fallback Provider 实现 中的一个步骤函数，用来支撑：负责按顺序尝试多个模型 Provider，在主模型失败时自动切换备用模型并保留统一调用接口。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             if text:
                 has_streamed[0] = True
             if original_delta:
@@ -149,6 +283,23 @@ class FallbackProvider(LLMProvider):
         has_streamed: list[bool] | None,
         on_stream_recover: Callable[[], Awaitable[None]] | None = None,
     ) -> LLMResponse:
+        """异步执行 `_try_with_fallback`。
+
+        【中文名称】_try_with_fallback
+
+        【功能说明】
+        这是 Fallback Provider 实现 中的一个步骤函数，用来支撑：负责按顺序尝试多个模型 Provider，在主模型失败时自动切换备用模型并保留统一调用接口。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - call: 调用方传入的 `call` 数据；具体类型以函数签名为准。
+        - kwargs: 调用方传入的 `kwargs` 数据；具体类型以函数签名为准。
+        - has_streamed: 调用方传入的 `has_streamed` 数据；具体类型以函数签名为准。
+        - on_stream_recover: 调用方传入的 `on_stream_recover` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         primary_model = kwargs.get("model") or self._primary.get_default_model()
 
         if self._primary_available():
@@ -275,10 +426,10 @@ class FallbackProvider(LLMProvider):
             "All {} fallback model(s) failed",
             len(self._fallback_presets),
         )
-        # Return the last error response we saw (primary or last fallback).
+        # 说明：这里处理 Fallback Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
         if last_response is not None:
             return last_response
-        # Primary was tripped and we have no fallbacks — synthesize an error.
+        # 说明：这里处理 Fallback Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
         return LLMResponse(
             content=f"Primary model '{primary_model}' circuit open and no fallbacks available",
             finish_reason="error",
@@ -286,6 +437,20 @@ class FallbackProvider(LLMProvider):
 
     @staticmethod
     def _should_fallback(response: LLMResponse) -> bool:
+        """执行 `_should_fallback`。
+
+        【中文名称】_should_fallback
+
+        【功能说明】
+        这是 Fallback Provider 实现 中的一个步骤函数，用来支撑：负责按顺序尝试多个模型 Provider，在主模型失败时自动切换备用模型并保留统一调用接口。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - response: 调用方传入的 `response` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if response.error_should_retry is False:
             return False
         status = response.error_status_code

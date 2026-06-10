@@ -1,11 +1,18 @@
-"""Personal WeChat (微信) channel using HTTP long-poll API.
+"""微信渠道适配器。
 
-Uses the ilinkai.weixin.qq.com API for personal WeChat messaging.
-No WebSocket, no local WeChat client needed — just HTTP requests with a
-bot token obtained via QR code login.
+【中文名称】微信渠道适配器
 
-Protocol reverse-engineered from ``@tencent-weixin/openclaw-weixin`` v1.0.3.
-"""
+【功能说明】
+负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的渠道适配器代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 from __future__ import annotations
 
@@ -35,21 +42,21 @@ from nanobot.config.paths import get_media_dir, get_runtime_subdir
 from nanobot.config.schema import Base
 from nanobot.utils.helpers import split_message
 
-# ---------------------------------------------------------------------------
-# Protocol constants (from openclaw-weixin types.ts)
-# ---------------------------------------------------------------------------
+# 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
-# MessageItemType
+# 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 ITEM_TEXT = 1
 ITEM_IMAGE = 2
 ITEM_VOICE = 3
 ITEM_FILE = 4
 ITEM_VIDEO = 5
 
-# MessageType  (1 = inbound from user, 2 = outbound from bot)
+# 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 MESSAGE_TYPE_BOT = 2
 
-# MessageState
+# 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 MESSAGE_STATE_FINISH = 2
 
 WEIXIN_MAX_MESSAGE_LEN = 4000
@@ -58,10 +65,36 @@ ILINK_APP_ID = "bot"
 
 
 def _build_client_version(version: str) -> int:
-    """Encode semantic version as 0x00MMNNPP (major/minor/patch in one uint32)."""
+    """执行 `_build_client_version`。
+
+    【中文名称】_build_client_version
+
+    【功能说明】
+    这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - version: 调用方传入的 `version` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     parts = version.split(".")
 
     def _as_int(idx: int) -> int:
+        """执行 `_as_int`。
+
+        【中文名称】_as_int
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - idx: 调用方传入的 `idx` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         try:
             return int(parts[idx])
         except Exception:
@@ -75,17 +108,17 @@ def _build_client_version(version: str) -> int:
 ILINK_APP_CLIENT_VERSION = _build_client_version(WEIXIN_CHANNEL_VERSION)
 BASE_INFO: dict[str, str] = {"channel_version": WEIXIN_CHANNEL_VERSION}
 
-# Session-expired error code
+# 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 ERRCODE_SESSION_EXPIRED = -14
 SESSION_PAUSE_DURATION_S = 60 * 60
 
-# iLink context_token is observed to expire server-side after ~90-160s of
-# agent inactivity (openclaw/openclaw#61174). Proactively refresh before
-# sending if the cached token is older than this threshold.
+# 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 CONTEXT_TOKEN_MAX_AGE_S = 60
 
 
-# Retry constants (matching the reference plugin's monitor.ts)
+# 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 MAX_CONSECUTIVE_FAILURES = 3
 BACKOFF_DELAY_S = 30
 RETRY_DELAY_S = 2
@@ -97,66 +130,123 @@ TYPING_KEEPALIVE_INTERVAL_S = 5
 CONFIG_CACHE_INITIAL_RETRY_S = 2
 CONFIG_CACHE_MAX_RETRY_S = 60 * 60
 
-# Default long-poll timeout; overridden by server via longpolling_timeout_ms.
+# 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 DEFAULT_LONG_POLL_TIMEOUT_S = 35
 
-# Media-type codes for getuploadurl  (1=image, 2=video, 3=file, 4=voice)
+# 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 UPLOAD_MEDIA_IMAGE = 1
 UPLOAD_MEDIA_VIDEO = 2
 UPLOAD_MEDIA_FILE = 3
 UPLOAD_MEDIA_VOICE = 4
 
-# File extensions considered as images / videos for outbound media
+# 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".ico", ".svg"}
 _VIDEO_EXTS = {".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv"}
 _VOICE_EXTS = {".mp3", ".wav", ".amr", ".silk", ".ogg", ".m4a", ".aac", ".flac"}
 
 
 def _has_downloadable_media_locator(media: dict[str, Any] | None) -> bool:
+    """执行 `_has_downloadable_media_locator`。
+
+    【中文名称】_has_downloadable_media_locator
+
+    【功能说明】
+    这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - media: 调用方传入的 `media` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     if not isinstance(media, dict):
         return False
     return bool(str(media.get("encrypt_query_param", "") or "") or str(media.get("full_url", "") or "").strip())
 
 
 class WeixinConfig(Base):
-    """Personal WeChat channel configuration."""
+    """WeixinConfig 类。
+
+    【中文名称】WeixinConfig
+
+    【功能说明】
+    这是 微信渠道适配器 中的核心数据结构或服务类。负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     enabled: bool = False
     allow_from: list[str] = Field(default_factory=list)
     base_url: str = "https://ilinkai.weixin.qq.com"
     cdn_base_url: str = "https://novac2c.cdn.weixin.qq.com/c2c"
     route_tag: str | int | None = None
-    token: str = ""  # Manually set token, or obtained via QR login
-    state_dir: str = ""  # Default: ~/.nanobot/weixin/
-    poll_timeout: int = DEFAULT_LONG_POLL_TIMEOUT_S  # seconds for long-poll
+    token: str = ""  # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    state_dir: str = ""  # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    poll_timeout: int = DEFAULT_LONG_POLL_TIMEOUT_S  # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
 
 class WeixinChannel(BaseChannel):
-    """
-    Personal WeChat channel using HTTP long-poll.
+    """WeixinChannel 类。
 
-    Connects to ilinkai.weixin.qq.com API to receive and send personal
-    WeChat messages. Authentication is via QR code login which produces
-    a bot token.
-    """
+    【中文名称】WeixinChannel
+
+    【功能说明】
+    这是 微信渠道适配器 中的核心数据结构或服务类。负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     name = "weixin"
     display_name = "WeChat"
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
+        """执行 `default_config`。
+
+        【中文名称】default_config
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return WeixinConfig().model_dump(by_alias=True)
 
     def __init__(self, config: Any, bus: MessageBus):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - config: 调用方传入的 `config` 数据；具体类型以函数签名为准。
+        - bus: 调用方传入的 `bus` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if isinstance(config, dict):
             config = WeixinConfig.model_validate(config)
         super().__init__(config, bus)
         self.config: WeixinConfig = config
 
-        # State
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         self._client: httpx.AsyncClient | None = None
         self._get_updates_buf: str = ""
-        self._context_tokens: dict[str, str] = {}  # from_user_id -> context_token
+        self._context_tokens: dict[str, str] = {}  # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         self._processed_ids: OrderedDict[str, None] = OrderedDict()
         self._state_dir: Path | None = None
         self._token: str = ""
@@ -168,11 +258,25 @@ class WeixinChannel(BaseChannel):
         self._context_token_at: dict[str, float] = {}
         self._pending_tool_hints: dict[str, list[str]] = {}
 
-    # ------------------------------------------------------------------
-    # State persistence
-    # ------------------------------------------------------------------
+    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     def _get_state_dir(self) -> Path:
+        """执行 `_get_state_dir`。
+
+        【中文名称】_get_state_dir
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if self._state_dir:
             return self._state_dir
         if self.config.state_dir:
@@ -184,7 +288,19 @@ class WeixinChannel(BaseChannel):
         return d
 
     def _load_state(self) -> bool:
-        """Load saved account state. Returns True if a valid token was found."""
+        """执行 `_load_state`。
+
+        【中文名称】_load_state
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         state_file = self._get_state_dir() / "account.json"
         if not state_file.exists():
             return False
@@ -219,6 +335,20 @@ class WeixinChannel(BaseChannel):
             return False
 
     def _save_state(self) -> None:
+        """执行 `_save_state`。
+
+        【中文名称】_save_state
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         state_file = self._get_state_dir() / "account.json"
         with suppress(Exception):
             data = {
@@ -230,22 +360,42 @@ class WeixinChannel(BaseChannel):
             }
             state_file.write_text(json.dumps(data, ensure_ascii=False))
 
-    # ------------------------------------------------------------------
-    # HTTP helpers  (matches api.ts buildHeaders / apiFetch)
-    # ------------------------------------------------------------------
+    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     @staticmethod
     def _random_wechat_uin() -> str:
-        """X-WECHAT-UIN: random uint32 → decimal string → base64.
+        """执行 `_random_wechat_uin`。
 
-        Matches the reference plugin's ``randomWechatUin()`` in api.ts.
-        Generated fresh for **every** request (same as reference).
-        """
+        【中文名称】_random_wechat_uin
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         uint32 = int.from_bytes(os.urandom(4), "big")
         return base64.b64encode(str(uint32).encode()).decode()
 
     def _make_headers(self, *, auth: bool = True) -> dict[str, str]:
-        """Build per-request headers (new UIN each call, matching reference)."""
+        """执行 `_make_headers`。
+
+        【中文名称】_make_headers
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - auth: 调用方传入的 `auth` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         headers: dict[str, str] = {
             "X-WECHAT-UIN": self._random_wechat_uin(),
             "Content-Type": "application/json",
@@ -261,6 +411,20 @@ class WeixinChannel(BaseChannel):
 
     @staticmethod
     def _is_retryable_media_download_error(err: Exception) -> bool:
+        """执行 `_is_retryable_media_download_error`。
+
+        【中文名称】_is_retryable_media_download_error
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - err: 调用方传入的 `err` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if isinstance(err, httpx.TimeoutException | httpx.TransportError):
             return True
         if isinstance(err, httpx.HTTPStatusError):
@@ -276,6 +440,23 @@ class WeixinChannel(BaseChannel):
         auth: bool = True,
         extra_headers: dict[str, str] | None = None,
     ) -> dict:
+        """异步执行 `_api_get`。
+
+        【中文名称】_api_get
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - endpoint: 调用方传入的 `endpoint` 数据；具体类型以函数签名为准。
+        - params: 调用方传入的 `params` 数据；具体类型以函数签名为准。
+        - auth: 调用方传入的 `auth` 数据；具体类型以函数签名为准。
+        - extra_headers: 调用方传入的 `extra_headers` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         assert self._client is not None
         url = f"{self.config.base_url}/{endpoint}"
         hdrs = self._make_headers(auth=auth)
@@ -294,7 +475,23 @@ class WeixinChannel(BaseChannel):
         auth: bool = True,
         extra_headers: dict[str, str] | None = None,
     ) -> dict:
-        """GET helper that allows overriding base_url for QR redirect polling."""
+        """异步执行 `_api_get_with_base`。
+
+        【中文名称】_api_get_with_base
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - base_url: 调用方传入的 `base_url` 数据；具体类型以函数签名为准。
+        - endpoint: 调用方传入的 `endpoint` 数据；具体类型以函数签名为准。
+        - params: 调用方传入的 `params` 数据；具体类型以函数签名为准。
+        - auth: 调用方传入的 `auth` 数据；具体类型以函数签名为准。
+        - extra_headers: 调用方传入的 `extra_headers` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         assert self._client is not None
         url = f"{base_url.rstrip('/')}/{endpoint}"
         hdrs = self._make_headers(auth=auth)
@@ -311,6 +508,22 @@ class WeixinChannel(BaseChannel):
         *,
         auth: bool = True,
     ) -> dict:
+        """异步执行 `_api_post`。
+
+        【中文名称】_api_post
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - endpoint: 调用方传入的 `endpoint` 数据；具体类型以函数签名为准。
+        - body: 调用方传入的 `body` 数据；具体类型以函数签名为准。
+        - auth: 调用方传入的 `auth` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         assert self._client is not None
         url = f"{self.config.base_url}/{endpoint}"
         payload = body or {}
@@ -320,12 +533,24 @@ class WeixinChannel(BaseChannel):
         resp.raise_for_status()
         return resp.json()
 
-    # ------------------------------------------------------------------
-    # QR Code Login  (matches login-qr.ts)
-    # ------------------------------------------------------------------
+    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     async def _fetch_qr_code(self) -> tuple[str, str]:
-        """Fetch a fresh QR code. Returns (qrcode_id, scan_url)."""
+        """异步执行 `_fetch_qr_code`。
+
+        【中文名称】_fetch_qr_code
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         data = await self._api_get(
             "ilink/bot/get_bot_qrcode",
             params={"bot_type": "3"},
@@ -338,7 +563,19 @@ class WeixinChannel(BaseChannel):
         return qrcode_id, (qrcode_img_content or qrcode_id)
 
     async def _qr_login(self) -> bool:
-        """Perform QR code login flow. Returns True on success."""
+        """异步执行 `_qr_login`。
+
+        【中文名称】_qr_login
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         try:
             refresh_count = 0
             qrcode_id, scan_url = await self._fetch_qr_code()
@@ -405,7 +642,7 @@ class WeixinChannel(BaseChannel):
                     current_poll_base_url = self.config.base_url
                     self._print_qr_code(scan_url)
                     continue
-                # status == "wait" — keep polling
+                # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
                 await asyncio.sleep(1)
 
@@ -416,6 +653,20 @@ class WeixinChannel(BaseChannel):
 
     @staticmethod
     def _is_retryable_qr_poll_error(err: Exception) -> bool:
+        """执行 `_is_retryable_qr_poll_error`。
+
+        【中文名称】_is_retryable_qr_poll_error
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - err: 调用方传入的 `err` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if isinstance(err, httpx.TimeoutException | httpx.TransportError):
             return True
         if isinstance(err, httpx.HTTPStatusError):
@@ -426,6 +677,20 @@ class WeixinChannel(BaseChannel):
 
     @staticmethod
     def _print_qr_code(url: str) -> None:
+        """执行 `_print_qr_code`。
+
+        【中文名称】_print_qr_code
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - url: 调用方传入的 `url` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         try:
             import qrcode as qr_lib
 
@@ -436,12 +701,24 @@ class WeixinChannel(BaseChannel):
         except ImportError:
             print(f"\nLogin URL: {url}\n")
 
-    # ------------------------------------------------------------------
-    # Channel lifecycle
-    # ------------------------------------------------------------------
+    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     async def login(self, force: bool = False) -> bool:
-        """Perform QR code login and save token. Returns True on success."""
+        """异步执行 `login`。
+
+        【中文名称】login
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - force: 调用方传入的 `force` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if force:
             self._token = ""
             self._get_updates_buf = ""
@@ -451,12 +728,12 @@ class WeixinChannel(BaseChannel):
         if self._token or self._load_state():
             return True
 
-        # Initialize HTTP client for the login flow
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(60, connect=30),
             follow_redirects=True,
         )
-        self._running = True  # Enable polling loop in _qr_login()
+        self._running = True  # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         try:
             return await self._qr_login()
         finally:
@@ -466,6 +743,20 @@ class WeixinChannel(BaseChannel):
                 self._client = None
 
     async def start(self) -> None:
+        """异步执行 `start`。
+
+        【中文名称】start
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self._running = True
         self._next_poll_timeout_s = self.config.poll_timeout
         self._client = httpx.AsyncClient(
@@ -489,7 +780,7 @@ class WeixinChannel(BaseChannel):
                 await self._poll_once()
                 consecutive_failures = 0
             except httpx.TimeoutException:
-                # Normal for long-poll, just retry
+                # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 continue
             except Exception:
                 if not self._running:
@@ -503,6 +794,20 @@ class WeixinChannel(BaseChannel):
                     await asyncio.sleep(RETRY_DELAY_S)
 
     async def stop(self) -> None:
+        """异步执行 `stop`。
+
+        【中文名称】stop
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self._running = False
         self._pending_tool_hints.clear()
         if self._poll_task and not self._poll_task.done():
@@ -513,14 +818,42 @@ class WeixinChannel(BaseChannel):
             await self._client.aclose()
             self._client = None
         self._save_state()
-    # ------------------------------------------------------------------
-    # Polling  (matches monitor.ts monitorWeixinProvider)
-    # ------------------------------------------------------------------
+    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     def _pause_session(self, duration_s: int = SESSION_PAUSE_DURATION_S) -> None:
+        """执行 `_pause_session`。
+
+        【中文名称】_pause_session
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - duration_s: 调用方传入的 `duration_s` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self._session_pause_until = time.time() + duration_s
 
     def _session_pause_remaining_s(self) -> int:
+        """执行 `_session_pause_remaining_s`。
+
+        【中文名称】_session_pause_remaining_s
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         remaining = int(self._session_pause_until - time.time())
         if remaining <= 0:
             self._session_pause_until = 0.0
@@ -528,6 +861,20 @@ class WeixinChannel(BaseChannel):
         return remaining
 
     def _assert_session_active(self) -> None:
+        """执行 `_assert_session_active`。
+
+        【中文名称】_assert_session_active
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         remaining = self._session_pause_remaining_s()
         if remaining > 0:
             remaining_min = max((remaining + 59) // 60, 1)
@@ -536,6 +883,20 @@ class WeixinChannel(BaseChannel):
             )
 
     async def _poll_once(self) -> None:
+        """异步执行 `_poll_once`。
+
+        【中文名称】_poll_once
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         remaining = self._session_pause_remaining_s()
         if remaining > 0:
             await asyncio.sleep(remaining)
@@ -546,13 +907,13 @@ class WeixinChannel(BaseChannel):
             "base_info": BASE_INFO,
         }
 
-        # Adjust httpx timeout to match the current poll timeout
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         assert self._client is not None
         self._client.timeout = httpx.Timeout(self._next_poll_timeout_s + 10, connect=30)
 
         data = await self._api_post("ilink/bot/getupdates", body)
 
-        # Check for API-level errors (monitor.ts checks both ret and errcode)
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         ret = data.get("ret", 0)
         errcode = data.get("errcode", 0)
 
@@ -572,18 +933,18 @@ class WeixinChannel(BaseChannel):
                 f"getUpdates failed: ret={ret} errcode={errcode} errmsg={data.get('errmsg', '')}"
             )
 
-        # Honour server-suggested poll timeout (monitor.ts:102-105)
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         server_timeout_ms = data.get("longpolling_timeout_ms")
         if server_timeout_ms and server_timeout_ms > 0:
             self._next_poll_timeout_s = max(server_timeout_ms // 1000, 5)
 
-        # Update cursor
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         new_buf = data.get("get_updates_buf", "")
         if new_buf:
             self._get_updates_buf = new_buf
             self._save_state()
 
-        # Process messages (WeixinMessage[] from types.ts)
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         msgs: list[dict] = data.get("msgs", []) or []
         for msg in msgs:
             try:
@@ -591,13 +952,25 @@ class WeixinChannel(BaseChannel):
             except Exception:
                 self.logger.exception("Failed to process WeChat message")
 
-    # ------------------------------------------------------------------
-    # Inbound message processing  (matches inbound.ts + process-message.ts)
-    # ------------------------------------------------------------------
+    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     async def _process_message(self, msg: dict) -> None:
-        """Process a single WeixinMessage from getUpdates."""
-        # Skip bot's own messages (message_type 2 = BOT)
+        """异步执行 `_process_message`。
+
+        【中文名称】_process_message
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - msg: 调用方传入的 `msg` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if msg.get("message_type") == MESSAGE_TYPE_BOT:
             return
 
@@ -609,7 +982,7 @@ class WeixinChannel(BaseChannel):
         if not from_user_id:
             return
 
-        # Deduplication by message_id
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if msg_id in self._processed_ids:
             return
         self._processed_ids[msg_id] = None
@@ -660,13 +1033,13 @@ class WeixinChannel(BaseChannel):
                     self._context_token_at.pop(from_user_id, None)
             return
 
-        # Cache context_token (required for all replies — inbound.ts:23-27)
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if ctx_token:
             self._context_tokens[from_user_id] = ctx_token
             self._context_token_at[from_user_id] = time.time()
             self._save_state()
 
-        # Parse item_list (WeixinMessage.item_list — types.ts:161)
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         item_list: list[dict] = msg.get("item_list") or []
         content_parts: list[str] = []
         media_paths: list[str] = []
@@ -678,11 +1051,11 @@ class WeixinChannel(BaseChannel):
             if item_type == ITEM_TEXT:
                 text = (item.get("text_item") or {}).get("text", "")
                 if text:
-                    # Handle quoted/ref messages (inbound.ts:86-98)
+                    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                     ref = item.get("ref_msg")
                     if ref:
                         ref_item = ref.get("message_item")
-                        # If quoted message is media, just pass the text
+                        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                         if ref_item and ref_item.get("type", 0) in (
                             ITEM_IMAGE,
                             ITEM_VOICE,
@@ -718,7 +1091,7 @@ class WeixinChannel(BaseChannel):
 
             elif item_type == ITEM_VOICE:
                 voice_item = item.get("voice_item") or {}
-                # Voice-to-text provided by WeChat (inbound.ts:101-103)
+                # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 voice_text = voice_item.get("text", "")
                 if voice_text:
                     content_parts.append(f"[voice] {voice_text}")
@@ -763,9 +1136,9 @@ class WeixinChannel(BaseChannel):
                 else:
                     content_parts.append("[video]")
 
-        # Fallback: when no top-level media was downloaded, try quoted/referenced media.
-        # This aligns with the reference plugin behavior that checks ref_msg.message_item
-        # when main item_list has no downloadable media.
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if not media_paths and not has_top_level_downloadable_media:
             ref_media_item: dict[str, Any] | None = None
             for item in item_list:
@@ -830,9 +1203,9 @@ class WeixinChannel(BaseChannel):
             metadata={"message_id": msg_id},
         )
 
-    # ------------------------------------------------------------------
-    # Media download  (matches media-download.ts + pic-decrypt.ts)
-    # ------------------------------------------------------------------
+    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     async def _download_media_item(
         self,
@@ -840,7 +1213,21 @@ class WeixinChannel(BaseChannel):
         media_type: str,
         filename: str | None = None,
     ) -> str | None:
-        """Download + AES-decrypt a media item. Returns local path or None."""
+        """异步执行 `_download_media_item`。
+
+        【中文名称】_download_media_item
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - typed_item: 调用方传入的 `typed_item` 数据；具体类型以函数签名为准。
+        - media_type: 调用方传入的 `media_type` 数据；具体类型以函数签名为准。
+        - filename: 调用方传入的 `filename` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         try:
             media = typed_item.get("media") or {}
             encrypt_query_param = str(media.get("encrypt_query_param", "") or "")
@@ -849,22 +1236,22 @@ class WeixinChannel(BaseChannel):
             if not encrypt_query_param and not full_url:
                 return None
 
-            # Resolve AES key (media-download.ts:43-45, pic-decrypt.ts:40-52)
-            # image_item.aeskey is a raw hex string (16 bytes as 32 hex chars).
-            # media.aes_key is always base64-encoded.
-            # For images, prefer image_item.aeskey; for others use media.aes_key.
+            # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             raw_aeskey_hex = typed_item.get("aeskey", "")
             media_aes_key_b64 = media.get("aes_key", "")
 
             aes_key_b64: str = ""
             if raw_aeskey_hex:
-                # Convert hex → raw bytes → base64 (matches media-download.ts:43-44)
+                # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 aes_key_b64 = base64.b64encode(bytes.fromhex(raw_aeskey_hex)).decode()
             elif media_aes_key_b64:
                 aes_key_b64 = media_aes_key_b64
 
-            # Reference protocol behavior: VOICE/FILE/VIDEO require aes_key;
-            # only IMAGE may be downloaded as plain bytes when key is missing.
+            # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if media_type != "image" and not aes_key_b64:
                 return None
 
@@ -927,12 +1314,25 @@ class WeixinChannel(BaseChannel):
             self.logger.exception("Error downloading media")
             return None
 
-    # ------------------------------------------------------------------
-    # Outbound  (matches send.ts buildTextMessageReq + sendMessageWeixin)
-    # ------------------------------------------------------------------
+    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     async def _get_typing_ticket(self, user_id: str, context_token: str = "") -> str:
-        """Get typing ticket with per-user refresh + failure backoff cache."""
+        """异步执行 `_get_typing_ticket`。
+
+        【中文名称】_get_typing_ticket
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - user_id: 调用方传入的 `user_id` 数据；具体类型以函数签名为准。
+        - context_token: 调用方传入的 `context_token` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         now = time.time()
         entry = self._typing_tickets.get(user_id)
         if entry and now < float(entry.get("next_fetch_at", 0)):
@@ -972,12 +1372,20 @@ class WeixinChannel(BaseChannel):
     async def _refresh_context_token_if_stale(
         self, chat_id: str, context_token: str
     ) -> str:
-        """Return a fresh context_token if the cached one is too old.
+        """异步执行 `_refresh_context_token_if_stale`。
 
-        iLink context_token expires server-side after a short idle period
-        (empirically ~90s). Proactively refreshing before sending prevents
-        silent message loss on long agent turns or cron pushes.
-        """
+        【中文名称】_refresh_context_token_if_stale
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - context_token: 调用方传入的 `context_token` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not context_token:
             return context_token
 
@@ -1029,12 +1437,19 @@ class WeixinChannel(BaseChannel):
         return context_token
 
     async def _flush_tool_hints(self, chat_id: str) -> None:
-        """Send any buffered tool hints for *chat_id* as a single message.
+        """异步执行 `_flush_tool_hints`。
 
-        Tool hints are coalesced to reduce message count and avoid hitting the
-        WeChat iLink rate limit (~7 msgs / 5 min).  Failures are logged but
-        not raised so that the main message send is never blocked.
-        """
+        【中文名称】_flush_tool_hints
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         hints = self._pending_tool_hints.pop(chat_id, None)
         if not hints:
             return
@@ -1063,7 +1478,21 @@ class WeixinChannel(BaseChannel):
             )
 
     async def _send_typing(self, user_id: str, typing_ticket: str, status: int) -> None:
-        """Best-effort sendtyping wrapper."""
+        """异步执行 `_send_typing`。
+
+        【中文名称】_send_typing
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - user_id: 调用方传入的 `user_id` 数据；具体类型以函数签名为准。
+        - typing_ticket: 调用方传入的 `typing_ticket` 数据；具体类型以函数签名为准。
+        - status: 调用方传入的 `status` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not typing_ticket:
             return
         body: dict[str, Any] = {
@@ -1075,6 +1504,22 @@ class WeixinChannel(BaseChannel):
         await self._api_post("ilink/bot/sendtyping", body)
 
     async def _typing_keepalive_loop(self, user_id: str, typing_ticket: str, stop_event: asyncio.Event) -> None:
+        """异步执行 `_typing_keepalive_loop`。
+
+        【中文名称】_typing_keepalive_loop
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - user_id: 调用方传入的 `user_id` 数据；具体类型以函数签名为准。
+        - typing_ticket: 调用方传入的 `typing_ticket` 数据；具体类型以函数签名为准。
+        - stop_event: 调用方传入的 `stop_event` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         try:
             while not stop_event.is_set():
                 await asyncio.sleep(TYPING_KEEPALIVE_INTERVAL_S)
@@ -1086,14 +1531,28 @@ class WeixinChannel(BaseChannel):
             pass
 
     async def send(self, msg: OutboundMessage) -> None:
+        """异步执行 `send`。
+
+        【中文名称】send
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - msg: 调用方传入的 `msg` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self._client or not self._token:
             raise RuntimeError("WeChat client not initialized or not authenticated")
         self._assert_session_active()
 
         is_progress = bool((msg.metadata or {}).get("_progress", False))
 
-        # Buffer tool hints to coalesce consecutive ones and avoid burning
-        # WeChat iLink rate-limit quota (~7 msgs / 5 min).
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if is_progress and (msg.metadata or {}).get("_tool_hint"):
             if not self.send_tool_hints:
                 return
@@ -1105,8 +1564,8 @@ class WeixinChannel(BaseChannel):
             )
             return
 
-        # Reasoning deltas are invisible in WeChat (there is no reasoning
-        # UI).  Skip them entirely — do not send and do not flush buffer.
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if is_progress and (msg.metadata or {}).get("_reasoning_delta"):
             self.logger.debug(
                 "Dropped invisible reasoning delta for {}", msg.chat_id
@@ -1115,8 +1574,8 @@ class WeixinChannel(BaseChannel):
 
         content = msg.content.strip()
 
-        # Empty progress messages (e.g. after_iteration tool_events) must
-        # NOT act as separators — they have no visible content.
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if is_progress and not content and not (msg.media or []):
             self.logger.debug(
                 "Skipped empty progress message for {} (no visible content)",
@@ -1124,7 +1583,7 @@ class WeixinChannel(BaseChannel):
             )
             return
 
-        # Flush buffered hints before sending any visible message.
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         await self._flush_tool_hints(msg.chat_id)
 
         if not is_progress:
@@ -1153,14 +1612,14 @@ class WeixinChannel(BaseChannel):
             )
 
         try:
-            # --- Send media files first (following Telegram channel pattern) ---
+            # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             for media_path in (msg.media or []):
                 try:
                     await self._send_media_file(msg.chat_id, media_path, ctx_token)
                 except (httpx.TimeoutException, httpx.TransportError):
-                    # Network/transport errors: do NOT fall back to text —
-                    # the text send would also likely fail, and the outer
-                    # except will re-raise so ChannelManager retries properly.
+                    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+                    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+                    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                     self.logger.opt(exception=True).warning(
                         "Network error sending media {}",
                         media_path,
@@ -1173,7 +1632,7 @@ class WeixinChannel(BaseChannel):
                         else 0
                     )
                     if status_code >= 500:
-                        # Server-side / retryable HTTP error — same as network.
+                        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                         self.logger.exception(
                             "Server error ({} {}) sending media {}",
                             status_code,
@@ -1183,23 +1642,23 @@ class WeixinChannel(BaseChannel):
                             media_path,
                         )
                         raise
-                    # 4xx client errors are NOT retryable — fall back to text.
+                    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                     filename = Path(media_path).name
                     self.logger.exception("Failed to send media {}", media_path)
                     await self._send_text(
                         msg.chat_id, f"[Failed to send: {filename}]", ctx_token,
                     )
                 except Exception:
-                    # Non-network errors (format, file-not-found, etc.):
-                    # notify the user via text fallback.
+                    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+                    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                     filename = Path(media_path).name
                     self.logger.exception("Failed to send media {}", media_path)
-                    # Notify user about failure via text
+                    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                     await self._send_text(
                         msg.chat_id, f"[Failed to send: {filename}]", ctx_token,
                     )
 
-            # --- Send text content ---
+            # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if not content:
                 return
 
@@ -1223,17 +1682,39 @@ class WeixinChannel(BaseChannel):
     async def send_delta(
         self, chat_id: str, delta: str, metadata: dict[str, Any] | None = None
     ) -> None:
-        """Weixin iLink does not support native streaming deltas.
+        """异步执行 `send_delta`。
 
-        We only hook ``_stream_end`` so buffered tool hints are flushed even
-        when the final answer carries the ``_streamed`` flag and bypasses
-        :meth:`send`.
-        """
+        【中文名称】send_delta
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - delta: 调用方传入的 `delta` 数据；具体类型以函数签名为准。
+        - metadata: 调用方传入的 `metadata` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if metadata and metadata.get("_stream_end"):
             await self._flush_tool_hints(chat_id)
 
     async def _start_typing(self, chat_id: str, context_token: str = "") -> None:
-        """Start typing indicator immediately when a message is received."""
+        """异步执行 `_start_typing`。
+
+        【中文名称】_start_typing
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - context_token: 调用方传入的 `context_token` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self._client or not self._token or not chat_id:
             return
         await self._stop_typing(chat_id, clear_remote=False)
@@ -1249,6 +1730,20 @@ class WeixinChannel(BaseChannel):
         stop_event = asyncio.Event()
 
         async def keepalive() -> None:
+            """异步执行 `keepalive`。
+
+            【中文名称】keepalive
+
+            【功能说明】
+            这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - 无显式业务参数。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             try:
                 while not stop_event.is_set():
                     await asyncio.sleep(TYPING_KEEPALIVE_INTERVAL_S)
@@ -1264,7 +1759,20 @@ class WeixinChannel(BaseChannel):
         self._typing_tasks[chat_id] = task
 
     async def _stop_typing(self, chat_id: str, *, clear_remote: bool) -> None:
-        """Stop typing indicator for a chat."""
+        """异步执行 `_stop_typing`。
+
+        【中文名称】_stop_typing
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - clear_remote: 调用方传入的 `clear_remote` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         task = self._typing_tasks.pop(chat_id, None)
         if task and not task.done():
             stop_event = getattr(task, "_typing_stop_event", None)
@@ -1290,7 +1798,21 @@ class WeixinChannel(BaseChannel):
         text: str,
         context_token: str,
     ) -> None:
-        """Send a text message matching the exact protocol from send.ts."""
+        """异步执行 `_send_text`。
+
+        【中文名称】_send_text
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - to_user_id: 调用方传入的 `to_user_id` 数据；具体类型以函数签名为准。
+        - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+        - context_token: 调用方传入的 `context_token` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         client_id = f"nanobot-{uuid.uuid4().hex[:12]}"
 
         item_list: list[dict] = []
@@ -1328,15 +1850,21 @@ class WeixinChannel(BaseChannel):
         media_path: str,
         context_token: str,
     ) -> None:
-        """Upload a local file to WeChat CDN and send it as a media message.
+        """异步执行 `_send_media_file`。
 
-        Follows the exact protocol from ``@tencent-weixin/openclaw-weixin`` v1.0.3:
-        1. Generate a random 16-byte AES key (client-side).
-        2. Call ``getuploadurl`` with file metadata + hex-encoded AES key.
-        3. AES-128-ECB encrypt the file and POST to CDN (``{cdnBaseUrl}/upload``).
-        4. Read ``x-encrypted-param`` header from CDN response as the download param.
-        5. Send a ``sendmessage`` with the appropriate media item referencing the upload.
-        """
+        【中文名称】_send_media_file
+
+        【功能说明】
+        这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - to_user_id: 调用方传入的 `to_user_id` 数据；具体类型以函数签名为准。
+        - media_path: 调用方传入的 `media_path` 数据；具体类型以函数签名为准。
+        - context_token: 调用方传入的 `context_token` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         p = Path(media_path)
         if not p.is_file():
             raise FileNotFoundError(f"Media file not found: {media_path}")
@@ -1345,7 +1873,7 @@ class WeixinChannel(BaseChannel):
         raw_size = len(raw_data)
         raw_md5 = hashlib.md5(raw_data).hexdigest()
 
-        # Determine upload media type from extension
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         ext = p.suffix.lower()
         if ext in _IMAGE_EXTS:
             upload_type = UPLOAD_MEDIA_IMAGE
@@ -1364,15 +1892,15 @@ class WeixinChannel(BaseChannel):
             item_type = ITEM_FILE
             item_key = "file_item"
 
-        # Generate client-side AES-128 key (16 random bytes)
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         aes_key_raw = os.urandom(16)
         aes_key_hex = aes_key_raw.hex()
 
-        # Compute encrypted size: PKCS7 padding to 16-byte boundary
-        # Matches aesEcbPaddedSize: Math.ceil((size + 1) / 16) * 16
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         padded_size = ((raw_size + 1 + 15) // 16) * 16
 
-        # Step 1: Get upload URL from server (prefer upload_full_url, fallback to upload_param)
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         file_key = os.urandom(16).hex()
         upload_body: dict[str, Any] = {
             "filekey": file_key,
@@ -1396,7 +1924,7 @@ class WeixinChannel(BaseChannel):
                 f"(need upload_full_url or upload_param): {upload_resp}"
             )
 
-        # Step 2: AES-128-ECB encrypt and POST to CDN
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         aes_key_b64 = base64.b64encode(aes_key_raw).decode()
         encrypted_data = _encrypt_aes_ecb(raw_data, aes_key_b64)
 
@@ -1416,7 +1944,7 @@ class WeixinChannel(BaseChannel):
         )
         cdn_resp.raise_for_status()
 
-        # The download encrypted_query_param comes from CDN response header
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         download_param = cdn_resp.headers.get("x-encrypted-param", "")
         if not download_param:
             raise RuntimeError(
@@ -1424,9 +1952,9 @@ class WeixinChannel(BaseChannel):
                 f"status={cdn_resp.status_code} headers={dict(cdn_resp.headers)}"
             )
 
-        # Step 3: Send message with the media item
-        # aes_key for CDNMedia is the hex key encoded as base64
-        # (matches: Buffer.from(uploaded.aeskey).toString("base64"))
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         cdn_aes_key_b64 = base64.b64encode(aes_key_hex.encode()).decode()
 
         media_item: dict[str, Any] = {
@@ -1445,7 +1973,7 @@ class WeixinChannel(BaseChannel):
             media_item["file_name"] = p.name
             media_item["len"] = str(raw_size)
 
-        # Send each media item as its own message (matching reference plugin)
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         client_id = f"nanobot-{uuid.uuid4().hex[:12]}"
         item_list: list[dict] = [{"type": item_type, item_key: media_item}]
 
@@ -1474,27 +2002,30 @@ class WeixinChannel(BaseChannel):
             )
 
 
-# ---------------------------------------------------------------------------
-# AES-128-ECB encryption / decryption  (matches pic-decrypt.ts / aes-ecb.ts)
-# ---------------------------------------------------------------------------
+# 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
 
 def _parse_aes_key(aes_key_b64: str) -> bytes:
-    """Parse a base64-encoded AES key, handling both encodings seen in the wild.
+    """执行 `_parse_aes_key`。
 
-    From ``pic-decrypt.ts parseAesKey``:
+    【中文名称】_parse_aes_key
 
-    * ``base64(raw 16 bytes)``            → images (media.aes_key)
-    * ``base64(hex string of 16 bytes)``  → file / voice / video
+    【功能说明】
+    这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
 
-    In the second case base64-decoding yields 32 ASCII hex chars which must
-    then be parsed as hex to recover the actual 16-byte key.
-    """
+    【参数说明】
+    - aes_key_b64: 调用方传入的 `aes_key_b64` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     decoded = base64.b64decode(aes_key_b64)
     if len(decoded) == 16:
         return decoded
     if len(decoded) == 32 and re.fullmatch(rb"[0-9a-fA-F]{32}", decoded):
-        # hex-encoded key: base64 → hex string → raw bytes
+        # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         return bytes.fromhex(decoded.decode("ascii"))
     raise ValueError(
         f"aes_key must decode to 16 raw bytes or 32-char hex string, got {len(decoded)} bytes"
@@ -1502,14 +2033,27 @@ def _parse_aes_key(aes_key_b64: str) -> bytes:
 
 
 def _encrypt_aes_ecb(data: bytes, aes_key_b64: str) -> bytes:
-    """Encrypt data with AES-128-ECB and PKCS7 padding for CDN upload."""
+    """执行 `_encrypt_aes_ecb`。
+
+    【中文名称】_encrypt_aes_ecb
+
+    【功能说明】
+    这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - data: 调用方传入的 `data` 数据；具体类型以函数签名为准。
+    - aes_key_b64: 调用方传入的 `aes_key_b64` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     try:
         key = _parse_aes_key(aes_key_b64)
     except Exception as e:
         logger.warning("Failed to parse AES key for encryption, sending raw: {}", e)
         return data
 
-    # PKCS7 padding
+    # 说明：这里处理 微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     pad_len = 16 - len(data) % 16
     padded = data + bytes([pad_len] * pad_len)
 
@@ -1531,10 +2075,20 @@ def _encrypt_aes_ecb(data: bytes, aes_key_b64: str) -> bytes:
 
 
 def _decrypt_aes_ecb(data: bytes, aes_key_b64: str) -> bytes:
-    """Decrypt AES-128-ECB media data.
+    """执行 `_decrypt_aes_ecb`。
 
-    ``aes_key_b64`` is always base64-encoded (caller converts hex keys first).
-    """
+    【中文名称】_decrypt_aes_ecb
+
+    【功能说明】
+    这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - data: 调用方传入的 `data` 数据；具体类型以函数签名为准。
+    - aes_key_b64: 调用方传入的 `aes_key_b64` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     try:
         key = _parse_aes_key(aes_key_b64)
     except Exception as e:
@@ -1564,7 +2118,20 @@ def _decrypt_aes_ecb(data: bytes, aes_key_b64: str) -> bytes:
 
 
 def _pkcs7_unpad_safe(data: bytes, block_size: int = 16) -> bytes:
-    """Safely remove PKCS7 padding when valid; otherwise return original bytes."""
+    """执行 `_pkcs7_unpad_safe`。
+
+    【中文名称】_pkcs7_unpad_safe
+
+    【功能说明】
+    这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - data: 调用方传入的 `data` 数据；具体类型以函数签名为准。
+    - block_size: 调用方传入的 `block_size` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if not data:
         return data
     if len(data) % block_size != 0:
@@ -1578,6 +2145,20 @@ def _pkcs7_unpad_safe(data: bytes, block_size: int = 16) -> bytes:
 
 
 def _ext_for_type(media_type: str) -> str:
+    """执行 `_ext_for_type`。
+
+    【中文名称】_ext_for_type
+
+    【功能说明】
+    这是 微信渠道适配器 中的一个步骤函数，用来支撑：负责通过微信个人号桥接层接收文本、语音、图片和文件，并把 Agent 回复拆成微信可发送的消息。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - media_type: 调用方传入的 `media_type` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     return {
         "image": ".jpg",
         "voice": ".silk",

@@ -1,4 +1,18 @@
-"""Artifact persistence helpers for generated media."""
+"""产物路径工具。
+
+【中文名称】产物路径工具
+
+【功能说明】
+负责为工具调用、图片生成等运行产物创建稳定目录和安全文件名，便于 WebUI 展示和后续引用。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的通用工具代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 from __future__ import annotations
 
@@ -23,11 +37,33 @@ _MIME_EXTENSIONS = {
 }
 
 class ArtifactError(ValueError):
-    """Raised when an artifact cannot be safely decoded or stored."""
+    """ArtifactError 类。
+
+    【中文名称】ArtifactError
+
+    【功能说明】
+    这是 产物路径工具 中的核心数据结构或服务类。负责为工具调用、图片生成等运行产物创建稳定目录和安全文件名，便于 WebUI 展示和后续引用。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
 
 def decode_image_data_url(data_url: str) -> tuple[bytes, str]:
-    """Decode a base64 image data URL and return ``(bytes, mime)``."""
+    """执行 `decode_image_data_url`。
+
+    【中文名称】decode_image_data_url
+
+    【功能说明】
+    这是 产物路径工具 中的一个步骤函数，用来支撑：负责为工具调用、图片生成等运行产物创建稳定目录和安全文件名，便于 WebUI 展示和后续引用。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - data_url: 调用方传入的 `data_url` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     match = _DATA_IMAGE_RE.match(data_url.strip())
     if match is None:
         raise ArtifactError("expected a base64 image data URL")
@@ -47,6 +83,20 @@ def decode_image_data_url(data_url: str) -> tuple[bytes, str]:
 
 
 def _safe_relative_dir(save_dir: str) -> Path:
+    """执行 `_safe_relative_dir`。
+
+    【中文名称】_safe_relative_dir
+
+    【功能说明】
+    这是 产物路径工具 中的一个步骤函数，用来支撑：负责为工具调用、图片生成等运行产物创建稳定目录和安全文件名，便于 WebUI 展示和后续引用。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - save_dir: 调用方传入的 `save_dir` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     normalized = save_dir.replace("\\", "/").strip("/")
     if not normalized:
         raise ArtifactError("save_dir must not be empty")
@@ -57,6 +107,20 @@ def _safe_relative_dir(save_dir: str) -> Path:
 
 
 def _artifact_root(save_dir: str) -> Path:
+    """执行 `_artifact_root`。
+
+    【中文名称】_artifact_root
+
+    【功能说明】
+    这是 产物路径工具 中的一个步骤函数，用来支撑：负责为工具调用、图片生成等运行产物创建稳定目录和安全文件名，便于 WebUI 展示和后续引用。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - save_dir: 调用方传入的 `save_dir` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     media_root = get_media_dir().resolve()
     root = (media_root / _safe_relative_dir(save_dir)).resolve()
     try:
@@ -76,7 +140,25 @@ def store_generated_image_artifact(
     provider: str = "openrouter",
     created_at: datetime | None = None,
 ) -> dict[str, Any]:
-    """Persist a generated image and sidecar metadata under the media root."""
+    """执行 `store_generated_image_artifact`。
+
+    【中文名称】store_generated_image_artifact
+
+    【功能说明】
+    这是 产物路径工具 中的一个步骤函数，用来支撑：负责为工具调用、图片生成等运行产物创建稳定目录和安全文件名，便于 WebUI 展示和后续引用。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - data_url: 调用方传入的 `data_url` 数据；具体类型以函数签名为准。
+    - prompt: 调用方传入的 `prompt` 数据；具体类型以函数签名为准。
+    - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+    - source_images: 调用方传入的 `source_images` 数据；具体类型以函数签名为准。
+    - save_dir: 调用方传入的 `save_dir` 数据；具体类型以函数签名为准。
+    - provider: 调用方传入的 `provider` 数据；具体类型以函数签名为准。
+    - created_at: 调用方传入的 `created_at` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     raw, mime = decode_image_data_url(data_url)
     ext = _MIME_EXTENSIONS.get(mime)
     if ext is None:
@@ -107,7 +189,19 @@ def store_generated_image_artifact(
 
 
 def generated_image_tool_result(artifacts: list[dict[str, Any]]) -> str:
-    """Return the compact structured result exposed to the LLM."""
+    """执行 `generated_image_tool_result`。
+
+    【中文名称】generated_image_tool_result
+
+    【功能说明】
+    这是 产物路径工具 中的一个步骤函数，用来支撑：负责为工具调用、图片生成等运行产物创建稳定目录和安全文件名，便于 WebUI 展示和后续引用。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - artifacts: 调用方传入的 `artifacts` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     return json.dumps(
         {
             "artifacts": artifacts,

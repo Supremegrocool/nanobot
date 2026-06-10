@@ -1,4 +1,18 @@
-"""Convert Chat Completions messages/tools to Responses API format."""
+"""OpenAI Responses API 转换器。
+
+【中文名称】OpenAI Responses API 转换器
+
+【功能说明】
+负责把 nanobot 内部消息和工具 schema 转换成 Responses API 接受的 input/tools 结构。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的模型 Provider代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 from __future__ import annotations
 
@@ -9,12 +23,19 @@ from nanobot.providers.base import tool_arguments_json_for_replay
 
 
 def convert_messages(messages: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
-    """Convert Chat Completions messages to Responses API input items.
+    """执行 `convert_messages`。
 
-    Returns ``(system_prompt, input_items)`` where *system_prompt* is extracted
-    from any ``system`` role message and *input_items* is the Responses API
-    ``input`` array.
-    """
+    【中文名称】convert_messages
+
+    【功能说明】
+    这是 OpenAI Responses API 转换器 中的一个步骤函数，用来支撑：负责把 nanobot 内部消息和工具 schema 转换成 Responses API 接受的 input/tools 结构。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - messages: 调用方传入的 `messages` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     system_prompt = ""
     input_items: list[dict[str, Any]] = []
     used_item_ids: set[str] = set()
@@ -61,11 +82,19 @@ def convert_messages(messages: list[dict[str, Any]]) -> tuple[str, list[dict[str
 
 
 def convert_user_message(content: Any) -> dict[str, Any]:
-    """Convert a user message's content to Responses API format.
+    """执行 `convert_user_message`。
 
-    Handles plain strings, ``text`` blocks -> ``input_text``, and
-    ``image_url`` blocks -> ``input_image``.
-    """
+    【中文名称】convert_user_message
+
+    【功能说明】
+    这是 OpenAI Responses API 转换器 中的一个步骤函数，用来支撑：负责把 nanobot 内部消息和工具 schema 转换成 Responses API 接受的 input/tools 结构。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if isinstance(content, str):
         return {"role": "user", "content": [{"type": "input_text", "text": content}]}
     if isinstance(content, list):
@@ -85,7 +114,19 @@ def convert_user_message(content: Any) -> dict[str, Any]:
 
 
 def convert_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Convert OpenAI function-calling tool schema to Responses API flat format."""
+    """执行 `convert_tools`。
+
+    【中文名称】convert_tools
+
+    【功能说明】
+    这是 OpenAI Responses API 转换器 中的一个步骤函数，用来支撑：负责把 nanobot 内部消息和工具 schema 转换成 Responses API 接受的 input/tools 结构。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - tools: 调用方传入的 `tools` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     converted: list[dict[str, Any]] = []
     for tool in tools:
         fn = (tool.get("function") or {}) if tool.get("type") == "function" else tool
@@ -103,7 +144,20 @@ def convert_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _unique_item_id(item_id: str, used: set[str]) -> str:
-    """Return a Responses input item id that is unique within one request."""
+    """执行 `_unique_item_id`。
+
+    【中文名称】_unique_item_id
+
+    【功能说明】
+    这是 OpenAI Responses API 转换器 中的一个步骤函数，用来支撑：负责把 nanobot 内部消息和工具 schema 转换成 Responses API 接受的 input/tools 结构。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - item_id: 调用方传入的 `item_id` 数据；具体类型以函数签名为准。
+    - used: 调用方传入的 `used` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if item_id not in used:
         used.add(item_id)
         return item_id
@@ -117,10 +171,19 @@ def _unique_item_id(item_id: str, used: set[str]) -> str:
 
 
 def split_tool_call_id(tool_call_id: Any) -> tuple[str, str | None]:
-    """Split a compound ``call_id|item_id`` string.
+    """执行 `split_tool_call_id`。
 
-    Returns ``(call_id, item_id)`` where *item_id* may be ``None``.
-    """
+    【中文名称】split_tool_call_id
+
+    【功能说明】
+    这是 OpenAI Responses API 转换器 中的一个步骤函数，用来支撑：负责把 nanobot 内部消息和工具 schema 转换成 Responses API 接受的 input/tools 结构。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - tool_call_id: 调用方传入的 `tool_call_id` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if isinstance(tool_call_id, str) and tool_call_id:
         if "|" in tool_call_id:
             call_id, item_id = tool_call_id.split("|", 1)

@@ -1,4 +1,18 @@
-"""AWS Bedrock Converse provider."""
+"""AWS Bedrock Provider 实现。
+
+【中文名称】AWS Bedrock Provider 实现
+
+【功能说明】
+负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的模型 Provider代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 from __future__ import annotations
 
@@ -26,6 +40,21 @@ _NOOP_TOOL_NAME = "nanobot_noop"
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """执行 `_deep_merge`。
+
+    【中文名称】_deep_merge
+
+    【功能说明】
+    这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - base: 调用方传入的 `base` 数据；具体类型以函数签名为准。
+    - override: 调用方传入的 `override` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     merged = dict(base)
     for key, value in override.items():
         if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
@@ -36,6 +65,20 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
 
 
 def _next_or_none(iterator: Iterator[dict[str, Any]]) -> dict[str, Any] | None:
+    """执行 `_next_or_none`。
+
+    【中文名称】_next_or_none
+
+    【功能说明】
+    这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - iterator: 调用方传入的 `iterator` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     try:
         return next(iterator)
     except StopIteration:
@@ -43,7 +86,17 @@ def _next_or_none(iterator: Iterator[dict[str, Any]]) -> dict[str, Any] | None:
 
 
 class BedrockProvider(LLMProvider):
-    """LLM provider using AWS Bedrock Runtime's Converse APIs."""
+    """BedrockProvider 类。
+
+    【中文名称】BedrockProvider
+
+    【功能说明】
+    这是 AWS Bedrock Provider 实现 中的核心数据结构或服务类。负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     def __init__(
         self,
@@ -56,6 +109,26 @@ class BedrockProvider(LLMProvider):
         extra_body: dict[str, Any] | None = None,
         client: Any | None = None,
     ):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - api_key: 调用方传入的 `api_key` 数据；具体类型以函数签名为准。
+        - api_base: 调用方传入的 `api_base` 数据；具体类型以函数签名为准。
+        - default_model: 调用方传入的 `default_model` 数据；具体类型以函数签名为准。
+        - region: 调用方传入的 `region` 数据；具体类型以函数签名为准。
+        - profile: 调用方传入的 `profile` 数据；具体类型以函数签名为准。
+        - extra_body: 调用方传入的 `extra_body` 数据；具体类型以函数签名为准。
+        - client: 调用方传入的 `client` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         super().__init__(api_key, api_base)
         self.default_model = default_model
         self.region = region or os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
@@ -64,11 +137,25 @@ class BedrockProvider(LLMProvider):
         self._client = client if client is not None else self._make_client()
 
     def _make_client(self) -> Any:
+        """执行 `_make_client`。
+
+        【中文名称】_make_client
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if self.api_key:
             os.environ["AWS_BEARER_TOKEN_BEDROCK"] = self.api_key
         try:
             import boto3
-        except ImportError as exc:  # pragma: no cover - exercised only without boto3 installed
+        except ImportError as exc:  # pragma: no cover - 这是测试覆盖率工具指令；该分支只在特定可选依赖或平台环境下触发。
             raise RuntimeError(
                 "AWS Bedrock provider requires boto3. Install it with `pip install boto3`."
             ) from exc
@@ -87,25 +174,96 @@ class BedrockProvider(LLMProvider):
 
     @staticmethod
     def _strip_prefix(model: str) -> str:
+        """执行 `_strip_prefix`。
+
+        【中文名称】_strip_prefix
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if model.startswith("bedrock/"):
             return model[len("bedrock/"):]
         return model
 
     @staticmethod
     def _matches_model_token(model: str, tokens: tuple[str, ...]) -> bool:
+        """执行 `_matches_model_token`。
+
+        【中文名称】_matches_model_token
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - tokens: 调用方传入的 `tokens` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         model_lower = model.lower()
         return any(token in model_lower for token in tokens)
 
     @classmethod
     def _supports_temperature(cls, model: str) -> bool:
+        """执行 `_supports_temperature`。
+
+        【中文名称】_supports_temperature
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return not cls._matches_model_token(model, _TEMPERATURE_UNSUPPORTED_MODEL_TOKENS)
 
     @classmethod
     def _uses_adaptive_thinking_only(cls, model: str) -> bool:
+        """执行 `_uses_adaptive_thinking_only`。
+
+        【中文名称】_uses_adaptive_thinking_only
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return cls._matches_model_token(model, _ADAPTIVE_THINKING_ONLY_MODEL_TOKENS)
 
     @staticmethod
     def _image_url_block(block: dict[str, Any]) -> dict[str, Any] | None:
+        """执行 `_image_url_block`。
+
+        【中文名称】_image_url_block
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - block: 调用方传入的 `block` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         url = (block.get("image_url") or {}).get("url", "")
         if not isinstance(url, str) or not url:
             return None
@@ -123,6 +281,21 @@ class BedrockProvider(LLMProvider):
 
     @classmethod
     def _content_blocks(cls, content: Any, *, for_tool_result: bool = False) -> list[dict[str, Any]]:
+        """执行 `_content_blocks`。
+
+        【中文名称】_content_blocks
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+        - for_tool_result: 调用方传入的 `for_tool_result` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if isinstance(content, str) or content is None:
             return [{"text": content or "(empty)"}]
         if not isinstance(content, list):
@@ -148,7 +321,7 @@ class BedrockProvider(LLMProvider):
                     blocks.append(converted)
                 continue
 
-            # Preserve already-Bedrock-shaped content where possible.
+            # 说明：这里处理 AWS Bedrock Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
             for key in ("text", "image", "document", "video", "json", "searchResult"):
                 if key in item:
                     blocks.append({key: item[key]})
@@ -160,6 +333,20 @@ class BedrockProvider(LLMProvider):
 
     @classmethod
     def _system_blocks(cls, content: Any) -> list[dict[str, Any]]:
+        """执行 `_system_blocks`。
+
+        【中文名称】_system_blocks
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return [
             block for block in cls._content_blocks(content)
             if "text" in block or "cachePoint" in block or "guardContent" in block
@@ -167,6 +354,20 @@ class BedrockProvider(LLMProvider):
 
     @classmethod
     def _tool_result_block(cls, msg: dict[str, Any]) -> dict[str, Any]:
+        """执行 `_tool_result_block`。
+
+        【中文名称】_tool_result_block
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - msg: 调用方传入的 `msg` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return {
             "toolResult": {
                 "toolUseId": str(msg.get("tool_call_id") or ""),
@@ -177,6 +378,20 @@ class BedrockProvider(LLMProvider):
 
     @staticmethod
     def _tool_use_block(tool_call: dict[str, Any]) -> dict[str, Any] | None:
+        """执行 `_tool_use_block`。
+
+        【中文名称】_tool_use_block
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - tool_call: 调用方传入的 `tool_call` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         function = tool_call.get("function")
         if not isinstance(function, dict):
             return None
@@ -191,6 +406,20 @@ class BedrockProvider(LLMProvider):
 
     @staticmethod
     def _reasoning_block(block: dict[str, Any]) -> dict[str, Any] | None:
+        """执行 `_reasoning_block`。
+
+        【中文名称】_reasoning_block
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - block: 调用方传入的 `block` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if block.get("type") not in {"thinking", "reasoning", "redacted_thinking"}:
             return None
         text = block.get("thinking") or block.get("text")
@@ -213,6 +442,20 @@ class BedrockProvider(LLMProvider):
 
     @classmethod
     def _assistant_blocks(cls, msg: dict[str, Any]) -> list[dict[str, Any]]:
+        """执行 `_assistant_blocks`。
+
+        【中文名称】_assistant_blocks
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - msg: 调用方传入的 `msg` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         blocks: list[dict[str, Any]] = []
 
         for thinking in msg.get("thinking_blocks") or []:
@@ -237,6 +480,20 @@ class BedrockProvider(LLMProvider):
 
     @staticmethod
     def _has_tool_use(msg: dict[str, Any]) -> bool:
+        """执行 `_has_tool_use`。
+
+        【中文名称】_has_tool_use
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - msg: 调用方传入的 `msg` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         content = msg.get("content")
         return isinstance(content, list) and any(
             isinstance(block, dict) and "toolUse" in block for block in content
@@ -244,6 +501,20 @@ class BedrockProvider(LLMProvider):
 
     @staticmethod
     def _merge_consecutive(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """执行 `_merge_consecutive`。
+
+        【中文名称】_merge_consecutive
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - messages: 调用方传入的 `messages` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         merged: list[dict[str, Any]] = []
         for msg in messages:
             if merged and merged[-1].get("role") == msg.get("role"):
@@ -272,6 +543,20 @@ class BedrockProvider(LLMProvider):
         self,
         messages: list[dict[str, Any]],
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """执行 `_convert_messages`。
+
+        【中文名称】_convert_messages
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - messages: 调用方传入的 `messages` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         system: list[dict[str, Any]] = []
         converted: list[dict[str, Any]] = []
 
@@ -298,6 +583,20 @@ class BedrockProvider(LLMProvider):
 
     @staticmethod
     def _convert_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
+        """执行 `_convert_tools`。
+
+        【中文名称】_convert_tools
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - tools: 调用方传入的 `tools` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not tools:
             return None
         result: list[dict[str, Any]] = []
@@ -325,6 +624,20 @@ class BedrockProvider(LLMProvider):
 
     @staticmethod
     def _contains_tool_blocks(messages: list[dict[str, Any]]) -> bool:
+        """执行 `_contains_tool_blocks`。
+
+        【中文名称】_contains_tool_blocks
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - messages: 调用方传入的 `messages` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         for msg in messages:
             content = msg.get("content")
             if not isinstance(content, list):
@@ -336,6 +649,20 @@ class BedrockProvider(LLMProvider):
 
     @staticmethod
     def _noop_tool() -> dict[str, Any]:
+        """执行 `_noop_tool`。
+
+        【中文名称】_noop_tool
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return {
             "toolSpec": {
                 "name": _NOOP_TOOL_NAME,
@@ -348,6 +675,20 @@ class BedrockProvider(LLMProvider):
     def _convert_tool_choice(
         tool_choice: str | dict[str, Any] | None,
     ) -> dict[str, Any] | None:
+        """执行 `_convert_tool_choice`。
+
+        【中文名称】_convert_tool_choice
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - tool_choice: 调用方传入的 `tool_choice` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if tool_choice is None or tool_choice == "auto":
             return {"auto": {}}
         if tool_choice == "required":
@@ -362,6 +703,20 @@ class BedrockProvider(LLMProvider):
 
     @staticmethod
     def _adaptive_thinking(reasoning_effort: str | None) -> dict[str, Any] | None:
+        """执行 `_adaptive_thinking`。
+
+        【中文名称】_adaptive_thinking
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - reasoning_effort: 调用方传入的 `reasoning_effort` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not reasoning_effort:
             return None
         effort = reasoning_effort.lower()
@@ -382,6 +737,26 @@ class BedrockProvider(LLMProvider):
         reasoning_effort: str | None,
         tool_choice: str | dict[str, Any] | None,
     ) -> dict[str, Any]:
+        """执行 `_build_kwargs`。
+
+        【中文名称】_build_kwargs
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - messages: 调用方传入的 `messages` 数据；具体类型以函数签名为准。
+        - tools: 调用方传入的 `tools` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - max_tokens: 调用方传入的 `max_tokens` 数据；具体类型以函数签名为准。
+        - temperature: 调用方传入的 `temperature` 数据；具体类型以函数签名为准。
+        - reasoning_effort: 调用方传入的 `reasoning_effort` 数据；具体类型以函数签名为准。
+        - tool_choice: 调用方传入的 `tool_choice` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         model_id = self._strip_prefix(model or self.default_model)
         system, bedrock_messages = self._convert_messages(self._sanitize_empty_content(messages))
         if not bedrock_messages:
@@ -424,6 +799,20 @@ class BedrockProvider(LLMProvider):
 
     @staticmethod
     def _finish_reason(stop_reason: str | None) -> str:
+        """执行 `_finish_reason`。
+
+        【中文名称】_finish_reason
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - stop_reason: 调用方传入的 `stop_reason` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return {
             "end_turn": "stop",
             "tool_use": "tool_calls",
@@ -432,6 +821,20 @@ class BedrockProvider(LLMProvider):
 
     @staticmethod
     def _usage(usage: dict[str, Any] | None) -> dict[str, int]:
+        """执行 `_usage`。
+
+        【中文名称】_usage
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - usage: 调用方传入的 `usage` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not usage:
             return {}
         prompt = int(usage.get("inputTokens") or 0)
@@ -453,6 +856,20 @@ class BedrockProvider(LLMProvider):
 
     @staticmethod
     def _parse_reasoning(block: dict[str, Any]) -> tuple[str | None, dict[str, Any] | None]:
+        """执行 `_parse_reasoning`。
+
+        【中文名称】_parse_reasoning
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - block: 调用方传入的 `block` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         reasoning = block.get("reasoningContent")
         if not isinstance(reasoning, dict):
             return None, None
@@ -475,6 +892,20 @@ class BedrockProvider(LLMProvider):
 
     @classmethod
     def _parse_response(cls, response: dict[str, Any]) -> LLMResponse:
+        """执行 `_parse_response`。
+
+        【中文名称】_parse_response
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - response: 调用方传入的 `response` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
         tool_calls: list[ToolCallRequest] = []
@@ -520,6 +951,25 @@ class BedrockProvider(LLMProvider):
         tool_buffers: dict[int, dict[str, Any]],
         state: dict[str, Any],
     ) -> str | None:
+        """执行 `_parse_stream_event`。
+
+        【中文名称】_parse_stream_event
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - event: 调用方传入的 `event` 数据；具体类型以函数签名为准。
+        - content_parts: 调用方传入的 `content_parts` 数据；具体类型以函数签名为准。
+        - reasoning_parts: 调用方传入的 `reasoning_parts` 数据；具体类型以函数签名为准。
+        - thinking_blocks: 调用方传入的 `thinking_blocks` 数据；具体类型以函数签名为准。
+        - tool_buffers: 调用方传入的 `tool_buffers` 数据；具体类型以函数签名为准。
+        - state: 调用方传入的 `state` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if "contentBlockStart" in event:
             data = event["contentBlockStart"]
             idx = int(data.get("contentBlockIndex") or 0)
@@ -609,6 +1059,24 @@ class BedrockProvider(LLMProvider):
         tool_buffers: dict[int, dict[str, Any]],
         state: dict[str, Any],
     ) -> LLMResponse:
+        """执行 `_stream_result`。
+
+        【中文名称】_stream_result
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - content_parts: 调用方传入的 `content_parts` 数据；具体类型以函数签名为准。
+        - reasoning_parts: 调用方传入的 `reasoning_parts` 数据；具体类型以函数签名为准。
+        - thinking_blocks: 调用方传入的 `thinking_blocks` 数据；具体类型以函数签名为准。
+        - tool_buffers: 调用方传入的 `tool_buffers` 数据；具体类型以函数签名为准。
+        - state: 调用方传入的 `state` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         tool_calls: list[ToolCallRequest] = []
         for buf in tool_buffers.values():
             args: Any = {}
@@ -630,6 +1098,20 @@ class BedrockProvider(LLMProvider):
 
     @classmethod
     def _handle_error(cls, e: Exception) -> LLMResponse:
+        """执行 `_handle_error`。
+
+        【中文名称】_handle_error
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - e: 调用方传入的 `e` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         response = getattr(e, "response", None)
         metadata = response.get("ResponseMetadata", {}) if isinstance(response, dict) else {}
         headers = metadata.get("HTTPHeaders") if isinstance(metadata, dict) else None
@@ -678,6 +1160,26 @@ class BedrockProvider(LLMProvider):
         reasoning_effort: str | None = None,
         tool_choice: str | dict[str, Any] | None = None,
     ) -> LLMResponse:
+        """异步执行 `chat`。
+
+        【中文名称】chat
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - messages: 调用方传入的 `messages` 数据；具体类型以函数签名为准。
+        - tools: 调用方传入的 `tools` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - max_tokens: 调用方传入的 `max_tokens` 数据；具体类型以函数签名为准。
+        - temperature: 调用方传入的 `temperature` 数据；具体类型以函数签名为准。
+        - reasoning_effort: 调用方传入的 `reasoning_effort` 数据；具体类型以函数签名为准。
+        - tool_choice: 调用方传入的 `tool_choice` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         try:
             kwargs = self._build_kwargs(
                 messages, tools, model, max_tokens, temperature, reasoning_effort, tool_choice
@@ -700,6 +1202,29 @@ class BedrockProvider(LLMProvider):
         on_thinking_delta: Callable[[str], Awaitable[None]] | None = None,
         on_tool_call_delta: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> LLMResponse:
+        """异步执行 `chat_stream`。
+
+        【中文名称】chat_stream
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - messages: 调用方传入的 `messages` 数据；具体类型以函数签名为准。
+        - tools: 调用方传入的 `tools` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - max_tokens: 调用方传入的 `max_tokens` 数据；具体类型以函数签名为准。
+        - temperature: 调用方传入的 `temperature` 数据；具体类型以函数签名为准。
+        - reasoning_effort: 调用方传入的 `reasoning_effort` 数据；具体类型以函数签名为准。
+        - tool_choice: 调用方传入的 `tool_choice` 数据；具体类型以函数签名为准。
+        - on_content_delta: 调用方传入的 `on_content_delta` 数据；具体类型以函数签名为准。
+        - on_thinking_delta: 调用方传入的 `on_thinking_delta` 数据；具体类型以函数签名为准。
+        - on_tool_call_delta: 调用方传入的 `on_tool_call_delta` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         _ = on_thinking_delta, on_tool_call_delta
         idle_timeout_s = int(os.environ.get("NANOBOT_STREAM_IDLE_TIMEOUT_S", "90"))
         content_parts: list[str] = []
@@ -751,4 +1276,18 @@ class BedrockProvider(LLMProvider):
             return self._handle_error(e)
 
     def get_default_model(self) -> str:
+        """执行 `get_default_model`。
+
+        【中文名称】get_default_model
+
+        【功能说明】
+        这是 AWS Bedrock Provider 实现 中的一个步骤函数，用来支撑：负责使用 boto3 调用 Bedrock Converse/ConverseStream，把 AWS 响应转换成统一 LLMResponse。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return self.default_model

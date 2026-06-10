@@ -1,4 +1,18 @@
-"""Email channel implementation using IMAP polling + SMTP replies."""
+"""邮件渠道适配器。
+
+【中文名称】邮件渠道适配器
+
+【功能说明】
+负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的渠道适配器代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 import asyncio
 import html
@@ -31,7 +45,17 @@ from nanobot.utils.helpers import safe_filename
 
 
 class EmailConfig(Base):
-    """Email channel configuration (IMAP inbound + SMTP outbound)."""
+    """EmailConfig 类。
+
+    【中文名称】EmailConfig
+
+    【功能说明】
+    这是 邮件渠道适配器 中的核心数据结构或服务类。负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     enabled: bool = False
     consent_granted: bool = False
@@ -62,34 +86,47 @@ class EmailConfig(Base):
     subject_prefix: str = "Re: "
     allow_from: list[str] = Field(default_factory=list)
 
-    # Email authentication verification (anti-spoofing)
-    verify_dkim: bool = True   # Require Authentication-Results with dkim=pass
-    verify_spf: bool = True    # Require Authentication-Results with spf=pass
+    # 说明：这里处理 邮件渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    verify_dkim: bool = True   # 说明：这里处理 邮件渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    verify_spf: bool = True    # 说明：这里处理 邮件渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
-    # Attachment handling — set allowed types to enable (e.g. ["application/pdf", "image/*"], or ["*"] for all)
+    # 说明：这里处理 邮件渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     allowed_attachment_types: list[str] = Field(default_factory=list)
-    max_attachment_size: int = 2_000_000  # 2MB per attachment
+    max_attachment_size: int = 2_000_000  # 说明：这里处理 邮件渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     max_attachments_per_email: int = 5
 
 
 @dataclass
 class _ServerFeatures:
+    """_ServerFeatures 类。
+
+    【中文名称】_ServerFeatures
+
+    【功能说明】
+    这是 邮件渠道适配器 中的核心数据结构或服务类。负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
+
     move: bool
     uidplus: bool
     uid_store: bool | None = None
 
 
 class EmailChannel(BaseChannel):
-    """
-    Email channel.
+    """EmailChannel 类。
 
-    Inbound:
-    - Poll IMAP mailbox for unread messages.
-    - Convert each message into an inbound event.
+    【中文名称】EmailChannel
 
-    Outbound:
-    - Send responses via SMTP back to the sender address.
-    """
+    【功能说明】
+    这是 邮件渠道适配器 中的核心数据结构或服务类。负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     name = "email"
     display_name = "Email"
@@ -125,9 +162,38 @@ class EmailChannel(BaseChannel):
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
+        """执行 `default_config`。
+
+        【中文名称】default_config
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return EmailConfig().model_dump(by_alias=True)
 
     def __init__(self, config: Any, bus: MessageBus):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - config: 调用方传入的 `config` 数据；具体类型以函数签名为准。
+        - bus: 调用方传入的 `bus` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if isinstance(config, dict):
             config = EmailConfig.model_validate(config)
         super().__init__(config, bus)
@@ -135,11 +201,23 @@ class EmailChannel(BaseChannel):
         self._self_addresses = self._collect_self_addresses()
         self._last_subject_by_chat: dict[str, str] = {}
         self._last_message_id_by_chat: dict[str, str] = {}
-        self._processed_uids: set[str] = set()  # Capped to prevent unbounded growth
+        self._processed_uids: set[str] = set()  # 说明：这里处理 邮件渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         self._MAX_PROCESSED_UIDS = 100000
 
     async def start(self) -> None:
-        """Start polling IMAP for inbound emails."""
+        """异步执行 `start`。
+
+        【中文名称】start
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self.config.consent_granted:
             self.logger.warning(
                 "Email channel disabled: consent_granted is false. "
@@ -202,11 +280,35 @@ class EmailChannel(BaseChannel):
             await asyncio.sleep(poll_seconds)
 
     async def stop(self) -> None:
-        """Stop polling loop."""
+        """异步执行 `stop`。
+
+        【中文名称】stop
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         self._running = False
 
     async def send(self, msg: OutboundMessage) -> None:
-        """Send email via SMTP."""
+        """异步执行 `send`。
+
+        【中文名称】send
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - msg: 调用方传入的 `msg` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self.config.consent_granted:
             self.logger.warning("Skip email send: consent_granted is false")
             return
@@ -215,7 +317,7 @@ class EmailChannel(BaseChannel):
             self.logger.warning("SMTP host not configured")
             return
 
-        # Skip progress messages to prevent sending an empty email after each tool call
+        # 说明：这里处理 邮件渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if (msg.metadata or {}).get("_progress"):
             self.logger.debug("Skip progress message to {}", msg.chat_id)
             return
@@ -225,11 +327,11 @@ class EmailChannel(BaseChannel):
             self.logger.warning("Missing recipient address")
             return
 
-        # Determine if this is a reply (recipient has sent us an email before)
+        # 说明：这里处理 邮件渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         is_reply = to_addr in self._last_subject_by_chat
         force_send = bool((msg.metadata or {}).get("force_send"))
 
-        # autoReplyEnabled only controls automatic replies, not proactive sends
+        # 说明：这里处理 邮件渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if is_reply and not self.config.auto_reply_enabled and not force_send:
             self.logger.info("Skip automatic reply to {}: auto_reply_enabled is false", to_addr)
             return
@@ -309,6 +411,20 @@ class EmailChannel(BaseChannel):
             raise
 
     def _validate_config(self) -> bool:
+        """执行 `_validate_config`。
+
+        【中文名称】_validate_config
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         missing = []
         if not self.config.imap_host:
             missing.append("imap_host")
@@ -332,6 +448,20 @@ class EmailChannel(BaseChannel):
         return True
 
     def _smtp_send(self, msg: EmailMessage) -> None:
+        """执行 `_smtp_send`。
+
+        【中文名称】_smtp_send
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - msg: 调用方传入的 `msg` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         timeout = 30
         if self.config.smtp_use_ssl:
             with smtplib.SMTP_SSL(
@@ -350,7 +480,19 @@ class EmailChannel(BaseChannel):
             smtp.send_message(msg)
 
     def _fetch_new_messages(self) -> tuple[list[dict[str, Any]], set[str]]:
-        """Poll IMAP and return parsed unread messages plus skipped message UIDs."""
+        """执行 `_fetch_new_messages`。
+
+        【中文名称】_fetch_new_messages
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         return self._fetch_messages(
             search_criteria=("UNSEEN",),
             mark_seen=self.config.mark_seen,
@@ -364,11 +506,21 @@ class EmailChannel(BaseChannel):
         end_date: date,
         limit: int = 20,
     ) -> list[dict[str, Any]]:
-        """
-        Fetch messages in [start_date, end_date) by IMAP date search.
+        """执行 `fetch_messages_between_dates`。
 
-        This is used for historical summarization tasks (e.g. "yesterday").
-        """
+        【中文名称】fetch_messages_between_dates
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - start_date: 调用方传入的 `start_date` 数据；具体类型以函数签名为准。
+        - end_date: 调用方传入的 `end_date` 数据；具体类型以函数签名为准。
+        - limit: 调用方传入的 `limit` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if end_date <= start_date:
             return []
 
@@ -392,6 +544,23 @@ class EmailChannel(BaseChannel):
         dedupe: bool,
         limit: int,
     ) -> tuple[list[dict[str, Any]], set[str]]:
+        """执行 `_fetch_messages`。
+
+        【中文名称】_fetch_messages
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - search_criteria: 调用方传入的 `search_criteria` 数据；具体类型以函数签名为准。
+        - mark_seen: 调用方传入的 `mark_seen` 数据；具体类型以函数签名为准。
+        - dedupe: 调用方传入的 `dedupe` 数据；具体类型以函数签名为准。
+        - limit: 调用方传入的 `limit` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         messages: list[dict[str, Any]] = []
         skipped_uids: set[str] = set()
         cycle_uids: set[str] = set()
@@ -425,7 +594,25 @@ class EmailChannel(BaseChannel):
         skipped_uids: set[str],
         cycle_uids: set[str],
     ) -> None:
-        """Fetch messages by arbitrary IMAP search criteria."""
+        """执行 `_fetch_messages_once`。
+
+        【中文名称】_fetch_messages_once
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - search_criteria: 调用方传入的 `search_criteria` 数据；具体类型以函数签名为准。
+        - mark_seen: 调用方传入的 `mark_seen` 数据；具体类型以函数签名为准。
+        - dedupe: 调用方传入的 `dedupe` 数据；具体类型以函数签名为准。
+        - limit: 调用方传入的 `limit` 数据；具体类型以函数签名为准。
+        - messages: 调用方传入的 `messages` 数据；具体类型以函数签名为准。
+        - skipped_uids: 调用方传入的 `skipped_uids` 数据；具体类型以函数签名为准。
+        - cycle_uids: 调用方传入的 `cycle_uids` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         mailbox = self.config.imap_mailbox or "INBOX"
 
         client = self._open_imap_client(mailbox=mailbox, missing_mailbox_ok=True)
@@ -468,7 +655,7 @@ class EmailChannel(BaseChannel):
                         skipped_uids.add(uid)
                     continue
 
-                # --- Anti-spoofing: verify Authentication-Results ---
+                # 说明：这里处理 邮件渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 spf_pass, dkim_pass = self._check_authentication_results(parsed)
                 if self.config.verify_spf and not spf_pass:
                     self.logger.warning(
@@ -516,7 +703,7 @@ class EmailChannel(BaseChannel):
                     f"{body}"
                 )
 
-                # --- Attachment extraction ---
+                # 说明：这里处理 邮件渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 attachment_paths: list[str] = []
                 if self.config.allowed_attachment_types:
                     saved = self._extract_attachments(
@@ -556,6 +743,21 @@ class EmailChannel(BaseChannel):
             self._close_imap_client(client)
 
     def _open_imap_client(self, mailbox: str, *, missing_mailbox_ok: bool = False) -> Any | None:
+        """执行 `_open_imap_client`。
+
+        【中文名称】_open_imap_client
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - mailbox: 调用方传入的 `mailbox` 数据；具体类型以函数签名为准。
+        - missing_mailbox_ok: 调用方传入的 `missing_mailbox_ok` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if self.config.imap_use_ssl:
             client: Any = imaplib.IMAP4_SSL(self.config.imap_host, self.config.imap_port)
         else:
@@ -584,11 +786,37 @@ class EmailChannel(BaseChannel):
 
     @staticmethod
     def _close_imap_client(client: Any) -> None:
+        """执行 `_close_imap_client`。
+
+        【中文名称】_close_imap_client
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - client: 调用方传入的 `client` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         with suppress(Exception):
             client.logout()
 
     def _collect_self_addresses(self) -> set[str]:
-        """Return normalized email addresses owned by this channel instance."""
+        """执行 `_collect_self_addresses`。
+
+        【中文名称】_collect_self_addresses
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         candidates = (
             self.config.from_address,
             self.config.smtp_username,
@@ -603,7 +831,19 @@ class EmailChannel(BaseChannel):
 
     @staticmethod
     def _normalize_address(value: str) -> str:
-        """Normalize an address or mailbox-like identifier for comparisons."""
+        """执行 `_normalize_address`。
+
+        【中文名称】_normalize_address
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         raw = (value or "").strip()
         if not raw:
             return ""
@@ -615,26 +855,80 @@ class EmailChannel(BaseChannel):
         return ""
 
     def _is_self_address(self, sender: str) -> bool:
-        """Return True when an inbound sender belongs to the bot itself."""
+        """执行 `_is_self_address`。
+
+        【中文名称】_is_self_address
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - sender: 调用方传入的 `sender` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         normalized_sender = self._normalize_address(sender)
         return bool(normalized_sender) and normalized_sender in self._self_addresses
 
     def _remember_processed_uid(self, uid: str, dedupe: bool, cycle_uids: set[str]) -> None:
-        """Track a fetched UID so skipped messages are not reprocessed forever."""
+        """执行 `_remember_processed_uid`。
+
+        【中文名称】_remember_processed_uid
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - uid: 调用方传入的 `uid` 数据；具体类型以函数签名为准。
+        - dedupe: 调用方传入的 `dedupe` 数据；具体类型以函数签名为准。
+        - cycle_uids: 调用方传入的 `cycle_uids` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not uid:
             return
         cycle_uids.add(uid)
         if dedupe:
             self._processed_uids.add(uid)
-            # mark_seen is the primary dedup; this set is a safety net
+            # 说明：这里处理 邮件渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if len(self._processed_uids) > self._MAX_PROCESSED_UIDS:
-                # Evict a random half to cap memory; mark_seen is the primary dedup
+                # 说明：这里处理 邮件渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 self._processed_uids = set(list(self._processed_uids)[len(self._processed_uids) // 2:])
 
     def _should_apply_post_action(self) -> bool:
+        """执行 `_should_apply_post_action`。
+
+        【中文名称】_should_apply_post_action
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return self.config.post_action in {"delete", "move"}
 
     def _apply_post_actions_batch(self, post_actions_uids: list[str]) -> None:
+        """执行 `_apply_post_actions_batch`。
+
+        【中文名称】_apply_post_actions_batch
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - post_actions_uids: 调用方传入的 `post_actions_uids` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self._should_apply_post_action() or not post_actions_uids:
             return
 
@@ -645,9 +939,9 @@ class EmailChannel(BaseChannel):
 
         try:
             features = self._server_features(client)
-            # Apply all post-actions in one IMAP session. `features` also carries
-            # session-learned behavior (e.g. UID STORE support) so later UIDs can
-            # skip known-broken paths.
+            # 说明：这里处理 邮件渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 邮件渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 邮件渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             for uid in post_actions_uids:
                 if uid:
                     self._apply_post_action(client, uid, features)
@@ -660,6 +954,22 @@ class EmailChannel(BaseChannel):
         uid: str,
         features: _ServerFeatures,
     ) -> None:
+        """执行 `_apply_post_action`。
+
+        【中文名称】_apply_post_action
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - client: 调用方传入的 `client` 数据；具体类型以函数签名为准。
+        - uid: 调用方传入的 `uid` 数据；具体类型以函数签名为准。
+        - features: 调用方传入的 `features` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         action = self.config.post_action
 
         if action == "delete":
@@ -686,6 +996,20 @@ class EmailChannel(BaseChannel):
 
     @staticmethod
     def _server_features(client: Any) -> _ServerFeatures:
+        """执行 `_server_features`。
+
+        【中文名称】_server_features
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - client: 调用方传入的 `client` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         caps: set[str] = set()
         with suppress(Exception):
             status, data = client.capability()
@@ -699,19 +1023,50 @@ class EmailChannel(BaseChannel):
 
     @staticmethod
     def _lookup_imap_id_by_uid(client: Any, uid: str) -> bytes | None:
-        # IMAP exposes two message identifiers: UID (stable) and sequence number
-        # (session-local). We target by UID first, but some servers may reject
-        # UID STORE. In that case we resolve the current sequence number for the
-        # UID and retry with STORE using that sequence id.
+        # 说明：这里处理 邮件渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 邮件渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 邮件渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 邮件渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        """执行 `_lookup_imap_id_by_uid`。
+
+        【中文名称】_lookup_imap_id_by_uid
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - client: 调用方传入的 `client` 数据；具体类型以函数签名为准。
+        - uid: 调用方传入的 `uid` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         status, data = client.search(None, "UID", uid)
         if status != "OK" or not data or not data[0]:
             return None
         return data[0].split()[0]
 
     def _uid_store_deleted(self, client: Any, uid: str, features: _ServerFeatures) -> bool:
-        # Optimistic path: try UID STORE first because UID is stable and avoids
-        # sequence-number lookup. If this fails once for the session, remember it
-        # and use the sequence STORE fallback directly for remaining UIDs.
+        # 说明：这里处理 邮件渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 邮件渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 邮件渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        """执行 `_uid_store_deleted`。
+
+        【中文名称】_uid_store_deleted
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - client: 调用方传入的 `client` 数据；具体类型以函数签名为准。
+        - uid: 调用方传入的 `uid` 数据；具体类型以函数签名为准。
+        - features: 调用方传入的 `features` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if features.uid_store is not False:
             status, _ = client.uid("STORE", uid, "+FLAGS", "(\\Deleted)")
             if status == "OK":
@@ -719,8 +1074,8 @@ class EmailChannel(BaseChannel):
                 return True
             features.uid_store = False
 
-        # Compatibility fallback for servers where UID STORE is unavailable or
-        # unreliable: resolve the current sequence number from UID and use STORE.
+        # 说明：这里处理 邮件渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 邮件渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         imap_id = self._lookup_imap_id_by_uid(client, uid)
         if not imap_id:
             self.logger.warning("Post-action skipped: UID {} not found", uid)
@@ -733,8 +1088,24 @@ class EmailChannel(BaseChannel):
         return True
 
     def _uid_expunge_or_fallback(self, client: Any, uid: str, features: _ServerFeatures) -> None:
-        # Prefer UID-scoped expunge when supported to avoid expunging unrelated
-        # messages already marked \Deleted in the selected mailbox.
+        # 说明：这里处理 邮件渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 邮件渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        """执行 `_uid_expunge_or_fallback`。
+
+        【中文名称】_uid_expunge_or_fallback
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - client: 调用方传入的 `client` 数据；具体类型以函数签名为准。
+        - uid: 调用方传入的 `uid` 数据；具体类型以函数签名为准。
+        - features: 调用方传入的 `features` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if features.uidplus:
             status, _ = client.uid("EXPUNGE", uid)
             if status == "OK":
@@ -745,22 +1116,76 @@ class EmailChannel(BaseChannel):
 
     @classmethod
     def _is_stale_imap_error(cls, exc: Exception) -> bool:
+        """执行 `_is_stale_imap_error`。
+
+        【中文名称】_is_stale_imap_error
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - exc: 调用方传入的 `exc` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         message = str(exc).lower()
         return any(marker in message for marker in cls._IMAP_RECONNECT_MARKERS)
 
     @classmethod
     def _is_missing_mailbox_error(cls, exc: Exception) -> bool:
+        """执行 `_is_missing_mailbox_error`。
+
+        【中文名称】_is_missing_mailbox_error
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - exc: 调用方传入的 `exc` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         message = str(exc).lower()
         return any(marker in message for marker in cls._IMAP_MISSING_MAILBOX_MARKERS)
 
     @classmethod
     def _format_imap_date(cls, value: date) -> str:
-        """Format date for IMAP search (always English month abbreviations)."""
+        """执行 `_format_imap_date`。
+
+        【中文名称】_format_imap_date
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         month = cls._IMAP_MONTHS[value.month - 1]
         return f"{value.day:02d}-{month}-{value.year}"
 
     @staticmethod
     def _extract_message_bytes(fetched: list[Any]) -> bytes | None:
+        """执行 `_extract_message_bytes`。
+
+        【中文名称】_extract_message_bytes
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - fetched: 调用方传入的 `fetched` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         for item in fetched:
             if isinstance(item, tuple) and len(item) >= 2 and isinstance(item[1], (bytes, bytearray)):
                 return bytes(item[1])
@@ -768,6 +1193,20 @@ class EmailChannel(BaseChannel):
 
     @staticmethod
     def _extract_uid(fetched: list[Any]) -> str:
+        """执行 `_extract_uid`。
+
+        【中文名称】_extract_uid
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - fetched: 调用方传入的 `fetched` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         for item in fetched:
             if isinstance(item, tuple) and item and isinstance(item[0], (bytes, bytearray)):
                 head = bytes(item[0]).decode("utf-8", errors="ignore")
@@ -778,6 +1217,20 @@ class EmailChannel(BaseChannel):
 
     @staticmethod
     def _decode_header_value(value: str) -> str:
+        """执行 `_decode_header_value`。
+
+        【中文名称】_decode_header_value
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not value:
             return ""
         try:
@@ -787,7 +1240,19 @@ class EmailChannel(BaseChannel):
 
     @classmethod
     def _extract_text_body(cls, msg: Any) -> str:
-        """Best-effort extraction of readable body text."""
+        """执行 `_extract_text_body`。
+
+        【中文名称】_extract_text_body
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - msg: 调用方传入的 `msg` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if msg.is_multipart():
             plain_parts: list[str] = []
             html_parts: list[str] = []
@@ -827,11 +1292,19 @@ class EmailChannel(BaseChannel):
 
     @staticmethod
     def _check_authentication_results(parsed_msg: Any) -> tuple[bool, bool]:
-        """Parse Authentication-Results headers for SPF and DKIM verdicts.
+        """执行 `_check_authentication_results`。
 
-        Returns:
-            A tuple of (spf_pass, dkim_pass) booleans.
-        """
+        【中文名称】_check_authentication_results
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - parsed_msg: 调用方传入的 `parsed_msg` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         spf_pass = False
         dkim_pass = False
         for ar_header in parsed_msg.get_all("Authentication-Results") or []:
@@ -852,10 +1325,23 @@ class EmailChannel(BaseChannel):
         max_size: int,
         max_count: int,
     ) -> list[Path]:
-        """Extract and save email attachments to the media directory.
+        """执行 `_extract_attachments`。
 
-        Returns list of saved file paths.
-        """
+        【中文名称】_extract_attachments
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - msg: 调用方传入的 `msg` 数据；具体类型以函数签名为准。
+        - uid: 调用方传入的 `uid` 数据；具体类型以函数签名为准。
+        - allowed_types: 调用方传入的 `allowed_types` 数据；具体类型以函数签名为准。
+        - max_size: 调用方传入的 `max_size` 数据；具体类型以函数签名为准。
+        - max_count: 调用方传入的 `max_count` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not msg.is_multipart():
             return []
 
@@ -899,12 +1385,40 @@ class EmailChannel(BaseChannel):
 
     @staticmethod
     def _html_to_text(raw_html: str) -> str:
+        """执行 `_html_to_text`。
+
+        【中文名称】_html_to_text
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - raw_html: 调用方传入的 `raw_html` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         text = re.sub(r"<\s*br\s*/?>", "\n", raw_html, flags=re.IGNORECASE)
         text = re.sub(r"<\s*/\s*p\s*>", "\n", text, flags=re.IGNORECASE)
         text = re.sub(r"<[^>]+>", "", text)
         return html.unescape(text)
 
     def _reply_subject(self, base_subject: str) -> str:
+        """执行 `_reply_subject`。
+
+        【中文名称】_reply_subject
+
+        【功能说明】
+        这是 邮件渠道适配器 中的一个步骤函数，用来支撑：负责通过 IMAP/SMTP 轮询邮件、提取正文和附件、构造会话键，并把 Agent 回复以邮件形式发回原发件人。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - base_subject: 调用方传入的 `base_subject` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         subject = (base_subject or "").strip() or "nanobot reply"
         prefix = self.config.subject_prefix or "Re: "
         if subject.lower().startswith("re:"):

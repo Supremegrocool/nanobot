@@ -1,4 +1,18 @@
-"""Document text extraction utilities for nanobot."""
+"""文档解析工具。
+
+【中文名称】文档解析工具
+
+【功能说明】
+负责识别 PDF、DOCX、PPTX、Excel、纯文本等文件类型，并提取可供 Agent 阅读的文本内容。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的通用工具代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 import mimetypes
 from pathlib import Path
@@ -7,14 +21,14 @@ from loguru import logger
 
 from nanobot.utils.helpers import detect_image_mime
 
-# Supported file extensions for text extraction
+# 说明：这里处理 文档解析工具 的协议细节或边界情况，避免外部差异影响核心流程。
 SUPPORTED_EXTENSIONS: set[str] = {
-    # Document formats
+    # 说明：这里处理 文档解析工具 的协议细节或边界情况，避免外部差异影响核心流程。
     ".pdf",
     ".docx",
     ".xlsx",
     ".pptx",
-    # Text formats
+    # 说明：这里处理 文档解析工具 的协议细节或边界情况，避免外部差异影响核心流程。
     ".txt",
     ".md",
     ".csv",
@@ -28,7 +42,7 @@ SUPPORTED_EXTENSIONS: set[str] = {
     ".toml",
     ".ini",
     ".cfg",
-    # Image formats (for future OCR support)
+    # 说明：这里处理 文档解析工具 的协议细节或边界情况，避免外部差异影响核心流程。
     ".png",
     ".jpg",
     ".jpeg",
@@ -40,15 +54,19 @@ _MAX_TEXT_LENGTH = 200_000
 
 
 def extract_text(path: Path) -> str | None:
-    """Extract text from a file.
+    """执行 `extract_text`。
 
-    Args:
-        path: Path to the file.
+    【中文名称】extract_text
 
-    Returns:
-        Extracted text as string, None for unsupported types,
-        or error string for failures.
-    """
+    【功能说明】
+    这是 文档解析工具 中的一个步骤函数，用来支撑：负责识别 PDF、DOCX、PPTX、Excel、纯文本等文件类型，并提取可供 Agent 阅读的文本内容。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if not isinstance(path, Path):
         path = Path(path)
 
@@ -57,9 +75,9 @@ def extract_text(path: Path) -> str | None:
 
     ext = path.suffix.lower()
 
-    # Document formats -- each branch lazily imports its parser so that
-    # startup does not pay the ~25 MB cost of loading openpyxl /
-    # python-docx / python-pptx / pypdf up front (see issue #3422).
+    # 说明：这里处理 文档解析工具 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 文档解析工具 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 文档解析工具 的协议细节或边界情况，避免外部差异影响核心流程。
     if ext == ".pdf":
         return _extract_pdf(path)
     elif ext == ".docx":
@@ -71,15 +89,27 @@ def extract_text(path: Path) -> str | None:
     elif _is_text_extension(ext):
         return _extract_text_file(path)
     elif ext in {".png", ".jpg", ".jpeg", ".gif", ".webp"}:
-        # Image files - for future OCR support
+        # 说明：这里处理 文档解析工具 的协议细节或边界情况，避免外部差异影响核心流程。
         return f"[image: {path.name}]"
     else:
-        # Unsupported extension
+        # 说明：这里处理 文档解析工具 的协议细节或边界情况，避免外部差异影响核心流程。
         return None
 
 
 def _extract_pdf(path: Path) -> str:
-    """Extract text from PDF using pypdf."""
+    """执行 `_extract_pdf`。
+
+    【中文名称】_extract_pdf
+
+    【功能说明】
+    这是 文档解析工具 中的一个步骤函数，用来支撑：负责识别 PDF、DOCX、PPTX、Excel、纯文本等文件类型，并提取可供 Agent 阅读的文本内容。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     try:
         from pypdf import PdfReader
     except ImportError:
@@ -97,7 +127,19 @@ def _extract_pdf(path: Path) -> str:
 
 
 def _extract_docx(path: Path) -> str:
-    """Extract text from DOCX using python-docx."""
+    """执行 `_extract_docx`。
+
+    【中文名称】_extract_docx
+
+    【功能说明】
+    这是 文档解析工具 中的一个步骤函数，用来支撑：负责识别 PDF、DOCX、PPTX、Excel、纯文本等文件类型，并提取可供 Agent 阅读的文本内容。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     try:
         from docx import Document as DocxDocument
     except ImportError:
@@ -112,7 +154,19 @@ def _extract_docx(path: Path) -> str:
 
 
 def _extract_xlsx(path: Path) -> str:
-    """Extract text from XLSX using openpyxl."""
+    """执行 `_extract_xlsx`。
+
+    【中文名称】_extract_xlsx
+
+    【功能说明】
+    这是 文档解析工具 中的一个步骤函数，用来支撑：负责识别 PDF、DOCX、PPTX、Excel、纯文本等文件类型，并提取可供 Agent 阅读的文本内容。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     try:
         from openpyxl import load_workbook
     except ImportError:
@@ -139,7 +193,19 @@ def _extract_xlsx(path: Path) -> str:
 
 
 def _extract_pptx(path: Path) -> str:
-    """Extract text from PPTX using python-pptx."""
+    """执行 `_extract_pptx`。
+
+    【中文名称】_extract_pptx
+
+    【功能说明】
+    这是 文档解析工具 中的一个步骤函数，用来支撑：负责识别 PDF、DOCX、PPTX、Excel、纯文本等文件类型，并提取可供 Agent 阅读的文本内容。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     try:
         from pptx import Presentation as PptxPresentation
     except ImportError:
@@ -160,11 +226,20 @@ def _extract_pptx(path: Path) -> str:
 
 
 def _collect_pptx_shape_text(shape, out: list[str]) -> None:
-    """Collect text from a PPTX shape, recursing into groups and tables.
+    """执行 `_collect_pptx_shape_text`。
 
-    Groups have ``has_text_frame=False`` and must be walked via ``.shapes``;
-    tables are GraphicFrame objects whose cell text lives under ``.table``.
-    """
+    【中文名称】_collect_pptx_shape_text
+
+    【功能说明】
+    这是 文档解析工具 中的一个步骤函数，用来支撑：负责识别 PDF、DOCX、PPTX、Excel、纯文本等文件类型，并提取可供 Agent 阅读的文本内容。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - shape: 调用方传入的 `shape` 数据；具体类型以函数签名为准。
+    - out: 调用方传入的 `out` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     sub_shapes = getattr(shape, "shapes", None)
     if sub_shapes is not None:
         for sub in sub_shapes:
@@ -185,9 +260,21 @@ def _collect_pptx_shape_text(shape, out: list[str]) -> None:
 
 
 def _extract_text_file(path: Path) -> str:
-    """Extract text from a plain text file."""
+    """执行 `_extract_text_file`。
+
+    【中文名称】_extract_text_file
+
+    【功能说明】
+    这是 文档解析工具 中的一个步骤函数，用来支撑：负责识别 PDF、DOCX、PPTX、Excel、纯文本等文件类型，并提取可供 Agent 阅读的文本内容。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     try:
-        # Try UTF-8 first, then latin-1 fallback
+        # 说明：这里处理 文档解析工具 的协议细节或边界情况，避免外部差异影响核心流程。
         try:
             content = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
@@ -199,14 +286,39 @@ def _extract_text_file(path: Path) -> str:
 
 
 def _truncate(text: str, max_length: int) -> str:
-    """Truncate text with a suffix indicating truncation."""
+    """执行 `_truncate`。
+
+    【中文名称】_truncate
+
+    【功能说明】
+    这是 文档解析工具 中的一个步骤函数，用来支撑：负责识别 PDF、DOCX、PPTX、Excel、纯文本等文件类型，并提取可供 Agent 阅读的文本内容。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+    - max_length: 调用方传入的 `max_length` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if len(text) <= max_length:
         return text
     return text[:max_length] + f"... (truncated, {len(text)} chars total)"
 
 
 def _is_text_extension(ext: str) -> bool:
-    """Check if extension is a text format."""
+    """执行 `_is_text_extension`。
+
+    【中文名称】_is_text_extension
+
+    【功能说明】
+    这是 文档解析工具 中的一个步骤函数，用来支撑：负责识别 PDF、DOCX、PPTX、Excel、纯文本等文件类型，并提取可供 Agent 阅读的文本内容。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - ext: 调用方传入的 `ext` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     return ext in {
         ".txt",
         ".md",
@@ -224,19 +336,27 @@ def _is_text_extension(ext: str) -> bool:
     }
 
 
-# ---------------------------------------------------------------------------
-# High-level helper: split media into images + extracted document text
-# ---------------------------------------------------------------------------
+# 说明：这里处理 文档解析工具 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 文档解析工具 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 文档解析工具 的协议细节或边界情况，避免外部差异影响核心流程。
 
-_MAX_EXTRACT_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
+_MAX_EXTRACT_FILE_SIZE = 50 * 1024 * 1024  # 说明：这里处理 文档解析工具 的协议细节或边界情况，避免外部差异影响核心流程。
 
 
 def is_image_file(path: str) -> bool:
-    """Check whether *path* looks like an image file.
+    """执行 `is_image_file`。
 
-    Uses magic-byte detection (reads first 16 bytes) with a ``mimetypes``
-    extension-based fallback.
-    """
+    【中文名称】is_image_file
+
+    【功能说明】
+    这是 文档解析工具 中的一个步骤函数，用来支撑：负责识别 PDF、DOCX、PPTX、Excel、纯文本等文件类型，并提取可供 Agent 阅读的文本内容。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     p = Path(path)
     mime: str | None = None
     if p.is_file():
@@ -253,11 +373,20 @@ def is_image_file(path: str) -> bool:
 def reference_non_image_attachments(
     content: str, media: list[str],
 ) -> tuple[str, list[str]]:
-    """Separate images from non-image attachments without reading file content.
+    """执行 `reference_non_image_attachments`。
 
-    Image paths are preserved for downstream vision-block construction.
-    Non-image paths are appended as ``[Attachment: path]`` references.
-    """
+    【中文名称】reference_non_image_attachments
+
+    【功能说明】
+    这是 文档解析工具 中的一个步骤函数，用来支撑：负责识别 PDF、DOCX、PPTX、Excel、纯文本等文件类型，并提取可供 Agent 阅读的文本内容。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+    - media: 调用方传入的 `media` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     image_paths: list[str] = []
     attachment_refs: list[str] = []
     for path in media:
@@ -277,16 +406,21 @@ def extract_documents(
     *,
     max_file_size: int = _MAX_EXTRACT_FILE_SIZE,
 ) -> tuple[str, list[str]]:
-    """Separate images from documents in *media_paths*.
+    """执行 `extract_documents`。
 
-    Documents (PDF, DOCX, XLSX, PPTX, plain-text, …) have their text
-    extracted and appended to *text*.  Only image paths are kept in the
-    returned list so that downstream layers only need to handle vision
-    blocks.
+    【中文名称】extract_documents
 
-    Files larger than *max_file_size* bytes are skipped with a warning
-    to avoid unbounded memory / CPU usage.
-    """
+    【功能说明】
+    这是 文档解析工具 中的一个步骤函数，用来支撑：负责识别 PDF、DOCX、PPTX、Excel、纯文本等文件类型，并提取可供 Agent 阅读的文本内容。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+    - media_paths: 调用方传入的 `media_paths` 数据；具体类型以函数签名为准。
+    - max_file_size: 调用方传入的 `max_file_size` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     image_paths: list[str] = []
     doc_texts: list[str] = []
 

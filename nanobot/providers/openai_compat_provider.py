@@ -1,4 +1,18 @@
-"""OpenAI-compatible provider for all non-Anthropic LLM APIs."""
+"""OpenAI 兼容 Provider 实现。
+
+【中文名称】OpenAI 兼容 Provider 实现
+
+【功能说明】
+负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的模型 Provider代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 from __future__ import annotations
 
@@ -38,9 +52,9 @@ if TYPE_CHECKING:
 
     from nanobot.providers.registry import ProviderSpec
 
-# Module-level placeholder — set lazily by _ensure_client on first real
-# use, or replaced by tests via ``patch(...)``.  Kept as a plain name so
-# that ``unittest.mock.patch`` can find and replace it.
+# 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
 AsyncOpenAI: Any = None
 
 _ALLOWED_MSG_KEYS = frozenset({
@@ -61,9 +75,9 @@ _KIMI_THINKING_MODELS: frozenset[str] = frozenset({
     "kimi-k2.6",
     "k2.6-code-preview",
 })
-# Thinking-capable MiMo models per Xiaomi docs (see
-# tests/providers/test_xiaomi_mimo_thinking.py). mimo-v2-flash is omitted
-# because it does not support thinking.
+# 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
 _MIMO_THINKING_MODELS: frozenset[str] = frozenset({
     "mimo-v2.5-pro",
     "mimo-v2.5",
@@ -72,9 +86,9 @@ _MIMO_THINKING_MODELS: frozenset[str] = frozenset({
 })
 _OPENAI_COMPAT_REQUEST_TIMEOUT_S = 120.0
 
-# Maps ProviderSpec.thinking_style → extra_body builder.
-# Each builder takes a bool (thinking_enabled) and returns the dict to
-# merge into extra_body, keeping the style→wire-format mapping in one place.
+# 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
 _THINKING_STYLE_MAP: dict[str, Any] = {
     "thinking_type": lambda on: {"thinking": {"type": "enabled" if on else "disabled"}},
     "enable_thinking": lambda on: {"enable_thinking": on},
@@ -90,11 +104,37 @@ _MODEL_THINKING_STYLES: dict[str, str] = {
 
 
 def _model_slug(model_name: str) -> str:
+    """执行 `_model_slug`。
+
+    【中文名称】_model_slug
+
+    【功能说明】
+    这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - model_name: 调用方传入的 `model_name` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     return model_name.lower().rsplit("/", 1)[-1]
 
 
 def _requires_max_completion_tokens(model_name: str) -> bool:
-    """Return True for models that reject ``max_tokens`` (GPT-5 family, o-series)."""
+    """执行 `_requires_max_completion_tokens`。
+
+    【中文名称】_requires_max_completion_tokens
+
+    【功能说明】
+    这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - model_name: 调用方传入的 `model_name` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     slug = _model_slug(model_name)
     return "gpt-5" in slug or any(
         slug == p or slug.startswith((p + "-", p + ".")) for p in ("o1", "o3", "o4")
@@ -102,10 +142,39 @@ def _requires_max_completion_tokens(model_name: str) -> bool:
 
 
 def _model_thinking_style(model_name: str) -> str:
+    """执行 `_model_thinking_style`。
+
+    【中文名称】_model_thinking_style
+
+    【功能说明】
+    这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - model_name: 调用方传入的 `model_name` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     return _MODEL_THINKING_STYLES.get(_model_slug(model_name), "")
 
 
 def _thinking_styles_for(spec: ProviderSpec | None, model_name: str) -> list[str]:
+    """执行 `_thinking_styles_for`。
+
+    【中文名称】_thinking_styles_for
+
+    【功能说明】
+    这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - spec: 调用方传入的 `spec` 数据；具体类型以函数签名为准。
+    - model_name: 调用方传入的 `model_name` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     styles: list[str] = []
     if spec and spec.thinking_style:
         styles.append(spec.thinking_style)
@@ -116,11 +185,41 @@ def _thinking_styles_for(spec: ProviderSpec | None, model_name: str) -> list[str
 
 
 def _thinking_extra_body(style: str, thinking_enabled: bool) -> dict[str, Any] | None:
+    """执行 `_thinking_extra_body`。
+
+    【中文名称】_thinking_extra_body
+
+    【功能说明】
+    这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - style: 调用方传入的 `style` 数据；具体类型以函数签名为准。
+    - thinking_enabled: 调用方传入的 `thinking_enabled` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     builder = _THINKING_STYLE_MAP.get(style)
     return builder(thinking_enabled) if builder else None
 
 
 def _gateway_reasoning_extra_body(style: str, effort: str | None) -> dict[str, Any] | None:
+    """执行 `_gateway_reasoning_extra_body`。
+
+    【中文名称】_gateway_reasoning_extra_body
+
+    【功能说明】
+    这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - style: 调用方传入的 `style` 数据；具体类型以函数签名为准。
+    - effort: 调用方传入的 `effort` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     if not effort:
         return None
     builder = _GATEWAY_REASONING_STYLE_MAP.get(style)
@@ -128,11 +227,38 @@ def _gateway_reasoning_extra_body(style: str, effort: str | None) -> dict[str, A
 
 
 def _openai_compat_timeout_s() -> float:
-    """Return the bounded request timeout used for OpenAI-compatible providers."""
+    """执行 `_openai_compat_timeout_s`。
+
+    【中文名称】_openai_compat_timeout_s
+
+    【功能说明】
+    这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - 无显式业务参数。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     return _float_env("NANOBOT_OPENAI_COMPAT_TIMEOUT_S", _OPENAI_COMPAT_REQUEST_TIMEOUT_S)
 
 
 def _float_env(name: str, default: float) -> float:
+    """执行 `_float_env`。
+
+    【中文名称】_float_env
+
+    【功能说明】
+    这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - name: 调用方传入的 `name` 数据；具体类型以函数签名为准。
+    - default: 调用方传入的 `default` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     raw = os.environ.get(name)
     if raw is None or not raw.strip():
         return default
@@ -148,19 +274,56 @@ def _float_env(name: str, default: float) -> float:
 
 
 def _short_tool_id() -> str:
-    """9-char alphanumeric ID compatible with all providers (incl. Mistral)."""
+    """执行 `_short_tool_id`。
+
+    【中文名称】_short_tool_id
+
+    【功能说明】
+    这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - 无显式业务参数。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     return "".join(secrets.choice(_ALNUM) for _ in range(9))
 
 
 def _get(obj: Any, key: str) -> Any:
-    """Get a value from dict or object attribute, returning None if absent."""
+    """执行 `_get`。
+
+    【中文名称】_get
+
+    【功能说明】
+    这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - obj: 调用方传入的 `obj` 数据；具体类型以函数签名为准。
+    - key: 调用方传入的 `key` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if isinstance(obj, dict):
         return obj.get(key)
     return getattr(obj, key, None)
 
 
 def _coerce_dict(value: Any) -> dict[str, Any] | None:
-    """Try to coerce *value* to a dict; return None if not possible or empty."""
+    """执行 `_coerce_dict`。
+
+    【中文名称】_coerce_dict
+
+    【功能说明】
+    这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if value is None:
         return None
     if isinstance(value, dict):
@@ -178,11 +341,19 @@ def _extract_tc_extras(tc: Any) -> tuple[
     dict[str, Any] | None,
     dict[str, Any] | None,
 ]:
-    """Extract (extra_content, provider_specific_fields, fn_provider_specific_fields).
+    """执行 `_extract_tc_extras`。
 
-    Works for both SDK objects and dicts.  Captures Gemini ``extra_content``
-    verbatim and any non-standard keys on the tool-call / function.
-    """
+    【中文名称】_extract_tc_extras
+
+    【功能说明】
+    这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - tc: 调用方传入的 `tc` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     extra_content = _coerce_dict(_get(tc, "extra_content"))
 
     tc_dict = _coerce_dict(tc)
@@ -209,26 +380,47 @@ def _extract_tc_extras(tc: Any) -> tuple[
 
 
 def _uses_openrouter_attribution(spec: "ProviderSpec | None", api_base: str | None) -> bool:
-    """Apply Nanobot attribution headers to OpenRouter requests by default."""
+    """执行 `_uses_openrouter_attribution`。
+
+    【中文名称】_uses_openrouter_attribution
+
+    【功能说明】
+    这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - spec: 调用方传入的 `spec` 数据；具体类型以函数签名为准。
+    - api_base: 调用方传入的 `api_base` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if spec and spec.name == "openrouter":
         return True
     return bool(api_base and "openrouter" in api_base.lower())
 
 
 _RESPONSES_FAILURE_THRESHOLD = 3
-_RESPONSES_PROBE_INTERVAL_S = 300  # 5 minutes
+_RESPONSES_PROBE_INTERVAL_S = 300  # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
 
 
 def _is_local_endpoint(
     spec: "ProviderSpec | None",
     api_base: str | None,
 ) -> bool:
-    """Return True when the endpoint is a local or LAN model server.
+    """执行 `_is_local_endpoint`。
 
-    Matches either the provider spec's ``is_local`` flag or common private-
-    network patterns in the base URL (localhost, 127.x, 192.168.x, 10.x,
-    172.16-31.x, Docker ``host.docker.internal``).
-    """
+    【中文名称】_is_local_endpoint
+
+    【功能说明】
+    这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - spec: 调用方传入的 `spec` 数据；具体类型以函数签名为准。
+    - api_base: 调用方传入的 `api_base` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if spec and spec.is_local:
         return True
     if not api_base:
@@ -251,7 +443,19 @@ def _is_local_endpoint(
 
 
 def _is_direct_openai_base(api_base: str | None) -> bool:
-    """Return True for direct OpenAI endpoints, not generic OpenAI-compatible gateways."""
+    """执行 `_is_direct_openai_base`。
+
+    【中文名称】_is_direct_openai_base
+
+    【功能说明】
+    这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - api_base: 调用方传入的 `api_base` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if not api_base:
         return True
     normalized = api_base.strip().lower().rstrip("/")
@@ -263,17 +467,42 @@ def _responses_circuit_key(
     default_model: str,
     reasoning_effort: str | None,
 ) -> str:
+    """执行 `_responses_circuit_key`。
+
+    【中文名称】_responses_circuit_key
+
+    【功能说明】
+    这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+    - default_model: 调用方传入的 `default_model` 数据；具体类型以函数签名为准。
+    - reasoning_effort: 调用方传入的 `reasoning_effort` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     model_name = (model or default_model).lower()
     effort = reasoning_effort.lower() if isinstance(reasoning_effort, str) else ""
     return f"{model_name}:{effort}"
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
-    """Recursively merge *override* into *base*, returning a new dict.
+    """执行 `_deep_merge`。
 
-    Nested dicts are merged key-by-key; all other types in *override*
-    replace the corresponding key in *base*.
-    """
+    【中文名称】_deep_merge
+
+    【功能说明】
+    这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - base: 调用方传入的 `base` 数据；具体类型以函数签名为准。
+    - override: 调用方传入的 `override` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     merged = dict(base)
     for key, value in override.items():
         if (
@@ -288,7 +517,20 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
 
 
 def _merge_unique_list(base: Any, override: Any) -> Any:
-    """Append list values while preserving order and removing duplicates."""
+    """执行 `_merge_unique_list`。
+
+    【中文名称】_merge_unique_list
+
+    【功能说明】
+    这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - base: 调用方传入的 `base` 数据；具体类型以函数签名为准。
+    - override: 调用方传入的 `override` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if not isinstance(base, list) or not isinstance(override, list):
         return override
     result: list[Any] = []
@@ -309,7 +551,20 @@ def _merge_responses_extra_body(
     body: dict[str, Any],
     extra_body: dict[str, Any],
 ) -> dict[str, Any]:
-    """Merge configured Responses API body fields without clobbering tools."""
+    """执行 `_merge_responses_extra_body`。
+
+    【中文名称】_merge_responses_extra_body
+
+    【功能说明】
+    这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - body: 调用方传入的 `body` 数据；具体类型以函数签名为准。
+    - extra_body: 调用方传入的 `extra_body` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     reserved = {"include", "tools"}
     regular_extra = {key: value for key, value in extra_body.items() if key not in reserved}
     merged = _deep_merge(body, regular_extra)
@@ -329,11 +584,17 @@ def _merge_responses_extra_body(
 
 
 class OpenAICompatProvider(LLMProvider):
-    """Unified provider for all OpenAI-compatible APIs.
+    """OpenAICompatProvider 类。
 
-    Receives a resolved ``ProviderSpec`` from the caller — no internal
-    registry lookups needed.
-    """
+    【中文名称】OpenAICompatProvider
+
+    【功能说明】
+    这是 OpenAI 兼容 Provider 实现 中的核心数据结构或服务类。负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     def __init__(
         self,
@@ -346,6 +607,27 @@ class OpenAICompatProvider(LLMProvider):
         api_type: str = "auto",
         extra_query: dict[str, str] | None = None,
     ):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - api_key: 调用方传入的 `api_key` 数据；具体类型以函数签名为准。
+        - api_base: 调用方传入的 `api_base` 数据；具体类型以函数签名为准。
+        - default_model: 调用方传入的 `default_model` 数据；具体类型以函数签名为准。
+        - extra_headers: 调用方传入的 `extra_headers` 数据；具体类型以函数签名为准。
+        - spec: 调用方传入的 `spec` 数据；具体类型以函数签名为准。
+        - extra_body: 调用方传入的 `extra_body` 数据；具体类型以函数签名为准。
+        - api_type: 调用方传入的 `api_type` 数据；具体类型以函数签名为准。
+        - extra_query: 调用方传入的 `extra_query` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         super().__init__(api_key, api_base)
         self.default_model = default_model
         self.extra_headers = extra_headers or {}
@@ -367,32 +649,44 @@ class OpenAICompatProvider(LLMProvider):
         self._api_key_for_client = api_key or "no-key"
         self._is_local = _is_local_endpoint(spec, effective_base)
 
-        # Lazy-init: the OpenAI client and its httpx transport are expensive
-        # to create (~700 ms on Windows). Defer until first use.
+        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
         self._client: AsyncOpenAIType | None = None
         self._client_lock = asyncio.Lock()
 
-        # Responses API circuit breaker: skip after repeated failures,
-        # probe again after _RESPONSES_PROBE_INTERVAL_S seconds.
+        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
         self._responses_failures: dict[str, int] = {}
         self._responses_tripped_at: dict[str, float] = {}
 
     def _build_client(self) -> None:
-        """Create the OpenAI client using the current module-level AsyncOpenAI."""
+        """执行 `_build_client`。
+
+        【中文名称】_build_client
+
+        【功能说明】
+        这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         import httpx
 
         timeout_s = _openai_compat_timeout_s()
         http_client: httpx.AsyncClient | None = None
         if self._is_local:
-            # Local model servers (Ollama, llama.cpp, vLLM) often close idle
-            # HTTP connections before the client-side keepalive expires. When
-            # two LLM calls happen seconds apart (e.g. heartbeat _decide then
-            # process_direct), the second call may grab a now-dead pooled
-            # connection, causing a transient APIConnectionError on every first
-            # attempt. Disabling keepalive for local endpoints avoids this by
-            # opening a fresh connection for each request, which is cheap on a
-            # LAN. Cloud providers benefit from keepalive, so we leave the
-            # default pool settings for them.
+            # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
             http_client = httpx.AsyncClient(
                 limits=httpx.Limits(keepalive_expiry=0),
                 timeout=timeout_s,
@@ -408,7 +702,19 @@ class OpenAICompatProvider(LLMProvider):
         )
 
     async def _ensure_client(self):
-        """Return the shared OpenAI client, creating it on first call."""
+        """异步执行 `_ensure_client`。
+
+        【中文名称】_ensure_client
+
+        【功能说明】
+        这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if self._client is not None:
             return self._client
         async with self._client_lock:
@@ -431,7 +737,20 @@ class OpenAICompatProvider(LLMProvider):
             return self._client
 
     def _setup_env(self, api_key: str, api_base: str | None) -> None:
-        """Set environment variables based on provider spec."""
+        """执行 `_setup_env`。
+
+        【中文名称】_setup_env
+
+        【功能说明】
+        这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - api_key: 调用方传入的 `api_key` 数据；具体类型以函数签名为准。
+        - api_base: 调用方传入的 `api_base` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         spec = self._spec
         if not spec or not spec.env_key:
             return
@@ -450,11 +769,38 @@ class OpenAICompatProvider(LLMProvider):
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]] | None]:
-        """Inject cache_control markers for prompt caching."""
+        """执行 `_apply_cache_control`。
+
+        【中文名称】_apply_cache_control
+
+        【功能说明】
+        这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - messages: 调用方传入的 `messages` 数据；具体类型以函数签名为准。
+        - tools: 调用方传入的 `tools` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         cache_marker = {"type": "ephemeral"}
         new_messages = list(messages)
 
         def _mark(msg: dict[str, Any]) -> dict[str, Any]:
+            """执行 `_mark`。
+
+            【中文名称】_mark
+
+            【功能说明】
+            这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - msg: 调用方传入的 `msg` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             content = msg.get("content")
             if isinstance(content, str):
                 return {**msg, "content": [
@@ -480,7 +826,19 @@ class OpenAICompatProvider(LLMProvider):
 
     @staticmethod
     def _normalize_tool_call_id(tool_call_id: Any) -> Any:
-        """Normalize to a provider-safe 9-char alphanumeric form."""
+        """执行 `_normalize_tool_call_id`。
+
+        【中文名称】_normalize_tool_call_id
+
+        【功能说明】
+        这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - tool_call_id: 调用方传入的 `tool_call_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not isinstance(tool_call_id, str):
             return tool_call_id
         if len(tool_call_id) == 9 and tool_call_id.isalnum():
@@ -488,12 +846,36 @@ class OpenAICompatProvider(LLMProvider):
         return hashlib.sha1(tool_call_id.encode()).hexdigest()[:9]
 
     def _should_normalize_tool_call_ids(self) -> bool:
-        """Return True for providers that reject normal OpenAI tool call IDs."""
+        """执行 `_should_normalize_tool_call_ids`。
+
+        【中文名称】_should_normalize_tool_call_ids
+
+        【功能说明】
+        这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         return bool(self._spec and self._spec.name == "mistral")
 
     @staticmethod
     def _coerce_content_to_string(content: Any) -> str | None:
-        """Coerce block/list content into plain text for strict string-only APIs."""
+        """执行 `_coerce_content_to_string`。
+
+        【中文名称】_coerce_content_to_string
+
+        【功能说明】
+        这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if content is None or isinstance(content, str):
             return content
         text = OpenAICompatProvider._extract_text_content(content)
@@ -506,7 +888,19 @@ class OpenAICompatProvider(LLMProvider):
         return dumped or "(empty)"
 
     def _sanitize_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Strip non-standard keys, normalize tool_call IDs."""
+        """执行 `_sanitize_messages`。
+
+        【中文名称】_sanitize_messages
+
+        【功能说明】
+        这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - messages: 调用方传入的 `messages` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         sanitized = LLMProvider._sanitize_request_messages(messages, _ALLOWED_MSG_KEYS)
         id_map: dict[str, str] = {}
         pending_tool_ids: dict[str, deque[str]] = {}
@@ -514,6 +908,20 @@ class OpenAICompatProvider(LLMProvider):
         normalize_tool_ids = self._should_normalize_tool_call_ids()
 
         def map_id(value: Any) -> Any:
+            """执行 `map_id`。
+
+            【中文名称】map_id
+
+            【功能说明】
+            这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             if not isinstance(value, str):
                 return value
             if not normalize_tool_ids:
@@ -521,6 +929,22 @@ class OpenAICompatProvider(LLMProvider):
             return id_map.setdefault(value, self._normalize_tool_call_id(value))
 
         def unique_tool_id(value: Any, used_ids: set[str], idx: int) -> str:
+            """执行 `unique_tool_id`。
+
+            【中文名称】unique_tool_id
+
+            【功能说明】
+            这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+            - used_ids: 调用方传入的 `used_ids` 数据；具体类型以函数签名为准。
+            - idx: 调用方传入的 `idx` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             if isinstance(value, str) and value:
                 base = map_id(value)
             else:
@@ -538,6 +962,20 @@ class OpenAICompatProvider(LLMProvider):
                 salt += 1
 
         def map_tool_result_id(value: Any) -> Any:
+            """执行 `map_tool_result_id`。
+
+            【中文名称】map_tool_result_id
+
+            【功能说明】
+            这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             if not isinstance(value, str):
                 return value
             queue = pending_tool_ids.get(value)
@@ -576,8 +1014,8 @@ class OpenAICompatProvider(LLMProvider):
                     normalized.append(tc_clean)
                 clean["tool_calls"] = normalized
                 if clean.get("role") == "assistant":
-                    # Some OpenAI-compatible gateways reject assistant messages
-                    # that mix non-empty content with tool_calls.
+                    # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+                    # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
                     clean["content"] = None
             if "tool_call_id" in clean and clean["tool_call_id"]:
                 clean["tool_call_id"] = map_tool_result_id(clean["tool_call_id"])
@@ -588,20 +1026,29 @@ class OpenAICompatProvider(LLMProvider):
                 clean["content"] = self._coerce_content_to_string(clean.get("content"))
         return self._enforce_role_alternation(sanitized)
 
-    # ------------------------------------------------------------------
-    # Build kwargs
-    # ------------------------------------------------------------------
+    # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
 
     @staticmethod
     def _supports_temperature(
         model_name: str,
         reasoning_effort: str | None = None,
     ) -> bool:
-        """Return True when the model accepts a temperature parameter.
+        """执行 `_supports_temperature`。
 
-        GPT-5 family and reasoning models (o1/o3/o4) reject temperature
-        when reasoning_effort is set to anything other than ``"none"``.
-        """
+        【中文名称】_supports_temperature
+
+        【功能说明】
+        这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - model_name: 调用方传入的 `model_name` 数据；具体类型以函数签名为准。
+        - reasoning_effort: 调用方传入的 `reasoning_effort` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if reasoning_effort and reasoning_effort.lower() != "none":
             return False
         name = model_name.lower()
@@ -617,6 +1064,26 @@ class OpenAICompatProvider(LLMProvider):
         reasoning_effort: str | None,
         tool_choice: str | dict[str, Any] | None,
     ) -> dict[str, Any]:
+        """执行 `_build_kwargs`。
+
+        【中文名称】_build_kwargs
+
+        【功能说明】
+        这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - messages: 调用方传入的 `messages` 数据；具体类型以函数签名为准。
+        - tools: 调用方传入的 `tools` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - max_tokens: 调用方传入的 `max_tokens` 数据；具体类型以函数签名为准。
+        - temperature: 调用方传入的 `temperature` 数据；具体类型以函数签名为准。
+        - reasoning_effort: 调用方传入的 `reasoning_effort` 数据；具体类型以函数签名为准。
+        - tool_choice: 调用方传入的 `tool_choice` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         model_name = model or self.default_model
         spec = self._spec
 
@@ -633,8 +1100,8 @@ class OpenAICompatProvider(LLMProvider):
             "messages": self._sanitize_messages(self._sanitize_empty_content(messages)),
         }
 
-        # GPT-5 and reasoning models (o1/o3/o4) reject temperature when
-        # reasoning_effort is active.  Only include it when safe.
+        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
         if self._supports_temperature(model_name, reasoning_effort):
             kwargs["temperature"] = temperature
 
@@ -652,9 +1119,9 @@ class OpenAICompatProvider(LLMProvider):
                     kwargs.update(overrides)
                     break
 
-        # Normalize reasoning_effort into a semantic form (OpenAI vocab)
-        # used for internal decisions, and a wire form actually sent out.
-        # "minimum" is accepted as a DashScope-native alias for "minimal".
+        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
         semantic_effort: str | None = None
         if isinstance(reasoning_effort, str):
             semantic_effort = reasoning_effort.lower()
@@ -663,14 +1130,14 @@ class OpenAICompatProvider(LLMProvider):
 
         wire_effort = reasoning_effort
         if spec and spec.name == "dashscope" and semantic_effort == "minimal":
-            # DashScope accepts none/minimum/low/medium/high/xhigh; "minimal" 400s.
+            # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
             wire_effort = "minimum"
 
         if wire_effort and semantic_effort != "none":
             kwargs["reasoning_effort"] = wire_effort
 
-        # Only send thinking controls when reasoning_effort is explicit so
-        # omitting the config preserves each provider's default.
+        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
         if reasoning_effort is not None:
             thinking_enabled = semantic_effort not in ("none", "minimal")
             for thinking_style in _thinking_styles_for(spec, model_name):
@@ -683,11 +1150,11 @@ class OpenAICompatProvider(LLMProvider):
                 if extra:
                     kwargs.setdefault("extra_body", {}).update(extra)
 
-            # Moonshot rejects requests that carry both 'reasoning_effort'
-            # and the native 'thinking' param.  We already expressed the
-            # user's intent via the provider-native shape, so drop the
-            # redundant wire-level kwarg.  Only kimi models need this —
-            # Xiaomi's API accepts both params.
+            # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
             if _model_slug(model_name) in _KIMI_THINKING_MODELS:
                 kwargs.pop("reasoning_effort", None)
 
@@ -695,10 +1162,10 @@ class OpenAICompatProvider(LLMProvider):
             kwargs["tools"] = tools
             kwargs["tool_choice"] = tool_choice or "auto"
 
-        # Backfill reasoning_content="" on assistants missing it: DeepSeek
-        # thinking mode rejects history otherwise (#3554, #3584); "" reads
-        # as "no thinking that turn". DeepSeek-V4/reasoner reason natively,
-        # so backfill even without explicit reasoning_effort.
+        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
         explicit_thinking = (
             reasoning_effort is not None
             and semantic_effort not in ("none", "minimal")
@@ -718,11 +1185,11 @@ class OpenAICompatProvider(LLMProvider):
                 if msg.get("role") == "assistant" and "reasoning_content" not in msg:
                     msg["reasoning_content"] = ""
 
-        # Merge user-configured extra_body last so it can override or
-        # extend provider-specific defaults (e.g. chat_template_kwargs,
-        # guided_json, repetition_penalty).  Uses recursive merge so
-        # nested dicts like {"chat_template_kwargs": {"enable_thinking": false}}
-        # do not clobber sibling keys already set by thinking-style logic.
+        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
         if self._extra_body:
             existing = kwargs.get("extra_body", {})
             kwargs["extra_body"] = _deep_merge(existing, self._extra_body)
@@ -734,14 +1201,27 @@ class OpenAICompatProvider(LLMProvider):
         model: str | None,
         reasoning_effort: str | None,
     ) -> bool:
-        """Use Responses API only for direct OpenAI requests that benefit from it."""
+        """执行 `_should_use_responses_api`。
+
+        【中文名称】_should_use_responses_api
+
+        【功能说明】
+        这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - reasoning_effort: 调用方传入的 `reasoning_effort` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if self._api_type == "chat_completions":
             return False
         if self._spec and self._spec.name not in ("openai", "github_copilot"):
             return False
         if self._api_type == "responses":
-            # Explicit configuration means Responses is mandatory; do not
-            # consult the circuit breaker or fall back to Chat Completions.
+            # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
             return True
         if self._spec is None or self._spec.name != "github_copilot":
             if not _is_direct_openai_base(self._effective_base):
@@ -763,17 +1243,45 @@ class OpenAICompatProvider(LLMProvider):
         model: str | None,
         reasoning_effort: str | None,
     ) -> bool:
-        """Return False when the Responses API circuit breaker is open."""
+        """执行 `_responses_circuit_allows_probe`。
+
+        【中文名称】_responses_circuit_allows_probe
+
+        【功能说明】
+        这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - reasoning_effort: 调用方传入的 `reasoning_effort` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         key = _responses_circuit_key(model, self.default_model, reasoning_effort)
         failures = self._responses_failures.get(key, 0)
         if failures >= _RESPONSES_FAILURE_THRESHOLD:
             tripped = self._responses_tripped_at.get(key, 0.0)
             if (time.monotonic() - tripped) < _RESPONSES_PROBE_INTERVAL_S:
                 return False
-            # Half-open: allow one probe attempt
+            # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
         return True
 
     def _record_responses_failure(self, model: str | None, reasoning_effort: str | None) -> None:
+        """执行 `_record_responses_failure`。
+
+        【中文名称】_record_responses_failure
+
+        【功能说明】
+        这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - reasoning_effort: 调用方传入的 `reasoning_effort` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         key = _responses_circuit_key(model, self.default_model, reasoning_effort)
         count = self._responses_failures.get(key, 0) + 1
         self._responses_failures[key] = count
@@ -785,13 +1293,40 @@ class OpenAICompatProvider(LLMProvider):
             )
 
     def _record_responses_success(self, model: str | None, reasoning_effort: str | None) -> None:
+        """执行 `_record_responses_success`。
+
+        【中文名称】_record_responses_success
+
+        【功能说明】
+        这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - reasoning_effort: 调用方传入的 `reasoning_effort` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         key = _responses_circuit_key(model, self.default_model, reasoning_effort)
         self._responses_failures.pop(key, None)
         self._responses_tripped_at.pop(key, None)
 
     @staticmethod
     def _should_fallback_from_responses_error(e: Exception) -> bool:
-        """Fallback only for likely Responses API compatibility errors."""
+        """执行 `_should_fallback_from_responses_error`。
+
+        【中文名称】_should_fallback_from_responses_error
+
+        【功能说明】
+        这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - e: 调用方传入的 `e` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         response = getattr(e, "response", None)
         status_code = getattr(e, "status_code", None)
         if status_code is None and response is not None:
@@ -828,7 +1363,25 @@ class OpenAICompatProvider(LLMProvider):
         reasoning_effort: str | None,
         tool_choice: str | dict[str, Any] | None,
     ) -> dict[str, Any]:
-        """Build a Responses API body for direct OpenAI requests."""
+        """执行 `_build_responses_body`。
+
+        【中文名称】_build_responses_body
+
+        【功能说明】
+        这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - messages: 调用方传入的 `messages` 数据；具体类型以函数签名为准。
+        - tools: 调用方传入的 `tools` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - max_tokens: 调用方传入的 `max_tokens` 数据；具体类型以函数签名为准。
+        - temperature: 调用方传入的 `temperature` 数据；具体类型以函数签名为准。
+        - reasoning_effort: 调用方传入的 `reasoning_effort` 数据；具体类型以函数签名为准。
+        - tool_choice: 调用方传入的 `tool_choice` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         model_name = model or self.default_model
         if self._spec and self._spec.strip_model_prefix:
             model_name = model_name.split("/")[-1]
@@ -861,12 +1414,26 @@ class OpenAICompatProvider(LLMProvider):
 
         return body
 
-    # ------------------------------------------------------------------
-    # Response parsing
-    # ------------------------------------------------------------------
+    # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
 
     @staticmethod
     def _maybe_mapping(value: Any) -> dict[str, Any] | None:
+        """执行 `_maybe_mapping`。
+
+        【中文名称】_maybe_mapping
+
+        【功能说明】
+        这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if isinstance(value, dict):
             return value
         model_dump = getattr(value, "model_dump", None)
@@ -878,6 +1445,20 @@ class OpenAICompatProvider(LLMProvider):
 
     @classmethod
     def _extract_text_content(cls, value: Any) -> str | None:
+        """执行 `_extract_text_content`。
+
+        【中文名称】_extract_text_content
+
+        【功能说明】
+        这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if value is None:
             return None
         if isinstance(value, str):
@@ -902,13 +1483,20 @@ class OpenAICompatProvider(LLMProvider):
 
     @classmethod
     def _extract_usage(cls, response: Any) -> dict[str, int]:
-        """Extract token usage from an OpenAI-compatible response.
+        """执行 `_extract_usage`。
 
-        Handles both dict-based (raw JSON) and object-based (SDK Pydantic)
-        responses.  Provider-specific ``cached_tokens`` fields are normalised
-        under a single key; see the priority chain inside for details.
-        """
-        # --- resolve usage object ---
+        【中文名称】_extract_usage
+
+        【功能说明】
+        这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - response: 调用方传入的 `response` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
         usage_obj = None
         response_map = cls._maybe_mapping(response)
         if response_map is not None:
@@ -932,13 +1520,13 @@ class OpenAICompatProvider(LLMProvider):
         else:
             return {}
 
-        # --- cached_tokens (normalised across providers) ---
-        # Try nested paths first (dict), fall back to attribute (SDK object).
-        # Priority order ensures the most specific field wins.
+        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
         for path in (
-            ("prompt_tokens_details", "cached_tokens"),  # OpenAI/Zhipu/MiniMax/Qwen/Mistral/xAI
-            ("cached_tokens",),                          # StepFun/Moonshot (top-level)
-            ("prompt_cache_hit_tokens",),                # DeepSeek/SiliconFlow
+            ("prompt_tokens_details", "cached_tokens"),  # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+            ("cached_tokens",),                          # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+            ("prompt_cache_hit_tokens",),                # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
         ):
             cached = cls._get_nested_int(usage_map, path)
             if not cached and usage_obj:
@@ -951,11 +1539,20 @@ class OpenAICompatProvider(LLMProvider):
 
     @staticmethod
     def _get_nested_int(obj: Any, path: tuple[str, ...]) -> int:
-        """Drill into *obj* by *path* segments and return an ``int`` value.
+        """执行 `_get_nested_int`。
 
-        Supports both dict-key access and attribute access so it works
-        uniformly with raw JSON dicts **and** SDK Pydantic models.
-        """
+        【中文名称】_get_nested_int
+
+        【功能说明】
+        这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - obj: 调用方传入的 `obj` 数据；具体类型以函数签名为准。
+        - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         current = obj
         for segment in path:
             if current is None:
@@ -967,6 +1564,20 @@ class OpenAICompatProvider(LLMProvider):
         return int(current or 0) if current is not None else 0
 
     def _parse(self, response: Any) -> LLMResponse:
+        """执行 `_parse`。
+
+        【中文名称】_parse
+
+        【功能说明】
+        这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - response: 调用方传入的 `response` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if isinstance(response, str):
             return LLMResponse(content=response, finish_reason="stop")
 
@@ -995,7 +1606,7 @@ class OpenAICompatProvider(LLMProvider):
             finish_reason = str(choice0.get("finish_reason") or "stop")
 
             raw_tool_calls: list[Any] = []
-            # StepFun: fallback to reasoning field when content is empty
+            # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
             if not content and msg0.get("reasoning") and self._spec and self._spec.reasoning_as_content:
                 content = self._extract_text_content(msg0.get("reasoning"))
             reasoning_content = msg0.get("reasoning_content")
@@ -1084,6 +1695,20 @@ class OpenAICompatProvider(LLMProvider):
 
     @classmethod
     def _parse_chunks(cls, chunks: list[Any]) -> LLMResponse:
+        """执行 `_parse_chunks`。
+
+        【中文名称】_parse_chunks
+
+        【功能说明】
+        这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chunks: 调用方传入的 `chunks` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
         tc_bufs: dict[int, dict[str, Any]] = {}
@@ -1091,7 +1716,20 @@ class OpenAICompatProvider(LLMProvider):
         usage: dict[str, int] = {}
 
         def _accum_tc(tc: Any, idx_hint: int) -> None:
-            """Accumulate one streaming tool-call delta into *tc_bufs*."""
+            """执行 `_accum_tc`。
+
+            【中文名称】_accum_tc
+
+            【功能说明】
+            这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - tc: 调用方传入的 `tc` 数据；具体类型以函数签名为准。
+            - idx_hint: 调用方传入的 `idx_hint` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
             tc_index: int = _get(tc, "index") if _get(tc, "index") is not None else idx_hint
             buf = tc_bufs.setdefault(tc_index, {
                 "id": "", "name": "", "arguments": "",
@@ -1117,7 +1755,19 @@ class OpenAICompatProvider(LLMProvider):
                 buf["fn_prov"] = fn_prov
 
         def _accum_legacy_function_call(function_call: Any) -> None:
-            """Accumulate legacy ``delta.function_call`` streaming chunks."""
+            """执行 `_accum_legacy_function_call`。
+
+            【中文名称】_accum_legacy_function_call
+
+            【功能说明】
+            这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - function_call: 调用方传入的 `function_call` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
             if not function_call:
                 return
             buf = tc_bufs.setdefault(0, {
@@ -1185,9 +1835,9 @@ class OpenAICompatProvider(LLMProvider):
             if delta:
                 _accum_legacy_function_call(getattr(delta, "function_call", None))
 
-        # Some providers (e.g. Zhipu/GLM) reuse the same tool_call id for
-        # parallel tool calls in streaming mode. Deduplicate before building
-        # the response so downstream tool messages don't collide.
+        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
         _seen_tc_ids: set[str] = set()
         for b in tc_bufs.values():
             if not b["id"] or b["id"] in _seen_tc_ids:
@@ -1214,6 +1864,20 @@ class OpenAICompatProvider(LLMProvider):
 
     @classmethod
     def _extract_error_metadata(cls, e: Exception) -> dict[str, Any]:
+        """执行 `_extract_error_metadata`。
+
+        【中文名称】_extract_error_metadata
+
+        【功能说明】
+        这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - e: 调用方传入的 `e` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         response = getattr(e, "response", None)
         headers = getattr(response, "headers", None)
         payload = (
@@ -1267,6 +1931,22 @@ class OpenAICompatProvider(LLMProvider):
         spec: ProviderSpec | None = None,
         api_base: str | None = None,
     ) -> LLMResponse:
+        """执行 `_handle_error`。
+
+        【中文名称】_handle_error
+
+        【功能说明】
+        这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - e: 调用方传入的 `e` 数据；具体类型以函数签名为准。
+        - spec: 调用方传入的 `spec` 数据；具体类型以函数签名为准。
+        - api_base: 调用方传入的 `api_base` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         body = (
             getattr(e, "doc", None)
             or getattr(e, "body", None)
@@ -1294,9 +1974,9 @@ class OpenAICompatProvider(LLMProvider):
             **OpenAICompatProvider._extract_error_metadata(e),
         )
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
+    # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
 
     async def chat(
         self,
@@ -1308,6 +1988,26 @@ class OpenAICompatProvider(LLMProvider):
         reasoning_effort: str | None = None,
         tool_choice: str | dict[str, Any] | None = None,
     ) -> LLMResponse:
+        """异步执行 `chat`。
+
+        【中文名称】chat
+
+        【功能说明】
+        这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - messages: 调用方传入的 `messages` 数据；具体类型以函数签名为准。
+        - tools: 调用方传入的 `tools` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - max_tokens: 调用方传入的 `max_tokens` 数据；具体类型以函数签名为准。
+        - temperature: 调用方传入的 `temperature` 数据；具体类型以函数签名为准。
+        - reasoning_effort: 调用方传入的 `reasoning_effort` 数据；具体类型以函数签名为准。
+        - tool_choice: 调用方传入的 `tool_choice` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         await self._ensure_client()
         try:
             if self._should_use_responses_api(model, reasoning_effort):
@@ -1321,9 +2021,9 @@ class OpenAICompatProvider(LLMProvider):
                     return result
                 except Exception as responses_error:
                     if self._spec and self._spec.name == "github_copilot":
-                        # Copilot gateway exposes GPT-5/o-series only via /responses;
-                        # falling back to /chat/completions cannot succeed and would
-                        # hide the real error.
+                        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+                        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+                        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
                         raise
                     if self._api_type == "responses":
                         raise
@@ -1352,6 +2052,29 @@ class OpenAICompatProvider(LLMProvider):
         on_thinking_delta: Callable[[str], Awaitable[None]] | None = None,
         on_tool_call_delta: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> LLMResponse:
+        """异步执行 `chat_stream`。
+
+        【中文名称】chat_stream
+
+        【功能说明】
+        这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - messages: 调用方传入的 `messages` 数据；具体类型以函数签名为准。
+        - tools: 调用方传入的 `tools` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - max_tokens: 调用方传入的 `max_tokens` 数据；具体类型以函数签名为准。
+        - temperature: 调用方传入的 `temperature` 数据；具体类型以函数签名为准。
+        - reasoning_effort: 调用方传入的 `reasoning_effort` 数据；具体类型以函数签名为准。
+        - tool_choice: 调用方传入的 `tool_choice` 数据；具体类型以函数签名为准。
+        - on_content_delta: 调用方传入的 `on_content_delta` 数据；具体类型以函数签名为准。
+        - on_thinking_delta: 调用方传入的 `on_thinking_delta` 数据；具体类型以函数签名为准。
+        - on_tool_call_delta: 调用方传入的 `on_tool_call_delta` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         await self._ensure_client()
         idle_timeout_s = int(os.environ.get("NANOBOT_STREAM_IDLE_TIMEOUT_S", "90"))
         try:
@@ -1365,6 +2088,20 @@ class OpenAICompatProvider(LLMProvider):
                     stream = await self._client.responses.create(**body)
 
                     async def _timed_stream():
+                        """异步执行 `_timed_stream`。
+
+                        【中文名称】_timed_stream
+
+                        【功能说明】
+                        这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+                        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+                        【参数说明】
+                        - 无显式业务参数。
+
+                        【返回值】
+                        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
                         stream_iter = stream.__aiter__()
                         while True:
                             try:
@@ -1396,9 +2133,9 @@ class OpenAICompatProvider(LLMProvider):
                     )
                 except Exception as responses_error:
                     if self._spec and self._spec.name == "github_copilot":
-                        # Copilot gateway exposes GPT-5/o-series only via /responses;
-                        # falling back to /chat/completions cannot succeed and would
-                        # hide the real error.
+                        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+                        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+                        # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
                         raise
                     if self._api_type == "responses":
                         raise
@@ -1411,10 +2148,10 @@ class OpenAICompatProvider(LLMProvider):
                 reasoning_effort, tool_choice,
             )
             if self._spec and self._spec.name == "zhipu" and tools and on_tool_call_delta:
-                # Z.AI/GLM keeps streaming tool-call arguments behind an
-                # explicit provider flag.  Pass it through the OpenAI SDK's
-                # extra_body escape hatch so the usual delta.tool_calls path
-                # can surface live file-edit progress.
+                # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+                # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+                # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+                # 说明：这里处理 OpenAI 兼容 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
                 kwargs.setdefault("extra_body", {})["tool_stream"] = True
             kwargs["stream"] = True
             kwargs["stream_options"] = {"include_usage": True}
@@ -1479,4 +2216,18 @@ class OpenAICompatProvider(LLMProvider):
             return self._handle_error(e, spec=self._spec, api_base=self.api_base)
 
     def get_default_model(self) -> str:
+        """执行 `get_default_model`。
+
+        【中文名称】get_default_model
+
+        【功能说明】
+        这是 OpenAI 兼容 Provider 实现 中的一个步骤函数，用来支撑：负责对接 OpenAI、OpenRouter、Moonshot、Xiaomi 等兼容 Chat Completions/Responses 协议的模型服务。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return self.default_model

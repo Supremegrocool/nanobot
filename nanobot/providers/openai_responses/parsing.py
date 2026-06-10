@@ -1,4 +1,18 @@
-"""Parse Responses API SSE streams and SDK response objects."""
+"""OpenAI Responses API 解析器。
+
+【中文名称】OpenAI Responses API 解析器
+
+【功能说明】
+负责消费 Responses API 的流式事件和最终输出，抽取文本、reasoning、工具调用和用量信息。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的模型 Provider代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 from __future__ import annotations
 
@@ -20,11 +34,37 @@ FINISH_REASON_MAP = {
 
 
 def map_finish_reason(status: str | None) -> str:
-    """Map a Responses API status string to a Chat-Completions-style finish_reason."""
+    """执行 `map_finish_reason`。
+
+    【中文名称】map_finish_reason
+
+    【功能说明】
+    这是 OpenAI Responses API 解析器 中的一个步骤函数，用来支撑：负责消费 Responses API 的流式事件和最终输出，抽取文本、reasoning、工具调用和用量信息。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - status: 调用方传入的 `status` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     return FINISH_REASON_MAP.get(status or "completed", "stop")
 
 
 def _usage_from_response_obj(response: Any) -> dict[str, int]:
+    """执行 `_usage_from_response_obj`。
+
+    【中文名称】_usage_from_response_obj
+
+    【功能说明】
+    这是 OpenAI Responses API 解析器 中的一个步骤函数，用来支撑：负责消费 Responses API 的流式事件和最终输出，抽取文本、reasoning、工具调用和用量信息。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - response: 调用方传入的 `response` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     usage_raw = response.get("usage") if isinstance(response, dict) else getattr(response, "usage", None)
     if not usage_raw:
         return {}
@@ -44,6 +84,21 @@ def _usage_from_response_obj(response: Any) -> dict[str, int]:
 
 
 def _parse_tool_call_arguments(args_raw: Any, name: str | None) -> Any:
+    """执行 `_parse_tool_call_arguments`。
+
+    【中文名称】_parse_tool_call_arguments
+
+    【功能说明】
+    这是 OpenAI Responses API 解析器 中的一个步骤函数，用来支撑：负责消费 Responses API 的流式事件和最终输出，抽取文本、reasoning、工具调用和用量信息。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - args_raw: 调用方传入的 `args_raw` 数据；具体类型以函数签名为准。
+    - name: 调用方传入的 `name` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     parsed = parse_tool_arguments(args_raw)
     if parsed == args_raw and isinstance(args_raw, str) and args_raw.strip():
         logger.warning(
@@ -55,6 +110,20 @@ def _parse_tool_call_arguments(args_raw: Any, name: str | None) -> Any:
 
 
 def _tool_arguments_source(*values: Any) -> Any:
+    """执行 `_tool_arguments_source`。
+
+    【中文名称】_tool_arguments_source
+
+    【功能说明】
+    这是 OpenAI Responses API 解析器 中的一个步骤函数，用来支撑：负责消费 Responses API 的流式事件和最终输出，抽取文本、reasoning、工具调用和用量信息。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - *values: 调用方传入的 `values` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     for value in values:
         if value is None:
             continue
@@ -65,10 +134,36 @@ def _tool_arguments_source(*values: Any) -> Any:
 
 
 async def iter_sse(response: httpx.Response) -> AsyncGenerator[dict[str, Any], None]:
-    """Yield parsed JSON events from a Responses API SSE stream."""
+    """异步执行 `iter_sse`。
+
+    【中文名称】iter_sse
+
+    【功能说明】
+    这是 OpenAI Responses API 解析器 中的一个步骤函数，用来支撑：负责消费 Responses API 的流式事件和最终输出，抽取文本、reasoning、工具调用和用量信息。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - response: 调用方传入的 `response` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     buffer: list[str] = []
 
     def _flush() -> dict[str, Any] | None:
+        """执行 `_flush`。
+
+        【中文名称】_flush
+
+        【功能说明】
+        这是 OpenAI Responses API 解析器 中的一个步骤函数，用来支撑：负责消费 Responses API 的流式事件和最终输出，抽取文本、reasoning、工具调用和用量信息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         data_lines = [line[5:].strip() for line in buffer if line.startswith("data:")]
         buffer.clear()
         if not data_lines:
@@ -91,7 +186,7 @@ async def iter_sse(response: httpx.Response) -> AsyncGenerator[dict[str, Any], N
             continue
         buffer.append(line)
 
-    # Flush any remaining buffer at EOF (#10)
+    # 说明：这里处理 OpenAI Responses API 解析器 的协议细节或边界情况，避免外部差异影响核心流程。
     if buffer:
         event = _flush()
         if event is not None:
@@ -103,7 +198,21 @@ async def consume_sse(
     on_content_delta: Callable[[str], Awaitable[None]] | None = None,
     on_tool_call_delta: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
 ) -> tuple[str, list[ToolCallRequest], str]:
-    """Consume a Responses API SSE stream into ``(content, tool_calls, finish_reason)``."""
+    """异步执行 `consume_sse`。
+
+    【中文名称】consume_sse
+
+    【功能说明】
+    这是 OpenAI Responses API 解析器 中的一个步骤函数，用来支撑：负责消费 Responses API 的流式事件和最终输出，抽取文本、reasoning、工具调用和用量信息。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - response: 调用方传入的 `response` 数据；具体类型以函数签名为准。
+    - on_content_delta: 调用方传入的 `on_content_delta` 数据；具体类型以函数签名为准。
+    - on_tool_call_delta: 调用方传入的 `on_tool_call_delta` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     content, tool_calls, finish_reason, _, _ = await consume_sse_with_reasoning(
         response,
         on_content_delta=on_content_delta,
@@ -118,7 +227,22 @@ async def consume_sse_with_reasoning(
     on_tool_call_delta: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     on_reasoning_delta: Callable[[str], Awaitable[None]] | None = None,
 ) -> tuple[str, list[ToolCallRequest], str, dict[str, int], str | None]:
-    """Consume a Responses API SSE stream, including visible reasoning summaries."""
+    """异步执行 `consume_sse_with_reasoning`。
+
+    【中文名称】consume_sse_with_reasoning
+
+    【功能说明】
+    这是 OpenAI Responses API 解析器 中的一个步骤函数，用来支撑：负责消费 Responses API 的流式事件和最终输出，抽取文本、reasoning、工具调用和用量信息。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - response: 调用方传入的 `response` 数据；具体类型以函数签名为准。
+    - on_content_delta: 调用方传入的 `on_content_delta` 数据；具体类型以函数签名为准。
+    - on_tool_call_delta: 调用方传入的 `on_tool_call_delta` 数据；具体类型以函数签名为准。
+    - on_reasoning_delta: 调用方传入的 `on_reasoning_delta` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     content = ""
     tool_calls: list[ToolCallRequest] = []
     tool_call_buffers: dict[str, dict[str, Any]] = {}
@@ -250,6 +374,20 @@ async def consume_sse_with_reasoning(
 
 
 def _extract_reasoning_summary_from_output(output: Any) -> str | None:
+    """执行 `_extract_reasoning_summary_from_output`。
+
+    【中文名称】_extract_reasoning_summary_from_output
+
+    【功能说明】
+    这是 OpenAI Responses API 解析器 中的一个步骤函数，用来支撑：负责消费 Responses API 的流式事件和最终输出，抽取文本、reasoning、工具调用和用量信息。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - output: 调用方传入的 `output` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     parts: list[str] = []
     for item in output or []:
         if not isinstance(item, dict):
@@ -267,7 +405,19 @@ def _extract_reasoning_summary_from_output(output: Any) -> str | None:
 
 
 def parse_response_output(response: Any) -> LLMResponse:
-    """Parse an SDK ``Response`` object into an ``LLMResponse``."""
+    """执行 `parse_response_output`。
+
+    【中文名称】parse_response_output
+
+    【功能说明】
+    这是 OpenAI Responses API 解析器 中的一个步骤函数，用来支撑：负责消费 Responses API 的流式事件和最终输出，抽取文本、reasoning、工具调用和用量信息。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - response: 调用方传入的 `response` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if not isinstance(response, dict):
         dump = getattr(response, "model_dump", None)
         response = dump() if callable(dump) else vars(response)
@@ -327,7 +477,21 @@ async def consume_sdk_stream(
     on_content_delta: Callable[[str], Awaitable[None]] | None = None,
     on_tool_call_delta: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
 ) -> tuple[str, list[ToolCallRequest], str, dict[str, int], str | None]:
-    """Consume an SDK async stream from ``client.responses.create(stream=True)``."""
+    """异步执行 `consume_sdk_stream`。
+
+    【中文名称】consume_sdk_stream
+
+    【功能说明】
+    这是 OpenAI Responses API 解析器 中的一个步骤函数，用来支撑：负责消费 Responses API 的流式事件和最终输出，抽取文本、reasoning、工具调用和用量信息。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - stream: 调用方传入的 `stream` 数据；具体类型以函数签名为准。
+    - on_content_delta: 调用方传入的 `on_content_delta` 数据；具体类型以函数签名为准。
+    - on_tool_call_delta: 调用方传入的 `on_tool_call_delta` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     content = ""
     tool_calls: list[ToolCallRequest] = []
     tool_call_buffers: dict[str, dict[str, Any]] = {}

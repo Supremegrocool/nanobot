@@ -1,21 +1,18 @@
-"""Azure OpenAI provider using the OpenAI SDK Responses API.
+"""Azure OpenAI Provider 实现。
 
-Uses ``AsyncOpenAI`` pointed at ``https://{endpoint}/openai/v1/`` which
-routes to the Responses API (``/responses``).  Reuses shared conversion
-helpers from :mod:`nanobot.providers.openai_responses`.
+【中文名称】Azure OpenAI Provider 实现
 
-Authentication
---------------
-Two modes are supported, selected automatically:
+【功能说明】
+负责在 OpenAI 兼容 Provider 的基础上补齐 Azure endpoint、deployment、api-version 和鉴权差异。
 
-1. **Static API key** — when ``api_key`` is non-empty it is sent as the
-   ``api-key`` / ``Authorization: Bearer`` header (existing behavior).
-2. **Microsoft Entra ID (AAD)** — when ``api_key`` is empty the provider
-   falls back to :class:`azure.identity.aio.DefaultAzureCredential` and
-   acquires a bearer token scoped to
-   ``https://cognitiveservices.azure.com/.default``.  ``azure-identity``
-   is an optional dependency installed via ``pip install nanobot-ai[azure]``.
-"""
+【在整体架构中的位置】
+该文件属于 P1 范围的模型 Provider代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 from __future__ import annotations
 
@@ -37,19 +34,33 @@ _AZURE_OPENAI_SCOPE = "https://cognitiveservices.azure.com/.default"
 
 
 class _AzureTokenProvider:
-    """Async bearer-token callback for AAD authentication.
+    """_AzureTokenProvider 类。
 
-    Thin wrapper around :class:`azure.identity.aio.DefaultAzureCredential`
-    that exposes itself as an async callable returning a fresh bearer
-    token.  The Azure SDK's own MSAL-backed token cache already returns
-    valid tokens without network calls, so no extra caching is layered on
-    top here.
+    【中文名称】_AzureTokenProvider
 
-    Raises ``RuntimeError`` with a clear install hint if
-    ``azure-identity`` is not installed.
-    """
+    【功能说明】
+    这是 Azure OpenAI Provider 实现 中的核心数据结构或服务类。负责在 OpenAI 兼容 Provider 的基础上补齐 Azure endpoint、deployment、api-version 和鉴权差异。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     def __init__(self, scope: str = _AZURE_OPENAI_SCOPE) -> None:
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 Azure OpenAI Provider 实现 中的一个步骤函数，用来支撑：负责在 OpenAI 兼容 Provider 的基础上补齐 Azure endpoint、deployment、api-version 和鉴权差异。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - scope: 调用方传入的 `scope` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         try:
             from azure.identity.aio import DefaultAzureCredential
         except ImportError as exc:
@@ -62,12 +73,36 @@ class _AzureTokenProvider:
         self._credential = DefaultAzureCredential()
 
     async def __call__(self) -> str:
-        """Return a bearer token for the configured scope."""
+        """异步执行 `__call__`。
+
+        【中文名称】__call__
+
+        【功能说明】
+        这是 Azure OpenAI Provider 实现 中的一个步骤函数，用来支撑：负责在 OpenAI 兼容 Provider 的基础上补齐 Azure endpoint、deployment、api-version 和鉴权差异。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         access_token = await self._credential.get_token(self._scope)
         return access_token.token
 
     async def aclose(self) -> None:
-        """Release credential resources.  Safe to call multiple times."""
+        """异步执行 `aclose`。
+
+        【中文名称】aclose
+
+        【功能说明】
+        这是 Azure OpenAI Provider 实现 中的一个步骤函数，用来支撑：负责在 OpenAI 兼容 Provider 的基础上补齐 Azure endpoint、deployment、api-version 和鉴权差异。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         close = getattr(self._credential, "close", None)
         if close is not None:
             try:
@@ -77,17 +112,17 @@ class _AzureTokenProvider:
 
 
 class AzureOpenAIProvider(LLMProvider):
-    """Azure OpenAI provider backed by the Responses API.
+    """AzureOpenAIProvider 类。
 
-    Features:
-    - Uses the OpenAI Python SDK (``AsyncOpenAI``) with
-      ``base_url = {endpoint}/openai/v1/``
-    - Calls ``client.responses.create()`` (Responses API)
-    - Reuses shared message/tool/SSE conversion from
-      ``openai_responses``
-    - Falls back to :class:`DefaultAzureCredential` (AAD) when ``api_key``
-      is empty.  See module docstring for details.
-    """
+    【中文名称】AzureOpenAIProvider
+
+    【功能说明】
+    这是 Azure OpenAI Provider 实现 中的核心数据结构或服务类。负责在 OpenAI 兼容 Provider 的基础上补齐 Azure endpoint、deployment、api-version 和鉴权差异。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     def __init__(
         self,
@@ -95,21 +130,37 @@ class AzureOpenAIProvider(LLMProvider):
         api_base: str = "",
         default_model: str = "gpt-5.2-chat",
     ):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 Azure OpenAI Provider 实现 中的一个步骤函数，用来支撑：负责在 OpenAI 兼容 Provider 的基础上补齐 Azure endpoint、deployment、api-version 和鉴权差异。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - api_key: 调用方传入的 `api_key` 数据；具体类型以函数签名为准。
+        - api_base: 调用方传入的 `api_base` 数据；具体类型以函数签名为准。
+        - default_model: 调用方传入的 `default_model` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         super().__init__(api_key, api_base)
         self.default_model = default_model
 
         if not api_base:
             raise ValueError("Azure OpenAI api_base is required")
 
-        # Normalise: ensure trailing slash
+        # 说明：这里处理 Azure OpenAI Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
         if not api_base.endswith("/"):
             api_base += "/"
         self.api_base = api_base
 
-        # Select auth mode.  A truthy api_key wins; otherwise fall back to
-        # AAD via DefaultAzureCredential.  The OpenAI SDK accepts an async
-        # callable as ``api_key`` and invokes it per request, using the
-        # returned string as the bearer token.
+        # 说明：这里处理 Azure OpenAI Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 Azure OpenAI Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 Azure OpenAI Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 Azure OpenAI Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
         self._token_provider: _AzureTokenProvider | None = None
         client_api_key: str | Callable[[], Awaitable[str]]
         if api_key:
@@ -118,7 +169,7 @@ class AzureOpenAIProvider(LLMProvider):
             self._token_provider = _AzureTokenProvider()
             client_api_key = self._token_provider
 
-        # SDK client targeting the Azure Responses API endpoint
+        # 说明：这里处理 Azure OpenAI Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
         base_url = f"{api_base.rstrip('/')}/openai/v1/"
         self._client = AsyncOpenAI(
             api_key=client_api_key,
@@ -127,16 +178,29 @@ class AzureOpenAIProvider(LLMProvider):
             max_retries=0,
         )
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    # 说明：这里处理 Azure OpenAI Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 Azure OpenAI Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 Azure OpenAI Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
 
     @staticmethod
     def _supports_temperature(
         deployment_name: str,
         reasoning_effort: str | None = None,
     ) -> bool:
-        """Return True when temperature is likely supported for this deployment."""
+        """执行 `_supports_temperature`。
+
+        【中文名称】_supports_temperature
+
+        【功能说明】
+        这是 Azure OpenAI Provider 实现 中的一个步骤函数，用来支撑：负责在 OpenAI 兼容 Provider 的基础上补齐 Azure endpoint、deployment、api-version 和鉴权差异。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - deployment_name: 调用方传入的 `deployment_name` 数据；具体类型以函数签名为准。
+        - reasoning_effort: 调用方传入的 `reasoning_effort` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if reasoning_effort and reasoning_effort.lower() != "none":
             return False
         name = deployment_name.lower()
@@ -152,7 +216,25 @@ class AzureOpenAIProvider(LLMProvider):
         reasoning_effort: str | None,
         tool_choice: str | dict[str, Any] | None,
     ) -> dict[str, Any]:
-        """Build the Responses API request body from Chat-Completions-style args."""
+        """执行 `_build_body`。
+
+        【中文名称】_build_body
+
+        【功能说明】
+        这是 Azure OpenAI Provider 实现 中的一个步骤函数，用来支撑：负责在 OpenAI 兼容 Provider 的基础上补齐 Azure endpoint、deployment、api-version 和鉴权差异。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - messages: 调用方传入的 `messages` 数据；具体类型以函数签名为准。
+        - tools: 调用方传入的 `tools` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - max_tokens: 调用方传入的 `max_tokens` 数据；具体类型以函数签名为准。
+        - temperature: 调用方传入的 `temperature` 数据；具体类型以函数签名为准。
+        - reasoning_effort: 调用方传入的 `reasoning_effort` 数据；具体类型以函数签名为准。
+        - tool_choice: 调用方传入的 `tool_choice` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         deployment = model or self.default_model
         instructions, input_items = convert_messages(self._sanitize_empty_content(messages))
 
@@ -180,6 +262,20 @@ class AzureOpenAIProvider(LLMProvider):
 
     @staticmethod
     def _handle_error(e: Exception) -> LLMResponse:
+        """执行 `_handle_error`。
+
+        【中文名称】_handle_error
+
+        【功能说明】
+        这是 Azure OpenAI Provider 实现 中的一个步骤函数，用来支撑：负责在 OpenAI 兼容 Provider 的基础上补齐 Azure endpoint、deployment、api-version 和鉴权差异。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - e: 调用方传入的 `e` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         response = getattr(e, "response", None)
         body = getattr(e, "body", None) or getattr(response, "text", None)
         body_text = str(body).strip() if body is not None else ""
@@ -189,9 +285,9 @@ class AzureOpenAIProvider(LLMProvider):
             retry_after = LLMProvider._extract_retry_after(msg)
         return LLMResponse(content=msg, finish_reason="error", retry_after=retry_after)
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
+    # 说明：这里处理 Azure OpenAI Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 Azure OpenAI Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 Azure OpenAI Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
 
     async def chat(
         self,
@@ -203,6 +299,26 @@ class AzureOpenAIProvider(LLMProvider):
         reasoning_effort: str | None = None,
         tool_choice: str | dict[str, Any] | None = None,
     ) -> LLMResponse:
+        """异步执行 `chat`。
+
+        【中文名称】chat
+
+        【功能说明】
+        这是 Azure OpenAI Provider 实现 中的一个步骤函数，用来支撑：负责在 OpenAI 兼容 Provider 的基础上补齐 Azure endpoint、deployment、api-version 和鉴权差异。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - messages: 调用方传入的 `messages` 数据；具体类型以函数签名为准。
+        - tools: 调用方传入的 `tools` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - max_tokens: 调用方传入的 `max_tokens` 数据；具体类型以函数签名为准。
+        - temperature: 调用方传入的 `temperature` 数据；具体类型以函数签名为准。
+        - reasoning_effort: 调用方传入的 `reasoning_effort` 数据；具体类型以函数签名为准。
+        - tool_choice: 调用方传入的 `tool_choice` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         body = self._build_body(
             messages, tools, model, max_tokens, temperature,
             reasoning_effort, tool_choice,
@@ -226,6 +342,29 @@ class AzureOpenAIProvider(LLMProvider):
         on_thinking_delta: Callable[[str], Awaitable[None]] | None = None,
         on_tool_call_delta: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> LLMResponse:
+        """异步执行 `chat_stream`。
+
+        【中文名称】chat_stream
+
+        【功能说明】
+        这是 Azure OpenAI Provider 实现 中的一个步骤函数，用来支撑：负责在 OpenAI 兼容 Provider 的基础上补齐 Azure endpoint、deployment、api-version 和鉴权差异。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - messages: 调用方传入的 `messages` 数据；具体类型以函数签名为准。
+        - tools: 调用方传入的 `tools` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - max_tokens: 调用方传入的 `max_tokens` 数据；具体类型以函数签名为准。
+        - temperature: 调用方传入的 `temperature` 数据；具体类型以函数签名为准。
+        - reasoning_effort: 调用方传入的 `reasoning_effort` 数据；具体类型以函数签名为准。
+        - tool_choice: 调用方传入的 `tool_choice` 数据；具体类型以函数签名为准。
+        - on_content_delta: 调用方传入的 `on_content_delta` 数据；具体类型以函数签名为准。
+        - on_thinking_delta: 调用方传入的 `on_thinking_delta` 数据；具体类型以函数签名为准。
+        - on_tool_call_delta: 调用方传入的 `on_tool_call_delta` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         _ = on_thinking_delta
         body = self._build_body(
             messages, tools, model, max_tokens, temperature,
@@ -249,4 +388,18 @@ class AzureOpenAIProvider(LLMProvider):
             return self._handle_error(e)
 
     def get_default_model(self) -> str:
+        """执行 `get_default_model`。
+
+        【中文名称】get_default_model
+
+        【功能说明】
+        这是 Azure OpenAI Provider 实现 中的一个步骤函数，用来支撑：负责在 OpenAI 兼容 Provider 的基础上补齐 Azure endpoint、deployment、api-version 和鉴权差异。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return self.default_model

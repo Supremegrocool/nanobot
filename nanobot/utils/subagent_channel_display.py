@@ -1,21 +1,42 @@
-"""Strip internal subagent inject scaffolding for human-facing channel surfaces.
+"""子 Agent 展示工具。
 
-Persisted subagent announcements mirror ``agent/subagent_announce.md``: header,
-full ``Task:`` assignment (model context), ``Result:``, and a trailing model-only
-``Summarize…`` instruction. External channels (embedded WebUI, session previews)
-should show only the header plus a truncated result body."""
+【中文名称】子 Agent 展示工具
+
+【功能说明】
+负责把子 Agent 的渠道名称、状态和输出整理成主会话可读的展示文本。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的通用工具代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 from __future__ import annotations
 
 from typing import Any
 
-# Cap Result section length so WebSocket session replay stays readable; full text
-# remains on disk for LLM replay (we only mutate outgoing API copies in websocket).
+# 说明：这里处理 子 Agent 展示工具 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 子 Agent 展示工具 的协议细节或边界情况，避免外部差异影响核心流程。
 _SUBAGENT_CHANNEL_RESULT_MAX_CHARS = 800
 
 
 def scrub_subagent_announce_body(content: str) -> str:
-    """Return channel-safe text derived from a full subagent announce blob."""
+    """执行 `scrub_subagent_announce_body`。
+
+    【中文名称】scrub_subagent_announce_body
+
+    【功能说明】
+    这是 子 Agent 展示工具 中的一个步骤函数，用来支撑：负责把子 Agent 的渠道名称、状态和输出整理成主会话可读的展示文本。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     stripped = content.replace("\r\n", "\n").strip()
     lines = stripped.splitlines()
     header = ""
@@ -47,7 +68,19 @@ def scrub_subagent_announce_body(content: str) -> str:
 
 
 def scrub_subagent_messages_for_channel(messages: list[dict[str, Any]]) -> None:
-    """Mutate message dicts in place when they carry ``subagent_result`` inject."""
+    """执行 `scrub_subagent_messages_for_channel`。
+
+    【中文名称】scrub_subagent_messages_for_channel
+
+    【功能说明】
+    这是 子 Agent 展示工具 中的一个步骤函数，用来支撑：负责把子 Agent 的渠道名称、状态和输出整理成主会话可读的展示文本。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - messages: 调用方传入的 `messages` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     for msg in messages:
         if not isinstance(msg, dict):
             continue

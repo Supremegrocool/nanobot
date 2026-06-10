@@ -1,4 +1,18 @@
-"""WhatsApp channel implementation using Node.js bridge."""
+"""WhatsApp 渠道适配器。
+
+【中文名称】WhatsApp 渠道适配器
+
+【功能说明】
+负责通过桥接进程接收 WhatsApp 消息、下载媒体，并把回复转发到 WhatsApp 聊天。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的渠道适配器代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 import asyncio
 import hashlib
@@ -23,23 +37,59 @@ from nanobot.config.schema import Base
 
 
 class WhatsAppConfig(Base):
-    """WhatsApp channel configuration."""
+    """WhatsAppConfig 类。
+
+    【中文名称】WhatsAppConfig
+
+    【功能说明】
+    这是 WhatsApp 渠道适配器 中的核心数据结构或服务类。负责通过桥接进程接收 WhatsApp 消息、下载媒体，并把回复转发到 WhatsApp 聊天。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     enabled: bool = False
     bridge_url: str = "ws://localhost:3001"
     bridge_token: str = ""
     allow_from: list[str] = Field(default_factory=list)
-    group_policy: Literal["open", "mention"] = "open"  # "open" responds to all, "mention" only when @mentioned
+    group_policy: Literal["open", "mention"] = "open"  # 说明：这里处理 WhatsApp 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
 
 def _bridge_token_path() -> Path:
+    """执行 `_bridge_token_path`。
+
+    【中文名称】_bridge_token_path
+
+    【功能说明】
+    这是 WhatsApp 渠道适配器 中的一个步骤函数，用来支撑：负责通过桥接进程接收 WhatsApp 消息、下载媒体，并把回复转发到 WhatsApp 聊天。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - 无显式业务参数。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     from nanobot.config.paths import get_runtime_subdir
 
     return get_runtime_subdir("whatsapp-auth") / "bridge-token"
 
 
 def _load_or_create_bridge_token(path: Path) -> str:
-    """Load a persisted bridge token or create one on first use."""
+    """执行 `_load_or_create_bridge_token`。
+
+    【中文名称】_load_or_create_bridge_token
+
+    【功能说明】
+    这是 WhatsApp 渠道适配器 中的一个步骤函数，用来支撑：负责通过桥接进程接收 WhatsApp 消息、下载媒体，并把回复转发到 WhatsApp 聊天。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if path.exists():
         token = path.read_text(encoding="utf-8").strip()
         if token:
@@ -54,21 +104,55 @@ def _load_or_create_bridge_token(path: Path) -> str:
 
 
 class WhatsAppChannel(BaseChannel):
-    """
-    WhatsApp channel that connects to a Node.js bridge.
+    """WhatsAppChannel 类。
 
-    The bridge uses @whiskeysockets/baileys to handle the WhatsApp Web protocol.
-    Communication between Python and Node.js is via WebSocket.
-    """
+    【中文名称】WhatsAppChannel
+
+    【功能说明】
+    这是 WhatsApp 渠道适配器 中的核心数据结构或服务类。负责通过桥接进程接收 WhatsApp 消息、下载媒体，并把回复转发到 WhatsApp 聊天。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     name = "whatsapp"
     display_name = "WhatsApp"
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
+        """执行 `default_config`。
+
+        【中文名称】default_config
+
+        【功能说明】
+        这是 WhatsApp 渠道适配器 中的一个步骤函数，用来支撑：负责通过桥接进程接收 WhatsApp 消息、下载媒体，并把回复转发到 WhatsApp 聊天。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return WhatsAppConfig().model_dump(by_alias=True)
 
     def __init__(self, config: Any, bus: MessageBus):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 WhatsApp 渠道适配器 中的一个步骤函数，用来支撑：负责通过桥接进程接收 WhatsApp 消息、下载媒体，并把回复转发到 WhatsApp 聊天。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - config: 调用方传入的 `config` 数据；具体类型以函数签名为准。
+        - bus: 调用方传入的 `bus` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if isinstance(config, dict):
             config = WhatsAppConfig.model_validate(config)
         super().__init__(config, bus)
@@ -79,7 +163,19 @@ class WhatsAppChannel(BaseChannel):
         self._bridge_token: str | None = None
 
     def _effective_bridge_token(self) -> str:
-        """Resolve the bridge token, generating a local secret when needed."""
+        """执行 `_effective_bridge_token`。
+
+        【中文名称】_effective_bridge_token
+
+        【功能说明】
+        这是 WhatsApp 渠道适配器 中的一个步骤函数，用来支撑：负责通过桥接进程接收 WhatsApp 消息、下载媒体，并把回复转发到 WhatsApp 聊天。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if self._bridge_token is not None:
             return self._bridge_token
         configured = self.config.bridge_token.strip()
@@ -90,13 +186,19 @@ class WhatsAppChannel(BaseChannel):
         return self._bridge_token
 
     async def login(self, force: bool = False) -> bool:
-        """
-        Set up and run the WhatsApp bridge for QR code login.
+        """异步执行 `login`。
 
-        This spawns the Node.js bridge process which handles the WhatsApp
-        authentication flow. The process blocks until the user scans the QR code
-        or interrupts with Ctrl+C.
-        """
+        【中文名称】login
+
+        【功能说明】
+        这是 WhatsApp 渠道适配器 中的一个步骤函数，用来支撑：负责通过桥接进程接收 WhatsApp 消息、下载媒体，并把回复转发到 WhatsApp 聊天。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - force: 调用方传入的 `force` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         try:
             bridge_dir = _ensure_bridge_setup()
         except RuntimeError:
@@ -118,7 +220,19 @@ class WhatsAppChannel(BaseChannel):
         return True
 
     async def start(self) -> None:
-        """Start the WhatsApp channel by connecting to the bridge."""
+        """异步执行 `start`。
+
+        【中文名称】start
+
+        【功能说明】
+        这是 WhatsApp 渠道适配器 中的一个步骤函数，用来支撑：负责通过桥接进程接收 WhatsApp 消息、下载媒体，并把回复转发到 WhatsApp 聊天。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         import websockets
 
         bridge_url = self.config.bridge_url
@@ -137,7 +251,7 @@ class WhatsAppChannel(BaseChannel):
                     self._connected = True
                     self.logger.info("Connected to WhatsApp bridge")
 
-                    # Listen for messages
+                    # 说明：这里处理 WhatsApp 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                     async for message in ws:
                         try:
                             await self._handle_bridge_message(message)
@@ -156,7 +270,19 @@ class WhatsAppChannel(BaseChannel):
                     await asyncio.sleep(5)
 
     async def stop(self) -> None:
-        """Stop the WhatsApp channel."""
+        """异步执行 `stop`。
+
+        【中文名称】stop
+
+        【功能说明】
+        这是 WhatsApp 渠道适配器 中的一个步骤函数，用来支撑：负责通过桥接进程接收 WhatsApp 消息、下载媒体，并把回复转发到 WhatsApp 聊天。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         self._running = False
         self._connected = False
 
@@ -165,7 +291,19 @@ class WhatsAppChannel(BaseChannel):
             self._ws = None
 
     async def send(self, msg: OutboundMessage) -> None:
-        """Send a message through WhatsApp."""
+        """异步执行 `send`。
+
+        【中文名称】send
+
+        【功能说明】
+        这是 WhatsApp 渠道适配器 中的一个步骤函数，用来支撑：负责通过桥接进程接收 WhatsApp 消息、下载媒体，并把回复转发到 WhatsApp 聊天。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - msg: 调用方传入的 `msg` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self._ws or not self._connected:
             self.logger.warning("WhatsApp bridge not connected")
             return
@@ -196,7 +334,19 @@ class WhatsAppChannel(BaseChannel):
                 raise
 
     async def _handle_bridge_message(self, raw: str) -> None:
-        """Handle a message from the bridge."""
+        """异步执行 `_handle_bridge_message`。
+
+        【中文名称】_handle_bridge_message
+
+        【功能说明】
+        这是 WhatsApp 渠道适配器 中的一个步骤函数，用来支撑：负责通过桥接进程接收 WhatsApp 消息、下载媒体，并把回复转发到 WhatsApp 聊天。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - raw: 调用方传入的 `raw` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         try:
             data = json.loads(raw)
         except json.JSONDecodeError:
@@ -206,15 +356,15 @@ class WhatsAppChannel(BaseChannel):
         msg_type = data.get("type")
 
         if msg_type == "message":
-            # Incoming message from WhatsApp
-            # Deprecated by whatsapp: old phone number style typically: <phone>@s.whatspp.net
+            # 说明：这里处理 WhatsApp 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 WhatsApp 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             pn = data.get("pn", "")
-            # New LID sytle typically:
+            # 说明：这里处理 WhatsApp 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             sender = data.get("sender", "")
             content = data.get("content", "")
             message_id = data.get("id", "")
 
-            # Extract just the phone number or lid as chat_id
+            # 说明：这里处理 WhatsApp 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             is_group = data.get("isGroup", False)
             was_mentioned = bool(data.get("wasMentioned", False) or data.get("isReplyToBot", False))
 
@@ -222,8 +372,8 @@ class WhatsAppChannel(BaseChannel):
                 if not was_mentioned:
                     return
 
-            # Classify by JID suffix: @s.whatsapp.net = phone, @lid.whatsapp.net = LID
-            # The bridge's pn/sender fields don't consistently map to phone/LID across versions.
+            # 说明：这里处理 WhatsApp 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 WhatsApp 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             raw_a = pn or ""
             participant = data.get("participant", "")
             raw_b = participant or sender or ""
@@ -238,7 +388,7 @@ class WhatsAppChannel(BaseChannel):
                 elif "@lid.whatsapp.net" in raw:
                     lid_id = extracted
                 elif extracted and not phone_id:
-                    phone_id = extracted  # best guess for bare values
+                    phone_id = extracted  # 说明：这里处理 WhatsApp 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
             sender_id = phone_id or self._lid_to_phone.get(lid_id, "") or lid_id or id_a or id_b
             if not self.is_allowed(sender_id):
@@ -256,10 +406,10 @@ class WhatsAppChannel(BaseChannel):
 
             self.logger.info("Sender phone={} lid={} → sender_id={}", phone_id or "(empty)", lid_id or "(empty)", sender_id)
 
-            # Extract media paths (images/documents/videos downloaded by the bridge)
+            # 说明：这里处理 WhatsApp 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             media_paths = data.get("media") or []
 
-            # Handle voice transcription if it's a voice message
+            # 说明：这里处理 WhatsApp 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if content == "[Voice Message]":
                 if media_paths:
                     self.logger.info("Transcribing voice message from {}...", sender_id)
@@ -273,7 +423,7 @@ class WhatsAppChannel(BaseChannel):
                 else:
                     content = "[Voice Message: Audio not available]"
 
-            # Build content tags matching Telegram's pattern: [image: /path] or [file: /path]
+            # 说明：这里处理 WhatsApp 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if media_paths:
                 for p in media_paths:
                     mime, _ = mimetypes.guess_type(p)
@@ -283,7 +433,7 @@ class WhatsAppChannel(BaseChannel):
 
             await self._handle_message(
                 sender_id=sender_id,
-                chat_id=sender,  # Use full LID for replies
+                chat_id=sender,  # 说明：这里处理 WhatsApp 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 content=content,
                 media=media_paths,
                 metadata={
@@ -296,7 +446,7 @@ class WhatsAppChannel(BaseChannel):
             )
 
         elif msg_type == "status":
-            # Connection status update
+            # 说明：这里处理 WhatsApp 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             status = data.get("status")
             self.logger.info("Status: {}", status)
 
@@ -306,7 +456,7 @@ class WhatsAppChannel(BaseChannel):
                 self._connected = False
 
         elif msg_type == "qr":
-            # QR code for authentication
+            # 说明：这里处理 WhatsApp 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             self.logger.info("Scan QR code in the bridge terminal to connect WhatsApp")
 
         elif msg_type == "error":
@@ -314,18 +464,25 @@ class WhatsAppChannel(BaseChannel):
 
 
 def _ensure_bridge_setup() -> Path:
-    """
-    Ensure the WhatsApp bridge is set up and built.
+    """执行 `_ensure_bridge_setup`。
 
-    Returns the bridge directory. Raises RuntimeError if npm is not found
-    or bridge cannot be built.
-    """
+    【中文名称】_ensure_bridge_setup
+
+    【功能说明】
+    这是 WhatsApp 渠道适配器 中的一个步骤函数，用来支撑：负责通过桥接进程接收 WhatsApp 消息、下载媒体，并把回复转发到 WhatsApp 聊天。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - 无显式业务参数。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     from nanobot.config.paths import get_bridge_install_dir
 
     user_bridge = get_bridge_install_dir()
     stamp_file = user_bridge / ".nanobot-bridge-source-hash"
 
-    # Find source bridge
+    # 说明：这里处理 WhatsApp 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     current_file = Path(__file__)
     pkg_bridge = current_file.parent.parent / "bridge"
     src_bridge = current_file.parent.parent.parent / "bridge"
@@ -343,6 +500,20 @@ def _ensure_bridge_setup() -> Path:
         )
 
     def source_hash(root: Path) -> str:
+        """执行 `source_hash`。
+
+        【中文名称】source_hash
+
+        【功能说明】
+        这是 WhatsApp 渠道适配器 中的一个步骤函数，用来支撑：负责通过桥接进程接收 WhatsApp 消息、下载媒体，并把回复转发到 WhatsApp 聊天。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - root: 调用方传入的 `root` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         digest = hashlib.sha256()
         for path in sorted(root.rglob("*")):
             if not path.is_file():

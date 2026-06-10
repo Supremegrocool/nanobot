@@ -1,10 +1,18 @@
-"""Provider-specific voice transcription adapters.
+"""语音转写 Provider 实现。
 
-This module only knows how to call external transcription APIs such as Groq,
-OpenAI Whisper, OpenRouter, Xiaomi MiMo ASR, and AssemblyAI. Product-level config fallback,
-WebUI upload validation, and channel integration live in
-``nanobot.audio.transcription``.
-"""
+【中文名称】语音转写 Provider 实现
+
+【功能说明】
+负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的模型 Provider代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 import asyncio
 import base64
@@ -43,13 +51,20 @@ _FORMAT_ALIASES = {
 
 
 def _resolve_transcription_url(api_base: str | None, default_url: str) -> str:
-    """Resolve the full transcription endpoint URL.
+    """执行 `_resolve_transcription_url`。
 
-    Accepts either a chat-style base (e.g. ``https://api.groq.com/openai/v1``)
-    or a complete URL already ending in ``/audio/transcriptions``. A chat-style
-    base — the form users naturally copy from their LLM provider config — gets
-    the path appended instead of being POSTed verbatim and 404ing (#3637).
-    """
+    【中文名称】_resolve_transcription_url
+
+    【功能说明】
+    这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - api_base: 调用方传入的 `api_base` 数据；具体类型以函数签名为准。
+    - default_url: 调用方传入的 `default_url` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if not api_base:
         return default_url
     base = api_base.rstrip("/")
@@ -59,7 +74,20 @@ def _resolve_transcription_url(api_base: str | None, default_url: str) -> str:
 
 
 def _resolve_chat_completions_url(api_base: str | None, default_url: str) -> str:
-    """Resolve a chat-completions endpoint for ASR providers using chat payloads."""
+    """执行 `_resolve_chat_completions_url`。
+
+    【中文名称】_resolve_chat_completions_url
+
+    【功能说明】
+    这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - api_base: 调用方传入的 `api_base` 数据；具体类型以函数签名为准。
+    - default_url: 调用方传入的 `default_url` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if not api_base:
         return default_url
     base = api_base.rstrip("/")
@@ -69,11 +97,41 @@ def _resolve_chat_completions_url(api_base: str | None, default_url: str) -> str
 
 
 def _resolve_api_path(api_base: str | None, default_base: str, path: str) -> str:
+    """执行 `_resolve_api_path`。
+
+    【中文名称】_resolve_api_path
+
+    【功能说明】
+    这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - api_base: 调用方传入的 `api_base` 数据；具体类型以函数签名为准。
+    - default_base: 调用方传入的 `default_base` 数据；具体类型以函数签名为准。
+    - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     base = (api_base or default_base).rstrip("/")
     return f"{base}/{path.lstrip('/')}"
 
 
 def _resolve_stepfun_asr_url(api_base: str | None) -> str:
+    """执行 `_resolve_stepfun_asr_url`。
+
+    【中文名称】_resolve_stepfun_asr_url
+
+    【功能说明】
+    这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - api_base: 调用方传入的 `api_base` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     base = (api_base or "https://api.stepfun.com/v1").rstrip("/")
     if base.endswith(_STEPFUN_ASR_PATH):
         return base
@@ -81,6 +139,20 @@ def _resolve_stepfun_asr_url(api_base: str | None) -> str:
 
 
 def _audio_mime_type(path: Path) -> str:
+    """执行 `_audio_mime_type`。
+
+    【中文名称】_audio_mime_type
+
+    【功能说明】
+    这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     return (
         _AUDIO_MIME_OVERRIDES.get(path.suffix.lower())
         or mimetypes.guess_type(path.name)[0]
@@ -89,15 +161,27 @@ def _audio_mime_type(path: Path) -> str:
 
 
 def _audio_format(path: Path) -> str:
-    """Map an audio file's extension to an OpenRouter ``format`` value."""
+    """执行 `_audio_format`。
+
+    【中文名称】_audio_format
+
+    【功能说明】
+    这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     ext = path.suffix.lstrip(".").lower()
     return _FORMAT_ALIASES.get(ext, ext)
 
 
-# Up to 3 retries (4 attempts total) with exponential backoff on transient
-# failures. Whisper endpoints occasionally return 502/503 under load, and
-# mobile-network transcription callers hit sporadic connect/read errors.
-# Without this, a voice message silently becomes the empty string.
+# 说明：这里处理 语音转写 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 语音转写 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 语音转写 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 语音转写 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
 _MAX_RETRIES = 3
 _BACKOFF_S = (1.0, 2.0, 4.0)
 _RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
@@ -118,6 +202,24 @@ async def _request_json_with_retry(
     provider_label: str,
     **kwargs: object,
 ) -> dict[str, Any] | None:
+    """异步执行 `_request_json_with_retry`。
+
+    【中文名称】_request_json_with_retry
+
+    【功能说明】
+    这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - client: 调用方传入的 `client` 数据；具体类型以函数签名为准。
+    - method: 调用方传入的 `method` 数据；具体类型以函数签名为准。
+    - url: 调用方传入的 `url` 数据；具体类型以函数签名为准。
+    - provider_label: 调用方传入的 `provider_label` 数据；具体类型以函数签名为准。
+    - **kwargs: 调用方传入的 `kwargs` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     for attempt in range(_MAX_RETRIES + 1):
         try:
             request = getattr(client, method.lower(), None)
@@ -203,16 +305,24 @@ async def _post_transcription_with_retry(
     provider_label: str,
     language: str | None = None,
 ) -> str:
-    """POST an audio file for transcription, retrying on transient errors.
+    """异步执行 `_post_transcription_with_retry`。
 
-    Retries on connect/read/timeout failures and on 408/429/5xx responses.
-    Other errors (including 4xx such as 401/403) return "" immediately — the
-    caller's config is wrong and retrying only wastes quota.
+    【中文名称】_post_transcription_with_retry
 
-    When ``language`` is provided, it is forwarded as the ``language``
-    multipart field on every attempt (the dict is rebuilt per attempt so the
-    same field is present on retries).
-    """
+    【功能说明】
+    这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - url: 调用方传入的 `url` 数据；具体类型以函数签名为准。
+    - api_key: 调用方传入的 `api_key` 数据；具体类型以函数签名为准。
+    - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+    - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+    - provider_label: 调用方传入的 `provider_label` 数据；具体类型以函数签名为准。
+    - language: 调用方传入的 `language` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     try:
         data = path.read_bytes()
     except OSError as e:
@@ -221,6 +331,20 @@ async def _post_transcription_with_retry(
     headers = {"Authorization": f"Bearer {api_key}"}
 
     def build_request() -> dict[str, Any]:
+        """执行 `build_request`。
+
+        【中文名称】build_request
+
+        【功能说明】
+        这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         files = {
             "file": (path.name, data, _audio_mime_type(path)),
             "model": (None, model),
@@ -241,7 +365,24 @@ async def _post_json_transcription_with_retry(
     provider_label: str,
     language: str | None = None,
 ) -> str:
-    """POST base64 JSON audio for providers that do not accept multipart uploads."""
+    """异步执行 `_post_json_transcription_with_retry`。
+
+    【中文名称】_post_json_transcription_with_retry
+
+    【功能说明】
+    这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - url: 调用方传入的 `url` 数据；具体类型以函数签名为准。
+    - api_key: 调用方传入的 `api_key` 数据；具体类型以函数签名为准。
+    - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+    - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+    - provider_label: 调用方传入的 `provider_label` 数据；具体类型以函数签名为准。
+    - language: 调用方传入的 `language` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     try:
         data = path.read_bytes()
     except OSError as e:
@@ -253,6 +394,20 @@ async def _post_json_transcription_with_retry(
     }
 
     def build_request() -> dict[str, Any]:
+        """执行 `build_request`。
+
+        【中文名称】build_request
+
+        【功能说明】
+        这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         body: dict[str, object] = {
             "model": model,
             "input_audio": {
@@ -276,7 +431,24 @@ async def _post_xiaomi_mimo_asr_with_retry(
     provider_label: str,
     language: str | None = None,
 ) -> str:
-    """POST audio to Xiaomi MiMo ASR's chat-completions transcription API."""
+    """异步执行 `_post_xiaomi_mimo_asr_with_retry`。
+
+    【中文名称】_post_xiaomi_mimo_asr_with_retry
+
+    【功能说明】
+    这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - url: 调用方传入的 `url` 数据；具体类型以函数签名为准。
+    - api_key: 调用方传入的 `api_key` 数据；具体类型以函数签名为准。
+    - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+    - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+    - provider_label: 调用方传入的 `provider_label` 数据；具体类型以函数签名为准。
+    - language: 调用方传入的 `language` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     try:
         data = path.read_bytes()
     except OSError as e:
@@ -310,6 +482,20 @@ async def _post_xiaomi_mimo_asr_with_retry(
     }
 
     def build_request() -> dict[str, Any]:
+        """执行 `build_request`。
+
+        【中文名称】build_request
+
+        【功能说明】
+        这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return {"url": url, "headers": headers, "json": body, "timeout": 60.0}
 
     return await _post_with_retry(build_request, provider_label, _text_from_chat_payload)
@@ -324,7 +510,24 @@ async def _post_stepfun_asr_with_retry(
     provider_label: str,
     language: str | None = None,
 ) -> str:
-    """POST audio to StepFun ASR SSE endpoint and collect final text."""
+    """异步执行 `_post_stepfun_asr_with_retry`。
+
+    【中文名称】_post_stepfun_asr_with_retry
+
+    【功能说明】
+    这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - url: 调用方传入的 `url` 数据；具体类型以函数签名为准。
+    - api_key: 调用方传入的 `api_key` 数据；具体类型以函数签名为准。
+    - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+    - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+    - provider_label: 调用方传入的 `provider_label` 数据；具体类型以函数签名为准。
+    - language: 调用方传入的 `language` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     try:
         data = path.read_bytes()
     except OSError as e:
@@ -393,7 +596,7 @@ async def _post_stepfun_asr_with_retry(
                             break
                     if final_text is not None:
                         return final_text
-                    # Stream ended without a final event — retry if attempts remain
+                    # 说明：这里处理 语音转写 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
                     if attempt < _MAX_RETRIES:
                         logger.warning(
                             "{} transcription: no final event (attempt {}/{})",
@@ -434,6 +637,22 @@ async def _post_with_retry(
     provider_label: str,
     extract_text: Callable[[dict[str, Any]], str],
 ) -> str:
+    """异步执行 `_post_with_retry`。
+
+    【中文名称】_post_with_retry
+
+    【功能说明】
+    这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - build_request: 调用方传入的 `build_request` 数据；具体类型以函数签名为准。
+    - provider_label: 调用方传入的 `provider_label` 数据；具体类型以函数签名为准。
+    - extract_text: 调用方传入的 `extract_text` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     async with httpx.AsyncClient() as client:
         for attempt in range(_MAX_RETRIES + 1):
             try:
@@ -508,11 +727,39 @@ async def _post_with_retry(
 
 
 def _text_from_transcription_payload(payload: dict[str, Any]) -> str:
+    """执行 `_text_from_transcription_payload`。
+
+    【中文名称】_text_from_transcription_payload
+
+    【功能说明】
+    这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - payload: 调用方传入的 `payload` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     text = payload.get("text")
     return text if isinstance(text, str) else ""
 
 
 def _text_from_chat_payload(payload: dict[str, Any]) -> str:
+    """执行 `_text_from_chat_payload`。
+
+    【中文名称】_text_from_chat_payload
+
+    【功能说明】
+    这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - payload: 调用方传入的 `payload` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     try:
         text = payload["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError):
@@ -521,11 +768,35 @@ def _text_from_chat_payload(payload: dict[str, Any]) -> str:
 
 
 def _assemblyai_speech_models(model: str | None) -> list[str]:
+    """执行 `_assemblyai_speech_models`。
+
+    【中文名称】_assemblyai_speech_models
+
+    【功能说明】
+    这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     return [part for part in (part.strip() for part in (model or "").split(",")) if part]
 
 
 class AssemblyAITranscriptionProvider:
-    """Voice transcription provider using AssemblyAI's asynchronous REST API."""
+    """AssemblyAITranscriptionProvider 类。
+
+    【中文名称】AssemblyAITranscriptionProvider
+
+    【功能说明】
+    这是 语音转写 Provider 实现 中的核心数据结构或服务类。负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     def __init__(
         self,
@@ -534,6 +805,23 @@ class AssemblyAITranscriptionProvider:
         language: str | None = None,
         model: str | None = None,
     ):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - api_key: 调用方传入的 `api_key` 数据；具体类型以函数签名为准。
+        - api_base: 调用方传入的 `api_base` 数据；具体类型以函数签名为准。
+        - language: 调用方传入的 `language` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         base = api_base or os.environ.get("ASSEMBLYAI_BASE_URL")
         self.api_key = api_key or os.environ.get("ASSEMBLYAI_API_KEY")
         self.upload_url = _resolve_api_path(base, _ASSEMBLYAI_DEFAULT_API_BASE, "upload")
@@ -543,6 +831,20 @@ class AssemblyAITranscriptionProvider:
         logger.debug("AssemblyAI transcription endpoint: {}", self.transcript_url)
 
     async def transcribe(self, file_path: str | Path) -> str:
+        """异步执行 `transcribe`。
+
+        【中文名称】transcribe
+
+        【功能说明】
+        这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - file_path: 调用方传入的 `file_path` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self.api_key:
             logger.warning("AssemblyAI API key not configured for transcription")
             return ""
@@ -622,7 +924,17 @@ class AssemblyAITranscriptionProvider:
 
 
 class OpenAITranscriptionProvider:
-    """Voice transcription provider using OpenAI's Whisper API."""
+    """OpenAITranscriptionProvider 类。
+
+    【中文名称】OpenAITranscriptionProvider
+
+    【功能说明】
+    这是 语音转写 Provider 实现 中的核心数据结构或服务类。负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     def __init__(
         self,
@@ -631,6 +943,23 @@ class OpenAITranscriptionProvider:
         language: str | None = None,
         model: str | None = None,
     ):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - api_key: 调用方传入的 `api_key` 数据；具体类型以函数签名为准。
+        - api_base: 调用方传入的 `api_base` 数据；具体类型以函数签名为准。
+        - language: 调用方传入的 `language` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
         self.api_url = _resolve_transcription_url(
             api_base or os.environ.get("OPENAI_TRANSCRIPTION_BASE_URL"),
@@ -641,6 +970,20 @@ class OpenAITranscriptionProvider:
         logger.debug("OpenAI transcription endpoint: {}", self.api_url)
 
     async def transcribe(self, file_path: str | Path) -> str:
+        """异步执行 `transcribe`。
+
+        【中文名称】transcribe
+
+        【功能说明】
+        这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - file_path: 调用方传入的 `file_path` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self.api_key:
             logger.warning("OpenAI API key not configured for transcription")
             return ""
@@ -659,11 +1002,17 @@ class OpenAITranscriptionProvider:
 
 
 class GroqTranscriptionProvider:
-    """
-    Voice transcription provider using Groq's Whisper API.
+    """GroqTranscriptionProvider 类。
 
-    Groq offers extremely fast transcription with a generous free tier.
-    """
+    【中文名称】GroqTranscriptionProvider
+
+    【功能说明】
+    这是 语音转写 Provider 实现 中的核心数据结构或服务类。负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     def __init__(
         self,
@@ -672,6 +1021,23 @@ class GroqTranscriptionProvider:
         language: str | None = None,
         model: str | None = None,
     ):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - api_key: 调用方传入的 `api_key` 数据；具体类型以函数签名为准。
+        - api_base: 调用方传入的 `api_base` 数据；具体类型以函数签名为准。
+        - language: 调用方传入的 `language` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self.api_key = api_key or os.environ.get("GROQ_API_KEY")
         self.api_url = _resolve_transcription_url(
             api_base or os.environ.get("GROQ_BASE_URL"),
@@ -682,15 +1048,19 @@ class GroqTranscriptionProvider:
         logger.debug("Groq transcription endpoint: {}", self.api_url)
 
     async def transcribe(self, file_path: str | Path) -> str:
-        """
-        Transcribe an audio file using Groq.
+        """异步执行 `transcribe`。
 
-        Args:
-            file_path: Path to the audio file.
+        【中文名称】transcribe
 
-        Returns:
-            Transcribed text.
-        """
+        【功能说明】
+        这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - file_path: 调用方传入的 `file_path` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self.api_key:
             logger.warning("Groq API key not configured for transcription")
             return ""
@@ -711,7 +1081,17 @@ class GroqTranscriptionProvider:
 
 
 class OpenRouterTranscriptionProvider:
-    """Voice transcription provider using OpenRouter's speech-to-text endpoint."""
+    """OpenRouterTranscriptionProvider 类。
+
+    【中文名称】OpenRouterTranscriptionProvider
+
+    【功能说明】
+    这是 语音转写 Provider 实现 中的核心数据结构或服务类。负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     def __init__(
         self,
@@ -720,6 +1100,23 @@ class OpenRouterTranscriptionProvider:
         language: str | None = None,
         model: str | None = None,
     ):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - api_key: 调用方传入的 `api_key` 数据；具体类型以函数签名为准。
+        - api_base: 调用方传入的 `api_base` 数据；具体类型以函数签名为准。
+        - language: 调用方传入的 `language` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self.api_key = api_key or os.environ.get("OPENROUTER_API_KEY")
         self.api_url = _resolve_transcription_url(
             api_base or os.environ.get("OPENROUTER_BASE_URL"),
@@ -730,6 +1127,20 @@ class OpenRouterTranscriptionProvider:
         logger.debug("OpenRouter transcription endpoint: {}", self.api_url)
 
     async def transcribe(self, file_path: str | Path) -> str:
+        """异步执行 `transcribe`。
+
+        【中文名称】transcribe
+
+        【功能说明】
+        这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - file_path: 调用方传入的 `file_path` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self.api_key:
             logger.warning("OpenRouter API key not configured for transcription")
             return ""
@@ -750,7 +1161,17 @@ class OpenRouterTranscriptionProvider:
 
 
 class XiaomiMiMoTranscriptionProvider:
-    """Voice transcription provider using Xiaomi MiMo ASR."""
+    """XiaomiMiMoTranscriptionProvider 类。
+
+    【中文名称】XiaomiMiMoTranscriptionProvider
+
+    【功能说明】
+    这是 语音转写 Provider 实现 中的核心数据结构或服务类。负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     def __init__(
         self,
@@ -759,6 +1180,23 @@ class XiaomiMiMoTranscriptionProvider:
         language: str | None = None,
         model: str | None = None,
     ):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - api_key: 调用方传入的 `api_key` 数据；具体类型以函数签名为准。
+        - api_base: 调用方传入的 `api_base` 数据；具体类型以函数签名为准。
+        - language: 调用方传入的 `language` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self.api_key = api_key or os.environ.get("MIMO_API_KEY")
         self.api_url = _resolve_chat_completions_url(
             api_base or os.environ.get("MIMO_API_BASE"),
@@ -769,6 +1207,20 @@ class XiaomiMiMoTranscriptionProvider:
         logger.debug("Xiaomi MiMo transcription endpoint: {}", self.api_url)
 
     async def transcribe(self, file_path: str | Path) -> str:
+        """异步执行 `transcribe`。
+
+        【中文名称】transcribe
+
+        【功能说明】
+        这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - file_path: 调用方传入的 `file_path` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self.api_key:
             logger.warning("Xiaomi MiMo API key not configured for transcription")
             return ""
@@ -789,7 +1241,17 @@ class XiaomiMiMoTranscriptionProvider:
 
 
 class StepFunTranscriptionProvider:
-    """Voice transcription provider using StepFun ASR SSE endpoint."""
+    """StepFunTranscriptionProvider 类。
+
+    【中文名称】StepFunTranscriptionProvider
+
+    【功能说明】
+    这是 语音转写 Provider 实现 中的核心数据结构或服务类。负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     _DEFAULT_URL = "https://api.stepfun.com/v1/audio/asr/sse"
 
@@ -800,14 +1262,45 @@ class StepFunTranscriptionProvider:
         language: str | None = None,
         model: str | None = None,
     ):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - api_key: 调用方传入的 `api_key` 数据；具体类型以函数签名为准。
+        - api_base: 调用方传入的 `api_base` 数据；具体类型以函数签名为准。
+        - language: 调用方传入的 `language` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self.api_key = api_key or os.environ.get("STEPFUN_API_KEY")
-        # api_base accepts either a StepFun base URL or the full SSE endpoint.
+        # 说明：这里处理 语音转写 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
         self.api_url = _resolve_stepfun_asr_url(api_base)
         self.language = language or None
         self.model = model or "stepaudio-2.5-asr"
         logger.debug("StepFun transcription endpoint: {}", self.api_url)
 
     async def transcribe(self, file_path: str | Path) -> str:
+        """异步执行 `transcribe`。
+
+        【中文名称】transcribe
+
+        【功能说明】
+        这是 语音转写 Provider 实现 中的一个步骤函数，用来支撑：负责把本地音频文件交给 OpenAI Whisper 或兼容转写接口，并返回可被 Agent 使用的纯文本。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - file_path: 调用方传入的 `file_path` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self.api_key:
             logger.warning("StepFun API key not configured for transcription")
             return ""

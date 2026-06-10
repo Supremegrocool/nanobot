@@ -1,4 +1,18 @@
-"""Mochat channel implementation using Socket.IO with HTTP polling fallback."""
+"""MoChat 渠道适配器。
+
+【中文名称】MoChat 渠道适配器
+
+【功能说明】
+负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的渠道适配器代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 from __future__ import annotations
 
@@ -11,13 +25,13 @@ from datetime import datetime
 from typing import Any
 
 import httpx
+from pydantic import Field
 
 from nanobot.bus.events import OutboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.channels.base import BaseChannel
 from nanobot.config.paths import get_runtime_subdir
 from nanobot.config.schema import Base
-from pydantic import Field
 
 try:
     import socketio
@@ -36,13 +50,23 @@ MAX_SEEN_MESSAGE_IDS = 2000
 CURSOR_SAVE_DEBOUNCE_S = 0.5
 
 
-# ---------------------------------------------------------------------------
-# Data classes
-# ---------------------------------------------------------------------------
+# 说明：这里处理 MoChat 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 MoChat 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 MoChat 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
 @dataclass
 class MochatBufferedEntry:
-    """Buffered inbound entry for delayed dispatch."""
+    """MochatBufferedEntry 类。
+
+    【中文名称】MochatBufferedEntry
+
+    【功能说明】
+    这是 MoChat 渠道适配器 中的核心数据结构或服务类。负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
     raw_body: str
     author: str
     sender_name: str = ""
@@ -54,7 +78,17 @@ class MochatBufferedEntry:
 
 @dataclass
 class DelayState:
-    """Per-target delayed message state."""
+    """DelayState 类。
+
+    【中文名称】DelayState
+
+    【功能说明】
+    这是 MoChat 渠道适配器 中的核心数据结构或服务类。负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
     entries: list[MochatBufferedEntry] = field(default_factory=list)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     timer: asyncio.Task | None = None
@@ -62,22 +96,57 @@ class DelayState:
 
 @dataclass
 class MochatTarget:
-    """Outbound target resolution result."""
+    """MochatTarget 类。
+
+    【中文名称】MochatTarget
+
+    【功能说明】
+    这是 MoChat 渠道适配器 中的核心数据结构或服务类。负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
     id: str
     is_panel: bool
 
 
-# ---------------------------------------------------------------------------
-# Pure helpers
-# ---------------------------------------------------------------------------
+# 说明：这里处理 MoChat 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 MoChat 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 MoChat 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
 def _safe_dict(value: Any) -> dict:
-    """Return *value* if it's a dict, else empty dict."""
+    """执行 `_safe_dict`。
+
+    【中文名称】_safe_dict
+
+    【功能说明】
+    这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     return value if isinstance(value, dict) else {}
 
 
 def _str_field(src: dict, *keys: str) -> str:
-    """Return the first non-empty str value found for *keys*, stripped."""
+    """执行 `_str_field`。
+
+    【中文名称】_str_field
+
+    【功能说明】
+    这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - src: 调用方传入的 `src` 数据；具体类型以函数签名为准。
+    - *keys: 调用方传入的 `keys` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     for k in keys:
         v = src.get(k)
         if isinstance(v, str) and v.strip():
@@ -90,7 +159,26 @@ def _make_synthetic_event(
     meta: Any, group_id: str, converse_id: str,
     timestamp: Any = None, *, author_info: Any = None,
 ) -> dict[str, Any]:
-    """Build a synthetic ``message.add`` event dict."""
+    """执行 `_make_synthetic_event`。
+
+    【中文名称】_make_synthetic_event
+
+    【功能说明】
+    这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - message_id: 调用方传入的 `message_id` 数据；具体类型以函数签名为准。
+    - author: 调用方传入的 `author` 数据；具体类型以函数签名为准。
+    - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+    - meta: 调用方传入的 `meta` 数据；具体类型以函数签名为准。
+    - group_id: 调用方传入的 `group_id` 数据；具体类型以函数签名为准。
+    - converse_id: 调用方传入的 `converse_id` 数据；具体类型以函数签名为准。
+    - timestamp: 调用方传入的 `timestamp` 数据；具体类型以函数签名为准。
+    - author_info: 调用方传入的 `author_info` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     payload: dict[str, Any] = {
         "messageId": message_id, "author": author,
         "content": content, "meta": _safe_dict(meta),
@@ -106,7 +194,19 @@ def _make_synthetic_event(
 
 
 def normalize_mochat_content(content: Any) -> str:
-    """Normalize content payload to text."""
+    """执行 `normalize_mochat_content`。
+
+    【中文名称】normalize_mochat_content
+
+    【功能说明】
+    这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if isinstance(content, str):
         return content.strip()
     if content is None:
@@ -118,7 +218,19 @@ def normalize_mochat_content(content: Any) -> str:
 
 
 def resolve_mochat_target(raw: str) -> MochatTarget:
-    """Resolve id and target kind from user-provided target string."""
+    """执行 `resolve_mochat_target`。
+
+    【中文名称】resolve_mochat_target
+
+    【功能说明】
+    这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - raw: 调用方传入的 `raw` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     trimmed = (raw or "").strip()
     if not trimmed:
         return MochatTarget(id="", is_panel=False)
@@ -137,7 +249,19 @@ def resolve_mochat_target(raw: str) -> MochatTarget:
 
 
 def extract_mention_ids(value: Any) -> list[str]:
-    """Extract mention ids from heterogeneous mention payload."""
+    """执行 `extract_mention_ids`。
+
+    【中文名称】extract_mention_ids
+
+    【功能说明】
+    这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if not isinstance(value, list):
         return []
     ids: list[str] = []
@@ -155,7 +279,20 @@ def extract_mention_ids(value: Any) -> list[str]:
 
 
 def resolve_was_mentioned(payload: dict[str, Any], agent_user_id: str) -> bool:
-    """Resolve mention state from payload metadata and text fallback."""
+    """执行 `resolve_was_mentioned`。
+
+    【中文名称】resolve_was_mentioned
+
+    【功能说明】
+    这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - payload: 调用方传入的 `payload` 数据；具体类型以函数签名为准。
+    - agent_user_id: 调用方传入的 `agent_user_id` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     meta = payload.get("meta")
     if isinstance(meta, dict):
         if meta.get("mentioned") is True or meta.get("wasMentioned") is True:
@@ -172,7 +309,21 @@ def resolve_was_mentioned(payload: dict[str, Any], agent_user_id: str) -> bool:
 
 
 def resolve_require_mention(config: MochatConfig, session_id: str, group_id: str) -> bool:
-    """Resolve mention requirement for group/panel conversations."""
+    """执行 `resolve_require_mention`。
+
+    【中文名称】resolve_require_mention
+
+    【功能说明】
+    这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - config: 调用方传入的 `config` 数据；具体类型以函数签名为准。
+    - session_id: 调用方传入的 `session_id` 数据；具体类型以函数签名为准。
+    - group_id: 调用方传入的 `group_id` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     groups = config.groups or {}
     for key in (group_id, session_id, "*"):
         if key and key in groups:
@@ -181,7 +332,20 @@ def resolve_require_mention(config: MochatConfig, session_id: str, group_id: str
 
 
 def build_buffered_body(entries: list[MochatBufferedEntry], is_group: bool) -> str:
-    """Build text body from one or more buffered entries."""
+    """执行 `build_buffered_body`。
+
+    【中文名称】build_buffered_body
+
+    【功能说明】
+    这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - entries: 调用方传入的 `entries` 数据；具体类型以函数签名为准。
+    - is_group: 调用方传入的 `is_group` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if not entries:
         return ""
     if len(entries) == 1:
@@ -200,7 +364,19 @@ def build_buffered_body(entries: list[MochatBufferedEntry], is_group: bool) -> s
 
 
 def parse_timestamp(value: Any) -> int | None:
-    """Parse event timestamp to epoch milliseconds."""
+    """执行 `parse_timestamp`。
+
+    【中文名称】parse_timestamp
+
+    【功能说明】
+    这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if not isinstance(value, str) or not value.strip():
         return None
     try:
@@ -209,24 +385,54 @@ def parse_timestamp(value: Any) -> int | None:
         return None
 
 
-# ---------------------------------------------------------------------------
-# Config classes
-# ---------------------------------------------------------------------------
+# 说明：这里处理 MoChat 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 MoChat 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 MoChat 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
 class MochatMentionConfig(Base):
-    """Mochat mention behavior configuration."""
+    """MochatMentionConfig 类。
+
+    【中文名称】MochatMentionConfig
+
+    【功能说明】
+    这是 MoChat 渠道适配器 中的核心数据结构或服务类。负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     require_in_groups: bool = False
 
 
 class MochatGroupRule(Base):
-    """Mochat per-group mention requirement."""
+    """MochatGroupRule 类。
+
+    【中文名称】MochatGroupRule
+
+    【功能说明】
+    这是 MoChat 渠道适配器 中的核心数据结构或服务类。负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     require_mention: bool = False
 
 
 class MochatConfig(Base):
-    """Mochat channel configuration."""
+    """MochatConfig 类。
+
+    【中文名称】MochatConfig
+
+    【功能说明】
+    这是 MoChat 渠道适配器 中的核心数据结构或服务类。负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     enabled: bool = False
     base_url: str = "https://mochat.io"
@@ -252,21 +458,60 @@ class MochatConfig(Base):
     reply_delay_ms: int = 120000
 
 
-# ---------------------------------------------------------------------------
-# Channel
-# ---------------------------------------------------------------------------
+# 说明：这里处理 MoChat 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 MoChat 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 MoChat 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
 class MochatChannel(BaseChannel):
-    """Mochat channel using socket.io with fallback polling workers."""
+    """MochatChannel 类。
+
+    【中文名称】MochatChannel
+
+    【功能说明】
+    这是 MoChat 渠道适配器 中的核心数据结构或服务类。负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     name = "mochat"
     display_name = "Mochat"
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
+        """执行 `default_config`。
+
+        【中文名称】default_config
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return MochatConfig().model_dump(by_alias=True)
 
     def __init__(self, config: Any, bus: MessageBus):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - config: 调用方传入的 `config` 数据；具体类型以函数签名为准。
+        - bus: 调用方传入的 `bus` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if isinstance(config, dict):
             config = MochatConfig.model_validate(config)
         super().__init__(config, bus)
@@ -297,10 +542,22 @@ class MochatChannel(BaseChannel):
         self._refresh_task: asyncio.Task | None = None
         self._target_locks: dict[str, asyncio.Lock] = {}
 
-    # ---- lifecycle ---------------------------------------------------------
+    # 说明：这里处理 MoChat 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     async def start(self) -> None:
-        """Start Mochat channel workers and websocket connection."""
+        """异步执行 `start`。
+
+        【中文名称】start
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self.config.claw_token:
             self.logger.error("claw_token not configured")
             return
@@ -320,7 +577,19 @@ class MochatChannel(BaseChannel):
             await asyncio.sleep(1)
 
     async def stop(self) -> None:
-        """Stop all workers and clean up resources."""
+        """异步执行 `stop`。
+
+        【中文名称】stop
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         self._running = False
         if self._refresh_task:
             self._refresh_task.cancel()
@@ -345,7 +614,19 @@ class MochatChannel(BaseChannel):
         self._ws_connected = self._ws_ready = False
 
     async def send(self, msg: OutboundMessage) -> None:
-        """Send outbound message to session or panel."""
+        """异步执行 `send`。
+
+        【中文名称】send
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - msg: 调用方传入的 `msg` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self.config.claw_token:
             self.logger.warning("claw_token missing, skip send")
             return
@@ -374,9 +655,23 @@ class MochatChannel(BaseChannel):
             self.logger.exception("Failed to send message")
             raise
 
-    # ---- config / init helpers ---------------------------------------------
+    # 说明：这里处理 MoChat 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     def _seed_targets_from_config(self) -> None:
+        """执行 `_seed_targets_from_config`。
+
+        【中文名称】_seed_targets_from_config
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         sessions, self._auto_discover_sessions = self._normalize_id_list(self.config.sessions)
         panels, self._auto_discover_panels = self._normalize_id_list(self.config.panels)
         self._session_set.update(sessions)
@@ -387,12 +682,40 @@ class MochatChannel(BaseChannel):
 
     @staticmethod
     def _normalize_id_list(values: list[str]) -> tuple[list[str], bool]:
+        """执行 `_normalize_id_list`。
+
+        【中文名称】_normalize_id_list
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - values: 调用方传入的 `values` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         cleaned = [str(v).strip() for v in values if str(v).strip()]
         return sorted({v for v in cleaned if v != "*"}), "*" in cleaned
 
-    # ---- websocket ---------------------------------------------------------
+    # 说明：这里处理 MoChat 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     async def _start_socket_client(self) -> bool:
+        """异步执行 `_start_socket_client`。
+
+        【中文名称】_start_socket_client
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not SOCKETIO_AVAILABLE:
             self.logger.warning("python-socketio not installed, using polling fallback")
             return False
@@ -414,6 +737,20 @@ class MochatChannel(BaseChannel):
 
         @client.event
         async def connect() -> None:
+            """异步执行 `connect`。
+
+            【中文名称】connect
+
+            【功能说明】
+            这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - 无显式业务参数。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             self._ws_connected, self._ws_ready = True, False
             self.logger.info("websocket connected")
             subscribed = await self._subscribe_all()
@@ -422,6 +759,20 @@ class MochatChannel(BaseChannel):
 
         @client.event
         async def disconnect() -> None:
+            """异步执行 `disconnect`。
+
+            【中文名称】disconnect
+
+            【功能说明】
+            这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - 无显式业务参数。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             if not self._running:
                 return
             self._ws_connected = self._ws_ready = False
@@ -430,14 +781,56 @@ class MochatChannel(BaseChannel):
 
         @client.event
         async def connect_error(data: Any) -> None:
+            """异步执行 `connect_error`。
+
+            【中文名称】connect_error
+
+            【功能说明】
+            这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - data: 调用方传入的 `data` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             self.logger.error("websocket connect error: {}", data)
 
         @client.on("claw.session.events")
         async def on_session_events(payload: dict[str, Any]) -> None:
+            """异步执行 `on_session_events`。
+
+            【中文名称】on_session_events
+
+            【功能说明】
+            这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - payload: 调用方传入的 `payload` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             await self._handle_watch_payload(payload, "session")
 
         @client.on("claw.panel.events")
         async def on_panel_events(payload: dict[str, Any]) -> None:
+            """异步执行 `on_panel_events`。
+
+            【中文名称】on_panel_events
+
+            【功能说明】
+            这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - payload: 调用方传入的 `payload` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             await self._handle_watch_payload(payload, "panel")
 
         for ev in ("notify:chat.inbox.append", "notify:chat.message.add",
@@ -464,16 +857,58 @@ class MochatChannel(BaseChannel):
             return False
 
     def _build_notify_handler(self, event_name: str):
+        """执行 `_build_notify_handler`。
+
+        【中文名称】_build_notify_handler
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - event_name: 调用方传入的 `event_name` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         async def handler(payload: Any) -> None:
+            """异步执行 `handler`。
+
+            【中文名称】handler
+
+            【功能说明】
+            这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - payload: 调用方传入的 `payload` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             if event_name == "notify:chat.inbox.append":
                 await self._handle_notify_inbox_append(payload)
             elif event_name.startswith("notify:chat.message."):
                 await self._handle_notify_chat_message(payload)
         return handler
 
-    # ---- subscribe ---------------------------------------------------------
+    # 说明：这里处理 MoChat 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     async def _subscribe_all(self) -> bool:
+        """异步执行 `_subscribe_all`。
+
+        【中文名称】_subscribe_all
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         ok = await self._subscribe_sessions(sorted(self._session_set))
         ok = await self._subscribe_panels(sorted(self._panel_set)) and ok
         if self._auto_discover_sessions or self._auto_discover_panels:
@@ -481,6 +916,20 @@ class MochatChannel(BaseChannel):
         return ok
 
     async def _subscribe_sessions(self, session_ids: list[str]) -> bool:
+        """异步执行 `_subscribe_sessions`。
+
+        【中文名称】_subscribe_sessions
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - session_ids: 调用方传入的 `session_ids` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not session_ids:
             return True
         for sid in session_ids:
@@ -510,6 +959,20 @@ class MochatChannel(BaseChannel):
         return True
 
     async def _subscribe_panels(self, panel_ids: list[str]) -> bool:
+        """异步执行 `_subscribe_panels`。
+
+        【中文名称】_subscribe_panels
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - panel_ids: 调用方传入的 `panel_ids` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self._auto_discover_panels and not panel_ids:
             return True
         ack = await self._socket_call("com.claw.im.subscribePanels", {"panelIds": panel_ids})
@@ -519,6 +982,21 @@ class MochatChannel(BaseChannel):
         return True
 
     async def _socket_call(self, event_name: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """异步执行 `_socket_call`。
+
+        【中文名称】_socket_call
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - event_name: 调用方传入的 `event_name` 数据；具体类型以函数签名为准。
+        - payload: 调用方传入的 `payload` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self._socket:
             return {"result": False, "message": "socket not connected"}
         try:
@@ -527,9 +1005,23 @@ class MochatChannel(BaseChannel):
             return {"result": False, "message": str(e)}
         return raw if isinstance(raw, dict) else {"result": True, "data": raw}
 
-    # ---- refresh / discovery -----------------------------------------------
+    # 说明：这里处理 MoChat 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     async def _refresh_loop(self) -> None:
+        """异步执行 `_refresh_loop`。
+
+        【中文名称】_refresh_loop
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         interval_s = max(1.0, self.config.refresh_interval_ms / 1000.0)
         while self._running:
             await asyncio.sleep(interval_s)
@@ -541,12 +1033,40 @@ class MochatChannel(BaseChannel):
                 await self._ensure_fallback_workers()
 
     async def _refresh_targets(self, subscribe_new: bool) -> None:
+        """异步执行 `_refresh_targets`。
+
+        【中文名称】_refresh_targets
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - subscribe_new: 调用方传入的 `subscribe_new` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if self._auto_discover_sessions:
             await self._refresh_sessions_directory(subscribe_new)
         if self._auto_discover_panels:
             await self._refresh_panels(subscribe_new)
 
     async def _refresh_sessions_directory(self, subscribe_new: bool) -> None:
+        """异步执行 `_refresh_sessions_directory`。
+
+        【中文名称】_refresh_sessions_directory
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - subscribe_new: 调用方传入的 `subscribe_new` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         try:
             response = await self._post_json("/api/claw/sessions/list", {})
         except Exception as e:
@@ -581,6 +1101,20 @@ class MochatChannel(BaseChannel):
             await self._ensure_fallback_workers()
 
     async def _refresh_panels(self, subscribe_new: bool) -> None:
+        """异步执行 `_refresh_panels`。
+
+        【中文名称】_refresh_panels
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - subscribe_new: 调用方传入的 `subscribe_new` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         try:
             response = await self._post_json("/api/claw/groups/get", {})
         except Exception as e:
@@ -610,9 +1144,23 @@ class MochatChannel(BaseChannel):
         if self._fallback_mode:
             await self._ensure_fallback_workers()
 
-    # ---- fallback workers --------------------------------------------------
+    # 说明：这里处理 MoChat 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     async def _ensure_fallback_workers(self) -> None:
+        """异步执行 `_ensure_fallback_workers`。
+
+        【中文名称】_ensure_fallback_workers
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self._running:
             return
         self._fallback_mode = True
@@ -626,6 +1174,20 @@ class MochatChannel(BaseChannel):
                 self._panel_fallback_tasks[pid] = asyncio.create_task(self._panel_poll_worker(pid))
 
     async def _stop_fallback_workers(self) -> None:
+        """异步执行 `_stop_fallback_workers`。
+
+        【中文名称】_stop_fallback_workers
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self._fallback_mode = False
         tasks = [*self._session_fallback_tasks.values(), *self._panel_fallback_tasks.values()]
         for t in tasks:
@@ -636,6 +1198,20 @@ class MochatChannel(BaseChannel):
         self._panel_fallback_tasks.clear()
 
     async def _session_watch_worker(self, session_id: str) -> None:
+        """异步执行 `_session_watch_worker`。
+
+        【中文名称】_session_watch_worker
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - session_id: 调用方传入的 `session_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         while self._running and self._fallback_mode:
             try:
                 payload = await self._post_json("/api/claw/sessions/watch", {
@@ -650,6 +1226,20 @@ class MochatChannel(BaseChannel):
                 await asyncio.sleep(max(0.1, self.config.retry_delay_ms / 1000.0))
 
     async def _panel_poll_worker(self, panel_id: str) -> None:
+        """异步执行 `_panel_poll_worker`。
+
+        【中文名称】_panel_poll_worker
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - panel_id: 调用方传入的 `panel_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         sleep_s = max(1.0, self.config.refresh_interval_ms / 1000.0)
         while self._running and self._fallback_mode:
             try:
@@ -676,9 +1266,24 @@ class MochatChannel(BaseChannel):
                 self.logger.warning("panel polling error ({}): {}", panel_id, e)
             await asyncio.sleep(sleep_s)
 
-    # ---- inbound event processing ------------------------------------------
+    # 说明：这里处理 MoChat 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     async def _handle_watch_payload(self, payload: dict[str, Any], target_kind: str) -> None:
+        """异步执行 `_handle_watch_payload`。
+
+        【中文名称】_handle_watch_payload
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - payload: 调用方传入的 `payload` 数据；具体类型以函数签名为准。
+        - target_kind: 调用方传入的 `target_kind` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not isinstance(payload, dict):
             return
         target_id = _str_field(payload, "sessionId")
@@ -709,6 +1314,22 @@ class MochatChannel(BaseChannel):
                     await self._process_inbound_event(target_id, event, target_kind)
 
     async def _process_inbound_event(self, target_id: str, event: dict[str, Any], target_kind: str) -> None:
+        """异步执行 `_process_inbound_event`。
+
+        【中文名称】_process_inbound_event
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - target_id: 调用方传入的 `target_id` 数据；具体类型以函数签名为准。
+        - event: 调用方传入的 `event` 数据；具体类型以函数签名为准。
+        - target_kind: 调用方传入的 `target_kind` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         payload = event.get("payload")
         if not isinstance(payload, dict):
             return
@@ -754,9 +1375,24 @@ class MochatChannel(BaseChannel):
 
         await self._dispatch_entries(target_id, target_kind, [entry], was_mentioned)
 
-    # ---- dedup / buffering -------------------------------------------------
+    # 说明：这里处理 MoChat 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     def _remember_message_id(self, key: str, message_id: str) -> bool:
+        """执行 `_remember_message_id`。
+
+        【中文名称】_remember_message_id
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - key: 调用方传入的 `key` 数据；具体类型以函数签名为准。
+        - message_id: 调用方传入的 `message_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         seen_set = self._seen_set.setdefault(key, set())
         seen_queue = self._seen_queue.setdefault(key, deque())
         if message_id in seen_set:
@@ -768,6 +1404,23 @@ class MochatChannel(BaseChannel):
         return False
 
     async def _enqueue_delayed_entry(self, key: str, target_id: str, target_kind: str, entry: MochatBufferedEntry) -> None:
+        """异步执行 `_enqueue_delayed_entry`。
+
+        【中文名称】_enqueue_delayed_entry
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - key: 调用方传入的 `key` 数据；具体类型以函数签名为准。
+        - target_id: 调用方传入的 `target_id` 数据；具体类型以函数签名为准。
+        - target_kind: 调用方传入的 `target_kind` 数据；具体类型以函数签名为准。
+        - entry: 调用方传入的 `entry` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         state = self._delay_states.setdefault(key, DelayState())
         async with state.lock:
             state.entries.append(entry)
@@ -776,10 +1429,44 @@ class MochatChannel(BaseChannel):
             state.timer = asyncio.create_task(self._delay_flush_after(key, target_id, target_kind))
 
     async def _delay_flush_after(self, key: str, target_id: str, target_kind: str) -> None:
+        """异步执行 `_delay_flush_after`。
+
+        【中文名称】_delay_flush_after
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - key: 调用方传入的 `key` 数据；具体类型以函数签名为准。
+        - target_id: 调用方传入的 `target_id` 数据；具体类型以函数签名为准。
+        - target_kind: 调用方传入的 `target_kind` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         await asyncio.sleep(max(0, self.config.reply_delay_ms) / 1000.0)
         await self._flush_delayed_entries(key, target_id, target_kind, "timer", None)
 
     async def _flush_delayed_entries(self, key: str, target_id: str, target_kind: str, reason: str, entry: MochatBufferedEntry | None) -> None:
+        """异步执行 `_flush_delayed_entries`。
+
+        【中文名称】_flush_delayed_entries
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - key: 调用方传入的 `key` 数据；具体类型以函数签名为准。
+        - target_id: 调用方传入的 `target_id` 数据；具体类型以函数签名为准。
+        - target_kind: 调用方传入的 `target_kind` 数据；具体类型以函数签名为准。
+        - reason: 调用方传入的 `reason` 数据；具体类型以函数签名为准。
+        - entry: 调用方传入的 `entry` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         state = self._delay_states.setdefault(key, DelayState())
         async with state.lock:
             if entry:
@@ -794,6 +1481,23 @@ class MochatChannel(BaseChannel):
             await self._dispatch_entries(target_id, target_kind, entries, reason == "mention")
 
     async def _dispatch_entries(self, target_id: str, target_kind: str, entries: list[MochatBufferedEntry], was_mentioned: bool) -> None:
+        """异步执行 `_dispatch_entries`。
+
+        【中文名称】_dispatch_entries
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - target_id: 调用方传入的 `target_id` 数据；具体类型以函数签名为准。
+        - target_kind: 调用方传入的 `target_kind` 数据；具体类型以函数签名为准。
+        - entries: 调用方传入的 `entries` 数据；具体类型以函数签名为准。
+        - was_mentioned: 调用方传入的 `was_mentioned` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not entries:
             return
         last = entries[-1]
@@ -811,14 +1515,42 @@ class MochatChannel(BaseChannel):
         )
 
     async def _cancel_delay_timers(self) -> None:
+        """异步执行 `_cancel_delay_timers`。
+
+        【中文名称】_cancel_delay_timers
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         for state in self._delay_states.values():
             if state.timer:
                 state.timer.cancel()
         self._delay_states.clear()
 
-    # ---- notify handlers ---------------------------------------------------
+    # 说明：这里处理 MoChat 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     async def _handle_notify_chat_message(self, payload: Any) -> None:
+        """异步执行 `_handle_notify_chat_message`。
+
+        【中文名称】_handle_notify_chat_message
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - payload: 调用方传入的 `payload` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not isinstance(payload, dict):
             return
         group_id = _str_field(payload, "groupId")
@@ -838,6 +1570,20 @@ class MochatChannel(BaseChannel):
         await self._process_inbound_event(panel_id, evt, "panel")
 
     async def _handle_notify_inbox_append(self, payload: Any) -> None:
+        """异步执行 `_handle_notify_inbox_append`。
+
+        【中文名称】_handle_notify_inbox_append
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - payload: 调用方传入的 `payload` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not isinstance(payload, dict) or payload.get("type") != "message":
             return
         detail = payload.get("payload")
@@ -865,9 +1611,24 @@ class MochatChannel(BaseChannel):
         )
         await self._process_inbound_event(session_id, evt, "session")
 
-    # ---- cursor persistence ------------------------------------------------
+    # 说明：这里处理 MoChat 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     def _mark_session_cursor(self, session_id: str, cursor: int) -> None:
+        """执行 `_mark_session_cursor`。
+
+        【中文名称】_mark_session_cursor
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - session_id: 调用方传入的 `session_id` 数据；具体类型以函数签名为准。
+        - cursor: 调用方传入的 `cursor` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if cursor < 0 or cursor < self._session_cursor.get(session_id, 0):
             return
         self._session_cursor[session_id] = cursor
@@ -875,10 +1636,38 @@ class MochatChannel(BaseChannel):
             self._cursor_save_task = asyncio.create_task(self._save_cursor_debounced())
 
     async def _save_cursor_debounced(self) -> None:
+        """异步执行 `_save_cursor_debounced`。
+
+        【中文名称】_save_cursor_debounced
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         await asyncio.sleep(CURSOR_SAVE_DEBOUNCE_S)
         await self._save_session_cursors()
 
     async def _load_session_cursors(self) -> None:
+        """异步执行 `_load_session_cursors`。
+
+        【中文名称】_load_session_cursors
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self._cursor_path.exists():
             return
         try:
@@ -893,6 +1682,20 @@ class MochatChannel(BaseChannel):
                     self._session_cursor[sid] = cur
 
     async def _save_session_cursors(self) -> None:
+        """异步执行 `_save_session_cursors`。
+
+        【中文名称】_save_session_cursors
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         try:
             self._state_dir.mkdir(parents=True, exist_ok=True)
             self._cursor_path.write_text(json.dumps({
@@ -902,9 +1705,24 @@ class MochatChannel(BaseChannel):
         except Exception as e:
             self.logger.warning("Failed to save cursor file: {}", e)
 
-    # ---- HTTP helpers ------------------------------------------------------
+    # 说明：这里处理 MoChat 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     async def _post_json(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """异步执行 `_post_json`。
+
+        【中文名称】_post_json
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+        - payload: 调用方传入的 `payload` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self._http:
             raise RuntimeError("Mochat HTTP client not initialized")
         url = f"{self.config.base_url.strip().rstrip('/')}{path}"
@@ -927,7 +1745,24 @@ class MochatChannel(BaseChannel):
 
     async def _api_send(self, path: str, id_key: str, id_val: str,
                         content: str, reply_to: str | None, group_id: str | None = None) -> dict[str, Any]:
-        """Unified send helper for session and panel messages."""
+        """异步执行 `_api_send`。
+
+        【中文名称】_api_send
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+        - id_key: 调用方传入的 `id_key` 数据；具体类型以函数签名为准。
+        - id_val: 调用方传入的 `id_val` 数据；具体类型以函数签名为准。
+        - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+        - reply_to: 调用方传入的 `reply_to` 数据；具体类型以函数签名为准。
+        - group_id: 调用方传入的 `group_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         body: dict[str, Any] = {id_key: id_val, "content": content}
         if reply_to:
             body["replyTo"] = reply_to
@@ -937,6 +1772,20 @@ class MochatChannel(BaseChannel):
 
     @staticmethod
     def _read_group_id(metadata: dict[str, Any]) -> str | None:
+        """执行 `_read_group_id`。
+
+        【中文名称】_read_group_id
+
+        【功能说明】
+        这是 MoChat 渠道适配器 中的一个步骤函数，用来支撑：负责通过 Socket.IO/MsgPack 与 MoChat 桥通信，把私聊或群聊消息变成 InboundMessage，并把回复发回桥端。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - metadata: 调用方传入的 `metadata` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not isinstance(metadata, dict):
             return None
         value = metadata.get("group_id") or metadata.get("groupId")

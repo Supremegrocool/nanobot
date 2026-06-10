@@ -1,4 +1,18 @@
-"""Telegram channel implementation using python-telegram-bot."""
+"""Telegram 渠道适配器。
+
+【中文名称】Telegram 渠道适配器
+
+【功能说明】
+负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的渠道适配器代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 from __future__ import annotations
 
@@ -34,27 +48,63 @@ from nanobot.config.schema import Base
 from nanobot.security.network import validate_url_target
 from nanobot.utils.helpers import split_message
 
-TELEGRAM_MAX_MESSAGE_LEN = 4000  # Telegram message character limit
-# Telegram's actual API limit is 4096; we split raw markdown at 4000 as a
-# safety margin for mid-stream edits (plain text).  For _stream_end, we
-# convert to HTML first and then split at the true 4096-char boundary so
-# the final rendered message never overflows.
+TELEGRAM_MAX_MESSAGE_LEN = 4000  # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 TELEGRAM_HTML_MAX_LEN = 4096
-TELEGRAM_REPLY_CONTEXT_MAX_LEN = TELEGRAM_MAX_MESSAGE_LEN  # Max length for reply context in user message
+TELEGRAM_REPLY_CONTEXT_MAX_LEN = TELEGRAM_MAX_MESSAGE_LEN  # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
 
 def _escape_telegram_html(text: str) -> str:
-    """Escape text for Telegram HTML parse mode."""
+    """执行 `_escape_telegram_html`。
+
+    【中文名称】_escape_telegram_html
+
+    【功能说明】
+    这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def _tool_hint_to_telegram_blockquote(text: str) -> str:
-    """Render tool hints as an expandable blockquote (collapsed by default)."""
+    """执行 `_tool_hint_to_telegram_blockquote`。
+
+    【中文名称】_tool_hint_to_telegram_blockquote
+
+    【功能说明】
+    这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     return f"<blockquote expandable>{_escape_telegram_html(text)}</blockquote>" if text else ""
 
 
 def _strip_md(s: str) -> str:
-    """Strip markdown inline formatting from text."""
+    """执行 `_strip_md`。
+
+    【中文名称】_strip_md
+
+    【功能说明】
+    这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - s: 调用方传入的 `s` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     s = re.sub(r'\*\*(.+?)\*\*', r'\1', s)
     s = re.sub(r'__(.+?)__', r'\1', s)
     s = re.sub(r'~~(.+?)~~', r'\1', s)
@@ -63,37 +113,71 @@ def _strip_md(s: str) -> str:
 
 
 def _strip_md_block(text: str) -> str:
-    """Strip block-level and inline markdown for readable plain-text preview.
+    """执行 `_strip_md_block`。
 
-    Used during streaming mid-edits so users see clean text instead of raw
-    markdown syntax while the response is still being generated.
-    """
-    # Code blocks -> just the code
+    【中文名称】_strip_md_block
+
+    【功能说明】
+    这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+    # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     text = re.sub(r'```[\w]*\n?([\s\S]*?)```', r'\1', text)
-    # Headers -> plain text
+    # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     text = re.sub(r'^#{1,6}\s+(.+)$', r'\1', text, flags=re.MULTILINE)
-    # Blockquotes
+    # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     text = re.sub(r'^>\s*(.*)$', r'\1', text, flags=re.MULTILINE)
-    # Bold / italic / strikethrough
+    # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
     text = re.sub(r'__(.+?)__', r'\1', text)
     text = re.sub(r'(?<![a-zA-Z0-9])_([^_]+)_(?![a-zA-Z0-9])', r'\1', text)
     text = re.sub(r'~~(.+?)~~', r'\1', text)
-    # Inline code
+    # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     text = re.sub(r'`([^`]+)`', r'\1', text)
-    # Links [text](url) -> text
+    # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
-    # Bullet lists
+    # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     text = re.sub(r'^[-*]\s+', '• ', text, flags=re.MULTILINE)
-    # Numbered lists (normalize spacing)
+    # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     text = re.sub(r'^(\d+)\.\s+', r'\1. ', text, flags=re.MULTILINE)
     return text
 
 
 def _render_table_box(table_lines: list[str]) -> str:
-    """Convert markdown pipe-table to compact aligned text for <pre> display."""
+    """执行 `_render_table_box`。
+
+    【中文名称】_render_table_box
+
+    【功能说明】
+    这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - table_lines: 调用方传入的 `table_lines` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
 
     def dw(s: str) -> int:
+        """执行 `dw`。
+
+        【中文名称】dw
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - s: 调用方传入的 `s` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return sum(2 if unicodedata.east_asian_width(c) in ('W', 'F') else 1 for c in s)
 
     rows: list[list[str]] = []
@@ -113,6 +197,20 @@ def _render_table_box(table_lines: list[str]) -> str:
     widths = [max(dw(r[c]) for r in rows) for c in range(ncols)]
 
     def dr(cells: list[str]) -> str:
+        """执行 `dr`。
+
+        【中文名称】dr
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - cells: 调用方传入的 `cells` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return '  '.join(f'{c}{" " * (w - dw(c))}' for c, w in zip(cells, widths))
 
     out = [dr(rows[0])]
@@ -123,21 +221,45 @@ def _render_table_box(table_lines: list[str]) -> str:
 
 
 def _markdown_to_telegram_html(text: str) -> str:
-    """
-    Convert markdown to Telegram-safe HTML.
-    """
+    """执行 `_markdown_to_telegram_html`。
+
+    【中文名称】_markdown_to_telegram_html
+
+    【功能说明】
+    这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if not text:
         return ""
 
-    # 1. Extract and protect code blocks (preserve content from other processing)
+    # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     code_blocks: list[str] = []
     def save_code_block(m: re.Match) -> str:
+        """执行 `save_code_block`。
+
+        【中文名称】save_code_block
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - m: 调用方传入的 `m` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         code_blocks.append(m.group(1))
         return f"\x00CB{len(code_blocks) - 1}\x00"
 
     text = re.sub(r'```[\w]*\n?([\s\S]*?)```', save_code_block, text)
 
-    # 1.5. Convert markdown tables to box-drawing (reuse code_block placeholders)
+    # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     lines = text.split('\n')
     rebuilt: list[str] = []
     li = 0
@@ -158,68 +280,92 @@ def _markdown_to_telegram_html(text: str) -> str:
             li += 1
     text = '\n'.join(rebuilt)
 
-    # 2. Extract and protect inline code
+    # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     inline_codes: list[str] = []
     def save_inline_code(m: re.Match) -> str:
+        """执行 `save_inline_code`。
+
+        【中文名称】save_inline_code
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - m: 调用方传入的 `m` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         inline_codes.append(m.group(1))
         return f"\x00IC{len(inline_codes) - 1}\x00"
 
     text = re.sub(r'`([^`]+)`', save_inline_code, text)
 
-    # 3. Headers # Title -> <b>Title</b> (preserve visual hierarchy)
+    # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     text = re.sub(r'^#{1,6}\s+(.+)$', r'⟪B⟫\1⟪/B⟫', text, flags=re.MULTILINE)
 
-    # 4. Blockquotes > text -> just the text (before HTML escaping)
+    # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     text = re.sub(r'^>\s*(.*)$', r'\1', text, flags=re.MULTILINE)
 
-    # 5. Escape HTML special characters
+    # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     text = _escape_telegram_html(text)
 
-    # 6. Links [text](url) - must be before bold/italic to handle nested cases
+    # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', text)
 
-    # 7. Bold **text** or __text__
+    # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
     text = re.sub(r'__(.+?)__', r'<b>\1</b>', text)
 
-    # 8. Italic _text_ (avoid matching inside words like some_var_name)
+    # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     text = re.sub(r'(?<![a-zA-Z0-9])_([^_]+)_(?![a-zA-Z0-9])', r'<i>\1</i>', text)
 
-    # 9. Strikethrough ~~text~~
+    # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     text = re.sub(r'~~(.+?)~~', r'<s>\1</s>', text)
 
-    # 10. Bullet lists - item -> • item
+    # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     text = re.sub(r'^[-*]\s+', '• ', text, flags=re.MULTILINE)
 
-    # 10.5. Numbered lists  1. item -> 1. item (keep number, normalize indent)
+    # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     text = re.sub(r'^(\d+)\.\s+', r'\1. ', text, flags=re.MULTILINE)
 
-    # 11. Restore inline code with HTML tags
+    # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     for i, code in enumerate(inline_codes):
-        # Escape HTML in code content
+        # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         escaped = _escape_telegram_html(code)
         text = text.replace(f"\x00IC{i}\x00", f"<code>{escaped}</code>")
 
-    # 12. Restore code blocks with HTML tags
+    # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     for i, code in enumerate(code_blocks):
-        # Escape HTML in code content
+        # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         escaped = _escape_telegram_html(code)
         text = text.replace(f"\x00CB{i}\x00", f"<pre><code>{escaped}</code></pre>")
 
-    # 13. Restore header bold markers (inserted in step 3, after HTML escaping)
+    # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     text = text.replace('⟪B⟫', '<b>').replace('⟪/B⟫', '</b>')
 
     return text
 
 
 _SEND_MAX_RETRIES = 3
-_SEND_RETRY_BASE_DELAY = 0.5  # seconds, doubled each retry
-_STREAM_EDIT_INTERVAL_DEFAULT = 0.6  # min seconds between edit_message_text calls
+_SEND_RETRY_BASE_DELAY = 0.5  # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+_STREAM_EDIT_INTERVAL_DEFAULT = 0.6  # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
 
 @dataclass
 class _StreamBuf:
-    """Per-chat streaming accumulator for progressive message editing."""
+    """_StreamBuf 类。
+
+    【中文名称】_StreamBuf
+
+    【功能说明】
+    这是 Telegram 渠道适配器 中的核心数据结构或服务类。负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
     text: str = ""
     message_id: int | None = None
     last_edit: float = 0.0
@@ -228,7 +374,17 @@ class _StreamBuf:
 
 @dataclass
 class _QueuedTelegramUpdate:
-    """Telegram update staged for per-session ordered processing."""
+    """_QueuedTelegramUpdate 类。
+
+    【中文名称】_QueuedTelegramUpdate
+
+    【功能说明】
+    这是 Telegram 渠道适配器 中的核心数据结构或服务类。负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     kind: Literal["command", "message"]
     update: Update
@@ -237,7 +393,17 @@ class _QueuedTelegramUpdate:
 
 
 class TelegramConfig(Base):
-    """Telegram channel configuration."""
+    """TelegramConfig 类。
+
+    【中文名称】TelegramConfig
+
+    【功能说明】
+    这是 Telegram 渠道适配器 中的核心数据结构或服务类。负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     enabled: bool = False
     token: str = ""
@@ -250,7 +416,7 @@ class TelegramConfig(Base):
     connection_pool_size: int = 32
     pool_timeout: float = 5.0
     streaming: bool = True
-    # Enable inline keyboard buttons in Telegram messages.
+    # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     inline_keyboards: bool = False
     stream_edit_interval: float = Field(default=_STREAM_EDIT_INTERVAL_DEFAULT, ge=0.1)
     webhook_url: str = ""
@@ -263,6 +429,20 @@ class TelegramConfig(Base):
     @field_validator("webhook_path")
     @classmethod
     def webhook_path_must_start_with_slash(cls, value: str) -> str:
+        """执行 `webhook_path_must_start_with_slash`。
+
+        【中文名称】webhook_path_must_start_with_slash
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         value = value.strip() or "/telegram"
         if not value.startswith("/"):
             raise ValueError('webhook_path must start with "/"')
@@ -270,6 +450,20 @@ class TelegramConfig(Base):
 
     @model_validator(mode="after")
     def validate_webhook_config(self) -> "TelegramConfig":
+        """执行 `validate_webhook_config`。
+
+        【中文名称】validate_webhook_config
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if self.mode != "webhook":
             return self
 
@@ -290,17 +484,22 @@ class TelegramConfig(Base):
 
 
 class TelegramChannel(BaseChannel):
-    """
-    Telegram channel using long polling or webhook mode.
+    """TelegramChannel 类。
 
-    Long polling is the default. Webhook mode requires a public HTTPS URL and a
-    Telegram secret token.
-    """
+    【中文名称】TelegramChannel
+
+    【功能说明】
+    这是 Telegram 渠道适配器 中的核心数据结构或服务类。负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     name = "telegram"
     display_name = "Telegram"
 
-    # Commands registered with Telegram's command menu
+    # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     BOT_COMMANDS = [
         BotCommand("start", "Start the bot"),
         BotCommand("new", "Start a new conversation"),
@@ -318,35 +517,76 @@ class TelegramChannel(BaseChannel):
         BotCommand("help", "Show available commands"),
     ]
 
-    # Regex for slash commands routed to AgentLoop via ``_forward_command``.
-    # Hyphenated ``dream-*`` commands stay on a separate handler (below).
+    # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     TELEGRAM_BUS_SLASH_COMMAND_RE = re.compile(
         r"^/(?:new|stop|restart|status|dream|history|goal|pairing|model|skill)(?:@\w+)?(?:\s+.*)?$"
     )
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
+        """执行 `default_config`。
+
+        【中文名称】default_config
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return TelegramConfig().model_dump(by_alias=True)
 
     def __init__(self, config: Any, bus: MessageBus):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - config: 调用方传入的 `config` 数据；具体类型以函数签名为准。
+        - bus: 调用方传入的 `bus` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if isinstance(config, dict):
             config = TelegramConfig.model_validate(config)
         super().__init__(config, bus)
         self.config: TelegramConfig = config
         self._app: Application | None = None
-        self._chat_ids: dict[str, int] = {}  # Map sender_id to chat_id for replies
-        self._typing_tasks: dict[str, asyncio.Task] = {}  # chat_id -> typing loop task
+        self._chat_ids: dict[str, int] = {}  # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        self._typing_tasks: dict[str, asyncio.Task] = {}  # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         self._media_group_buffers: dict[str, dict] = {}
         self._media_group_tasks: dict[str, asyncio.Task] = {}
         self._message_threads: dict[tuple[str, int], int] = {}
         self._bot_user_id: int | None = None
         self._bot_username: str | None = None
-        self._stream_bufs: dict[str, _StreamBuf] = {}  # chat_id -> streaming state
+        self._stream_bufs: dict[str, _StreamBuf] = {}  # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         self._inbound_buffers: dict[str, list[_QueuedTelegramUpdate]] = {}
         self._inbound_workers: dict[str, asyncio.Task] = {}
 
     def is_allowed(self, sender_id: str) -> bool:
-        """Preserve Telegram's legacy id|username allowlist matching."""
+        """执行 `is_allowed`。
+
+        【中文名称】is_allowed
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - sender_id: 调用方传入的 `sender_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if super().is_allowed(sender_id):
             return True
 
@@ -366,7 +606,19 @@ class TelegramChannel(BaseChannel):
 
     @staticmethod
     def _normalize_telegram_command(content: str) -> str:
-        """Map Telegram-safe command aliases back to canonical nanobot commands."""
+        """执行 `_normalize_telegram_command`。
+
+        【中文名称】_normalize_telegram_command
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not content.startswith("/"):
             return content
         if content == "/dream_log" or content.startswith("/dream_log "):
@@ -376,7 +628,19 @@ class TelegramChannel(BaseChannel):
         return content
 
     async def start(self) -> None:
-        """Start the Telegram bot."""
+        """异步执行 `start`。
+
+        【中文名称】start
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self.config.token:
             self.logger.error("bot token not configured")
             return
@@ -385,7 +649,7 @@ class TelegramChannel(BaseChannel):
 
         proxy = self.config.proxy or None
 
-        # Separate pools so long-polling (getUpdates) never starves outbound sends.
+        # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         api_request = HTTPXRequest(
             connection_pool_size=self.config.connection_pool_size,
             pool_timeout=self.config.pool_timeout,
@@ -409,7 +673,7 @@ class TelegramChannel(BaseChannel):
         self._app = builder.build()
         self._app.add_error_handler(self._on_error)
 
-        # Add command handlers (using Regex to support @username suffixes before bot initialization)
+        # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         self._app.add_handler(MessageHandler(filters.Regex(r"^/start(?:@\w+)?$"), self._on_start))
         self._app.add_handler(
             MessageHandler(
@@ -425,7 +689,7 @@ class TelegramChannel(BaseChannel):
         )
         self._app.add_handler(MessageHandler(filters.Regex(r"^/help(?:@\w+)?$"), self._on_help))
 
-        # Add message handler for text, photos, video, voice, documents, and locations
+        # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         self._app.add_handler(
             MessageHandler(
                 (filters.TEXT | filters.PHOTO | filters.VIDEO | filters.VIDEO_NOTE
@@ -436,7 +700,7 @@ class TelegramChannel(BaseChannel):
             )
         )
 
-        # Conditionally register inline keyboard callback handler
+        # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if self.config.inline_keyboards:
             self._app.add_handler(CallbackQueryHandler(self._on_callback_query))
             allowed_updates = ["message", "callback_query"]
@@ -449,11 +713,11 @@ class TelegramChannel(BaseChannel):
         else:
             self.logger.info("Starting bot (polling mode)...")
 
-        # Initialize and start receiving updates
+        # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         await self._app.initialize()
         await self._app.start()
 
-        # Get bot info and register command menu
+        # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         bot_info = await self._app.bot.get_me()
         self._bot_user_id = getattr(bot_info, "id", None)
         self._bot_username = getattr(bot_info, "username", None)
@@ -466,8 +730,8 @@ class TelegramChannel(BaseChannel):
             self.logger.warning("Failed to register bot commands: {}", e)
 
         if self.config.mode == "webhook":
-            # ``url_path`` is the local HTTP route. ``webhook_url`` is the
-            # public HTTPS URL Telegram calls; reverse proxies may rewrite it.
+            # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             await self._app.updater.start_webhook(
                 listen=self.config.webhook_listen_host,
                 port=self.config.webhook_listen_port,
@@ -479,22 +743,34 @@ class TelegramChannel(BaseChannel):
                 max_connections=self.config.webhook_max_connections,
             )
         else:
-            # Start polling (this runs until stopped)
+            # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             await self._app.updater.start_polling(
                 allowed_updates=allowed_updates,
-                drop_pending_updates=False,  # Process pending messages on startup
+                drop_pending_updates=False,  # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 error_callback=self._on_polling_error,
             )
 
-        # Keep running until stopped
+        # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         while self._running:
             await asyncio.sleep(1)
 
     async def stop(self) -> None:
-        """Stop the Telegram bot."""
+        """异步执行 `stop`。
+
+        【中文名称】stop
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         self._running = False
 
-        # Cancel all typing indicators
+        # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         for chat_id in list(self._typing_tasks):
             self._stop_typing(chat_id)
 
@@ -517,7 +793,19 @@ class TelegramChannel(BaseChannel):
 
     @staticmethod
     def _get_media_type(path: str) -> str:
-        """Guess media type from file extension."""
+        """执行 `_get_media_type`。
+
+        【中文名称】_get_media_type
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
         if ext in ("jpg", "jpeg", "png", "gif", "webp"):
             return "photo"
@@ -531,15 +819,41 @@ class TelegramChannel(BaseChannel):
 
     @staticmethod
     def _is_remote_media_url(path: str) -> bool:
+        """执行 `_is_remote_media_url`。
+
+        【中文名称】_is_remote_media_url
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return path.startswith(("http://", "https://"))
 
     async def send(self, msg: OutboundMessage) -> None:
-        """Send a message through Telegram."""
+        """异步执行 `send`。
+
+        【中文名称】send
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - msg: 调用方传入的 `msg` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self._app:
             self.logger.warning("bot not running")
             return
 
-        # Only stop typing indicator and remove reaction for final responses
+        # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if not msg.metadata.get("_progress", False):
             self._stop_typing(msg.chat_id)
             if reply_to_message_id := msg.metadata.get("message_id"):
@@ -567,7 +881,7 @@ class TelegramChannel(BaseChannel):
                     allow_sending_without_reply=True
                 )
 
-        # Send media files
+        # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         for media_path in (msg.media or []):
             try:
                 media_type = self._get_media_type(media_path)
@@ -587,7 +901,7 @@ class TelegramChannel(BaseChannel):
                 if media_type == "video":
                     extra["supports_streaming"] = True
 
-                # Telegram Bot API accepts HTTP(S) URLs directly for media params.
+                # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 if self._is_remote_media_url(media_path):
                     ok, error = validate_url_target(media_path)
                     if not ok:
@@ -623,13 +937,13 @@ class TelegramChannel(BaseChannel):
                     **thread_kwargs,
                 )
 
-        # Send text content
+        # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if msg.content and msg.content != "[empty message]":
             render_as_blockquote = bool(msg.metadata.get("_tool_hint"))
             buttons = getattr(msg, "buttons", None) or []
             reply_markup = self._build_keyboard(buttons) if buttons else None
             text = msg.content
-            # Fallback: no native keyboard → splice labels into the message so the choices survive.
+            # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if buttons and reply_markup is None:
                 text = f"{text}\n\n{self._buttons_as_text(buttons)}"
             chunks = split_message(text, TELEGRAM_MAX_MESSAGE_LEN)
@@ -642,7 +956,21 @@ class TelegramChannel(BaseChannel):
                 )
 
     async def _call_with_retry(self, fn, *args, **kwargs):
-        """Call an async Telegram API function with retry on pool/network timeout and RetryAfter."""
+        """异步执行 `_call_with_retry`。
+
+        【中文名称】_call_with_retry
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - fn: 调用方传入的 `fn` 数据；具体类型以函数签名为准。
+        - *args: 调用方传入的 `args` 数据；具体类型以函数签名为准。
+        - **kwargs: 调用方传入的 `kwargs` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         from telegram.error import RetryAfter
 
         for attempt in range(1, _SEND_MAX_RETRIES + 1):
@@ -676,7 +1004,24 @@ class TelegramChannel(BaseChannel):
         render_as_blockquote: bool = False,
         reply_markup=None,
     ) -> None:
-        """Send a plain text message with HTML fallback."""
+        """异步执行 `_send_text`。
+
+        【中文名称】_send_text
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+        - reply_params: 调用方传入的 `reply_params` 数据；具体类型以函数签名为准。
+        - thread_kwargs: 调用方传入的 `thread_kwargs` 数据；具体类型以函数签名为准。
+        - render_as_blockquote: 调用方传入的 `render_as_blockquote` 数据；具体类型以函数签名为准。
+        - reply_markup: 调用方传入的 `reply_markup` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         try:
             html = _tool_hint_to_telegram_blockquote(text) if render_as_blockquote else _markdown_to_telegram_html(text)
             await self._call_with_retry(
@@ -703,10 +1048,38 @@ class TelegramChannel(BaseChannel):
 
     @staticmethod
     def _is_not_modified_error(exc: Exception) -> bool:
+        """执行 `_is_not_modified_error`。
+
+        【中文名称】_is_not_modified_error
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - exc: 调用方传入的 `exc` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return isinstance(exc, BadRequest) and "message is not modified" in str(exc).lower()
 
     async def send_delta(self, chat_id: str, delta: str, metadata: dict[str, Any] | None = None) -> None:
-        """Progressive message editing: send on first delta, edit on subsequent ones."""
+        """异步执行 `send_delta`。
+
+        【中文名称】send_delta
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - delta: 调用方传入的 `delta` 数据；具体类型以函数签名为准。
+        - metadata: 调用方传入的 `metadata` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self._app:
             return
         meta = metadata or {}
@@ -742,15 +1115,15 @@ class TelegramChannel(BaseChannel):
                     text=primary_html, parse_mode="HTML",
                 )
             except BadRequest as e:
-                # Only fall back to plain text on actual HTML parse/format errors.
-                # Network errors (TimedOut, NetworkError) should propagate immediately
-                # to avoid doubling connection demand during pool exhaustion.
+                # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+                # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+                # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 if self._is_not_modified_error(e):
                     self.logger.debug("Final stream edit already applied for {}", chat_id)
                     self._stream_bufs.pop(chat_id, None)
                     return
                 self.logger.debug("Final stream edit failed (HTML), trying plain: {}", e)
-                # Fall back to raw markdown (not HTML) so users don't see raw tags.
+                # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 primary_plain = split_message(raw_text, TELEGRAM_MAX_MESSAGE_LEN)[0] if len(raw_text) > TELEGRAM_MAX_MESSAGE_LEN else raw_text
                 try:
                     await self._call_with_retry(
@@ -763,7 +1136,7 @@ class TelegramChannel(BaseChannel):
                         self.logger.debug("Final stream plain edit already applied for {}", chat_id)
                     else:
                         self.logger.warning("Final stream edit failed: {}", e2)
-                        raise  # Let ChannelManager handle retry
+                        raise  # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             for extra_html_chunk in extra_html_chunks:
                 try:
                     await self._call_with_retry(
@@ -773,7 +1146,7 @@ class TelegramChannel(BaseChannel):
                         **thread_kwargs,
                     )
                 except Exception:
-                    # Fall back to _send_text which handles HTML→plain gracefully.
+                    # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                     await self._send_text(int_chat_id, extra_html_chunk)
             self._stream_bufs.pop(chat_id, None)
             return
@@ -805,7 +1178,7 @@ class TelegramChannel(BaseChannel):
                 buf.last_edit = now
             except Exception as e:
                 self.logger.warning("Stream initial send failed: {}", e)
-                raise  # Let ChannelManager handle retry
+                raise  # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         elif (now - buf.last_edit) >= self.config.stream_edit_interval:
             if len(buf.text) > TELEGRAM_MAX_MESSAGE_LEN:
                 await self._flush_stream_overflow(int_chat_id, buf, thread_kwargs)
@@ -824,7 +1197,7 @@ class TelegramChannel(BaseChannel):
                     buf.last_edit = now
                     return
                 self.logger.warning("Stream edit failed: {}", e)
-                raise  # Let ChannelManager handle retry
+                raise  # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     async def _flush_stream_overflow(
         self,
@@ -832,12 +1205,21 @@ class TelegramChannel(BaseChannel):
         buf: "_StreamBuf",
         thread_kwargs: dict,
     ) -> None:
-        """Split an oversized stream buffer mid-flight.
+        """异步执行 `_flush_stream_overflow`。
 
-        Edits the current stream message with the first chunk, sends any
-        intermediate chunks as standalone messages, then opens a new message
-        for the tail so subsequent deltas continue streaming into it.
-        """
+        【中文名称】_flush_stream_overflow
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - buf: 调用方传入的 `buf` 数据；具体类型以函数签名为准。
+        - thread_kwargs: 调用方传入的 `thread_kwargs` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         chunks = split_message(buf.text, TELEGRAM_MAX_MESSAGE_LEN)
         if len(chunks) <= 1:
             return
@@ -865,7 +1247,20 @@ class TelegramChannel(BaseChannel):
         buf.text = tail
 
     async def _on_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /start command."""
+        """异步执行 `_on_start`。
+
+        【中文名称】_on_start
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - update: 调用方传入的 `update` 数据；具体类型以函数签名为准。
+        - context: 调用方传入的 `context` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not update.message or not update.effective_user:
             return
 
@@ -881,7 +1276,20 @@ class TelegramChannel(BaseChannel):
         )
 
     async def _on_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /help command for allowed users only."""
+        """异步执行 `_on_help`。
+
+        【中文名称】_on_help
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - update: 调用方传入的 `update` 数据；具体类型以函数签名为准。
+        - context: 调用方传入的 `context` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not update.message or not update.effective_user:
             return
         user = update.effective_user
@@ -893,11 +1301,39 @@ class TelegramChannel(BaseChannel):
 
     @staticmethod
     def _sender_id(user) -> str:
-        """Build sender_id with username for allowlist matching."""
+        """执行 `_sender_id`。
+
+        【中文名称】_sender_id
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - user: 调用方传入的 `user` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         sid = str(user.id)
         return f"{sid}|{user.username}" if user.username else sid
 
     async def _send_pairing_code_if_private(self, sender_id: str, message, user) -> None:
+        """异步执行 `_send_pairing_code_if_private`。
+
+        【中文名称】_send_pairing_code_if_private
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - sender_id: 调用方传入的 `sender_id` 数据；具体类型以函数签名为准。
+        - message: 调用方传入的 `message` 数据；具体类型以函数签名为准。
+        - user: 调用方传入的 `user` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if message.chat.type != "private":
             return
         await self._handle_message(
@@ -910,7 +1346,19 @@ class TelegramChannel(BaseChannel):
 
     @staticmethod
     def _derive_topic_session_key(message) -> str | None:
-        """Derive topic-scoped session key for Telegram chats with threads."""
+        """执行 `_derive_topic_session_key`。
+
+        【中文名称】_derive_topic_session_key
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - message: 调用方传入的 `message` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         message_thread_id = getattr(message, "message_thread_id", None)
         if message_thread_id is None:
             return None
@@ -918,7 +1366,20 @@ class TelegramChannel(BaseChannel):
 
     @staticmethod
     def _build_message_metadata(message, user) -> dict:
-        """Build common Telegram inbound metadata payload."""
+        """执行 `_build_message_metadata`。
+
+        【中文名称】_build_message_metadata
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - message: 调用方传入的 `message` 数据；具体类型以函数签名为准。
+        - user: 调用方传入的 `user` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         reply_to = getattr(message, "reply_to_message", None)
         return {
             "message_id": message.message_id,
@@ -932,7 +1393,19 @@ class TelegramChannel(BaseChannel):
         }
 
     async def _extract_reply_context(self, message) -> str | None:
-        """Extract text from the message being replied to, if any."""
+        """异步执行 `_extract_reply_context`。
+
+        【中文名称】_extract_reply_context
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - message: 调用方传入的 `message` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         reply = getattr(message, "reply_to_message", None)
         if not reply:
             return None
@@ -958,7 +1431,20 @@ class TelegramChannel(BaseChannel):
     async def _download_message_media(
         self, msg, *, add_failure_content: bool = False
     ) -> tuple[list[str], list[str]]:
-        """Download media from a message (current or reply). Returns (media_paths, content_parts)."""
+        """异步执行 `_download_message_media`。
+
+        【中文名称】_download_message_media
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - msg: 调用方传入的 `msg` 数据；具体类型以函数签名为准。
+        - add_failure_content: 调用方传入的 `add_failure_content` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         media_file = None
         media_type = None
         if getattr(msg, "photo", None):
@@ -1010,7 +1496,19 @@ class TelegramChannel(BaseChannel):
             return [], []
 
     async def _ensure_bot_identity(self) -> tuple[int | None, str | None]:
-        """Load bot identity once and reuse it for mention/reply checks."""
+        """异步执行 `_ensure_bot_identity`。
+
+        【中文名称】_ensure_bot_identity
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if self._bot_user_id is not None or self._bot_username is not None:
             return self._bot_user_id, self._bot_username
         if not self._app:
@@ -1027,7 +1525,22 @@ class TelegramChannel(BaseChannel):
         bot_username: str,
         bot_id: int | None,
     ) -> bool:
-        """Check Telegram mention entities against the bot username."""
+        """执行 `_has_mention_entity`。
+
+        【中文名称】_has_mention_entity
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+        - entities: 调用方传入的 `entities` 数据；具体类型以函数签名为准。
+        - bot_username: 调用方传入的 `bot_username` 数据；具体类型以函数签名为准。
+        - bot_id: 调用方传入的 `bot_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         handle = f"@{bot_username}".lower()
         for entity in entities or []:
             entity_type = getattr(entity, "type", None)
@@ -1047,7 +1560,19 @@ class TelegramChannel(BaseChannel):
         return handle in text.lower()
 
     async def _is_group_message_for_bot(self, message) -> bool:
-        """Allow group messages when policy is open, @mentioned, or replying to the bot."""
+        """异步执行 `_is_group_message_for_bot`。
+
+        【中文名称】_is_group_message_for_bot
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - message: 调用方传入的 `message` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if message.chat.type == "private" or self.config.group_policy == "open":
             return True
 
@@ -1074,7 +1599,19 @@ class TelegramChannel(BaseChannel):
         return bool(bot_id and reply_user and reply_user.id == bot_id)
 
     def _remember_thread_context(self, message) -> None:
-        """Cache Telegram thread context by chat/message id for follow-up replies."""
+        """执行 `_remember_thread_context`。
+
+        【中文名称】_remember_thread_context
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - message: 调用方传入的 `message` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         message_thread_id = getattr(message, "message_thread_id", None)
         if message_thread_id is None:
             return
@@ -1085,12 +1622,36 @@ class TelegramChannel(BaseChannel):
 
     @staticmethod
     def _queue_key_for_message(message) -> str:
-        """Return the final nanobot session key used for ordered Telegram ingress."""
+        """执行 `_queue_key_for_message`。
+
+        【中文名称】_queue_key_for_message
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - message: 调用方传入的 `message` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         return TelegramChannel._derive_topic_session_key(message) or f"telegram:{message.chat_id}"
 
     @staticmethod
     def _sort_key_for_update(update: Update) -> tuple[int, int]:
-        """Sort by chat message id first, then Telegram update id."""
+        """执行 `_sort_key_for_update`。
+
+        【中文名称】_sort_key_for_update
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - update: 调用方传入的 `update` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         message = getattr(update, "message", None)
         message_id = int(getattr(message, "message_id", 0) or 0)
         update_id = int(getattr(update, "update_id", 0) or 0)
@@ -1103,7 +1664,21 @@ class TelegramChannel(BaseChannel):
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
     ) -> None:
-        """Stage a Telegram update behind a short per-session reorder window."""
+        """执行 `_enqueue_ordered_update`。
+
+        【中文名称】_enqueue_ordered_update
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - kind: 调用方传入的 `kind` 数据；具体类型以函数签名为准。
+        - update: 调用方传入的 `update` 数据；具体类型以函数签名为准。
+        - context: 调用方传入的 `context` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         message = update.message
         key = self._queue_key_for_message(message)
         self._inbound_buffers.setdefault(key, []).append(
@@ -1120,7 +1695,19 @@ class TelegramChannel(BaseChannel):
             )
 
     async def _drain_ordered_updates(self, key: str) -> None:
-        """Drain one Telegram session buffer in stable message order."""
+        """异步执行 `_drain_ordered_updates`。
+
+        【中文名称】_drain_ordered_updates
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - key: 调用方传入的 `key` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         try:
             while self._running:
                 await asyncio.sleep(0.2)
@@ -1152,7 +1739,20 @@ class TelegramChannel(BaseChannel):
                 self._inbound_workers.pop(key, None)
 
     async def _forward_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Forward slash commands to the bus for unified handling in AgentLoop."""
+        """异步执行 `_forward_command`。
+
+        【中文名称】_forward_command
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - update: 调用方传入的 `update` 数据；具体类型以函数签名为准。
+        - context: 调用方传入的 `context` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not update.message or not update.effective_user:
             return
         if not self._running:
@@ -1161,7 +1761,20 @@ class TelegramChannel(BaseChannel):
         self._enqueue_ordered_update(kind="command", update=update, context=context)
 
     async def _process_forward_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Process a queued slash command."""
+        """异步执行 `_process_forward_command`。
+
+        【中文名称】_process_forward_command
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - update: 调用方传入的 `update` 数据；具体类型以函数签名为准。
+        - context: 调用方传入的 `context` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         message = update.message
         user = update.effective_user
         sender_id = self._sender_id(user)
@@ -1170,7 +1783,7 @@ class TelegramChannel(BaseChannel):
             return
         self._remember_thread_context(message)
 
-        # Strip @bot_username suffix if present
+        # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         content = message.text or ""
         if content.startswith("/") and "@" in content:
             cmd_part, *rest = content.split(" ", 1)
@@ -1188,7 +1801,20 @@ class TelegramChannel(BaseChannel):
         )
 
     async def _on_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle incoming messages (text, photos, voice, documents)."""
+        """异步执行 `_on_message`。
+
+        【中文名称】_on_message
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - update: 调用方传入的 `update` 数据；具体类型以函数签名为准。
+        - context: 调用方传入的 `context` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not update.message or not update.effective_user:
             return
         if not self._running:
@@ -1197,7 +1823,20 @@ class TelegramChannel(BaseChannel):
         self._enqueue_ordered_update(kind="message", update=update, context=context)
 
     async def _process_message_update(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Process a queued Telegram message update."""
+        """异步执行 `_process_message_update`。
+
+        【中文名称】_process_message_update
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - update: 调用方传入的 `update` 数据；具体类型以函数签名为准。
+        - context: 调用方传入的 `context` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
 
         message = update.message
         user = update.effective_user
@@ -1208,29 +1847,29 @@ class TelegramChannel(BaseChannel):
             return
         self._remember_thread_context(message)
 
-        # Store chat_id for replies
+        # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         self._chat_ids[sender_id] = chat_id
 
         if not await self._is_group_message_for_bot(message):
             return
 
-        # Build content from text and/or media
+        # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         content_parts = []
         media_paths = []
 
-        # Text content
+        # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if message.text:
             content_parts.append(message.text)
         if message.caption:
             content_parts.append(message.caption)
 
-        # Location content
+        # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if message.location:
             lat = message.location.latitude
             lon = message.location.longitude
             content_parts.append(f"[location: {lat}, {lon}]")
 
-        # Download current message media
+        # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         current_media_paths, current_media_parts = await self._download_message_media(
             message, add_failure_content=True
         )
@@ -1239,7 +1878,7 @@ class TelegramChannel(BaseChannel):
         if current_media_paths:
             self.logger.debug("Downloaded message media to {}", current_media_paths[0])
 
-        # Reply context: text and/or media from the replied-to message
+        # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         reply = getattr(message, "reply_to_message", None)
         if reply is not None:
             reply_ctx = await self._extract_reply_context(message)
@@ -1258,7 +1897,7 @@ class TelegramChannel(BaseChannel):
         metadata = self._build_message_metadata(message, user)
         session_key = self._derive_topic_session_key(message)
 
-        # Telegram media groups: buffer briefly, forward as one aggregated turn.
+        # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if media_group_id := getattr(message, "media_group_id", None):
             key = f"{str_chat_id}:{media_group_id}"
             if key not in self._media_group_buffers:
@@ -1278,11 +1917,11 @@ class TelegramChannel(BaseChannel):
                 self._media_group_tasks[key] = asyncio.create_task(self._flush_media_group(key))
             return
 
-        # Start typing indicator before processing
+        # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         self._start_typing(str_chat_id)
         await self._add_reaction(str_chat_id, message.message_id, self.config.react_emoji)
 
-        # Forward to the message bus
+        # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         await self._handle_message(
             sender_id=sender_id,
             chat_id=str_chat_id,
@@ -1293,7 +1932,19 @@ class TelegramChannel(BaseChannel):
         )
 
     async def _flush_media_group(self, key: str) -> None:
-        """Wait briefly, then forward buffered media-group as one turn."""
+        """异步执行 `_flush_media_group`。
+
+        【中文名称】_flush_media_group
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - key: 调用方传入的 `key` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         try:
             await asyncio.sleep(0.6)
             if not (buf := self._media_group_buffers.pop(key, None)):
@@ -1309,19 +1960,57 @@ class TelegramChannel(BaseChannel):
             self._media_group_tasks.pop(key, None)
 
     def _start_typing(self, chat_id: str) -> None:
-        """Start sending 'typing...' indicator for a chat."""
-        # Cancel any existing typing task for this chat
+        """执行 `_start_typing`。
+
+        【中文名称】_start_typing
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+        # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         self._stop_typing(chat_id)
         self._typing_tasks[chat_id] = asyncio.create_task(self._typing_loop(chat_id))
 
     def _stop_typing(self, chat_id: str) -> None:
-        """Stop the typing indicator for a chat."""
+        """执行 `_stop_typing`。
+
+        【中文名称】_stop_typing
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         task = self._typing_tasks.pop(chat_id, None)
         if task and not task.done():
             task.cancel()
 
     async def _add_reaction(self, chat_id: str, message_id: int, emoji: str) -> None:
-        """Add emoji reaction to a message (best-effort, non-blocking)."""
+        """异步执行 `_add_reaction`。
+
+        【中文名称】_add_reaction
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - message_id: 调用方传入的 `message_id` 数据；具体类型以函数签名为准。
+        - emoji: 调用方传入的 `emoji` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self._app or not emoji:
             return
         try:
@@ -1334,7 +2023,20 @@ class TelegramChannel(BaseChannel):
             self.logger.debug("reaction failed: {}", e)
 
     async def _remove_reaction(self, chat_id: str, message_id: int) -> None:
-        """Remove emoji reaction from a message (best-effort, non-blocking)."""
+        """异步执行 `_remove_reaction`。
+
+        【中文名称】_remove_reaction
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - message_id: 调用方传入的 `message_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self._app:
             return
         try:
@@ -1347,7 +2049,19 @@ class TelegramChannel(BaseChannel):
             self.logger.debug("reaction removal failed: {}", e)
 
     async def _typing_loop(self, chat_id: str) -> None:
-        """Repeatedly send 'typing' action until cancelled."""
+        """异步执行 `_typing_loop`。
+
+        【中文名称】_typing_loop
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         try:
             with suppress(asyncio.CancelledError):
                 while self._app:
@@ -1358,7 +2072,19 @@ class TelegramChannel(BaseChannel):
 
     @staticmethod
     def _format_telegram_error(exc: Exception) -> str:
-        """Return a short, readable error summary for logs."""
+        """执行 `_format_telegram_error`。
+
+        【中文名称】_format_telegram_error
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - exc: 调用方传入的 `exc` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         text = str(exc).strip()
         if text:
             return text
@@ -1371,7 +2097,19 @@ class TelegramChannel(BaseChannel):
         return exc.__class__.__name__
 
     def _on_polling_error(self, exc: Exception) -> None:
-        """Keep long-polling network failures to a single readable line."""
+        """执行 `_on_polling_error`。
+
+        【中文名称】_on_polling_error
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - exc: 调用方传入的 `exc` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         summary = self._format_telegram_error(exc)
         if isinstance(exc, (NetworkError, TimedOut)):
             self.logger.warning("polling network issue: {}", summary)
@@ -1379,7 +2117,20 @@ class TelegramChannel(BaseChannel):
             self.logger.error("polling error: {}", summary)
 
     async def _on_error(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Log polling / handler errors instead of silently swallowing them."""
+        """异步执行 `_on_error`。
+
+        【中文名称】_on_error
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - update: 调用方传入的 `update` 数据；具体类型以函数签名为准。
+        - context: 调用方传入的 `context` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         summary = self._format_telegram_error(context.error)
 
         if isinstance(context.error, (NetworkError, TimedOut)):
@@ -1393,7 +2144,21 @@ class TelegramChannel(BaseChannel):
         mime_type: str | None,
         filename: str | None = None,
     ) -> str:
-        """Get file extension based on media type or original filename."""
+        """执行 `_get_extension`。
+
+        【中文名称】_get_extension
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - media_type: 调用方传入的 `media_type` 数据；具体类型以函数签名为准。
+        - mime_type: 调用方传入的 `mime_type` 数据；具体类型以函数签名为准。
+        - filename: 调用方传入的 `filename` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if mime_type:
             ext_map = {
                 "image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif",
@@ -1415,7 +2180,19 @@ class TelegramChannel(BaseChannel):
         return ""
 
     def _build_keyboard(self, buttons: list) -> InlineKeyboardMarkup | None:
-        """Build inline keyboard markup if inline_keyboards is enabled."""
+        """执行 `_build_keyboard`。
+
+        【中文名称】_build_keyboard
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - buttons: 调用方传入的 `buttons` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not buttons or not self.config.inline_keyboards:
             return None
         keyboard = [
@@ -1426,7 +2203,21 @@ class TelegramChannel(BaseChannel):
 
     @staticmethod
     def _safe_callback_data(label: str) -> str:
-        # Telegram caps callback_data at 64 bytes UTF-8; truncate at a char boundary so the keyboard still sends.
+        # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        """执行 `_safe_callback_data`。
+
+        【中文名称】_safe_callback_data
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - label: 调用方传入的 `label` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         encoded = label.encode("utf-8")
         if len(encoded) <= 64:
             return label
@@ -1434,11 +2225,38 @@ class TelegramChannel(BaseChannel):
 
     @staticmethod
     def _buttons_as_text(buttons: list[list[str]]) -> str:
-        # Buttons are semantic options; when we can't render a keyboard, the user still needs to see them.
+        # 说明：这里处理 Telegram 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        """执行 `_buttons_as_text`。
+
+        【中文名称】_buttons_as_text
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - buttons: 调用方传入的 `buttons` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return "\n".join(" ".join(f"[{label}]" for label in row) for row in buttons if row)
 
     async def _on_callback_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle inline keyboard button clicks (callback queries)."""
+        """异步执行 `_on_callback_query`。
+
+        【中文名称】_on_callback_query
+
+        【功能说明】
+        这是 Telegram 渠道适配器 中的一个步骤函数，用来支撑：负责使用 python-telegram-bot 接收 Telegram 消息、附件、命令和回调按钮，并处理 Telegram HTML/Markdown 限制。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - update: 调用方传入的 `update` 数据；具体类型以函数签名为准。
+        - context: 调用方传入的 `context` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not update.callback_query or not update.effective_user:
             return
         query = update.callback_query

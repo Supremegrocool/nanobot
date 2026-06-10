@@ -1,4 +1,18 @@
-"""Matrix (Element) channel — inbound sync + outbound message/media delivery."""
+"""Matrix 渠道适配器。
+
+【中文名称】Matrix 渠道适配器
+
+【功能说明】
+负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的渠道适配器代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 import asyncio
 import json
@@ -57,7 +71,7 @@ from nanobot.utils.helpers import safe_filename
 from nanobot.utils.logging_bridge import redirect_lib_logging
 
 TYPING_NOTICE_TIMEOUT_MS = 30_000
-# Must stay below TYPING_NOTICE_TIMEOUT_MS so the indicator doesn't expire mid-processing.
+# 说明：这里处理 Matrix 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 TYPING_KEEPALIVE_INTERVAL_MS = 20_000
 MATRIX_HTML_FORMAT = "org.matrix.custom.html"
 _ATTACH_MARKER = "[attachment: {}]"
@@ -72,7 +86,17 @@ MatrixMediaEvent: TypeAlias = RoomMessageMedia | RoomEncryptedMedia
 
 
 class _MediaTooLargeError(Exception):
-    """Raised when an inbound Matrix media download exceeds the configured cap."""
+    """_MediaTooLargeError 类。
+
+    【中文名称】_MediaTooLargeError
+
+    【功能说明】
+    这是 Matrix 渠道适配器 中的核心数据结构或服务类。负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
 MATRIX_MARKDOWN = create_markdown(
     escape=True,
@@ -93,7 +117,21 @@ MATRIX_ALLOWED_URL_SCHEMES = {"https", "http", "matrix", "mailto", "mxc"}
 
 
 def _filter_matrix_html_attribute(tag: str, attr: str, value: str) -> str | None:
-    """Filter attribute values to a safe Matrix-compatible subset."""
+    """执行 `_filter_matrix_html_attribute`。
+
+    【中文名称】_filter_matrix_html_attribute
+
+    【功能说明】
+    这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - tag: 调用方传入的 `tag` 数据；具体类型以函数签名为准。
+    - attr: 调用方传入的 `attr` 数据；具体类型以函数签名为准。
+    - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if tag == "a" and attr == "href":
         return value if value.lower().startswith(("https://", "http://", "matrix:", "mailto:")) else None
     if tag == "img" and attr == "src":
@@ -115,30 +153,42 @@ MATRIX_HTML_CLEANER = nh3.Cleaner(
 
 @dataclass
 class _StreamBuf:
-    """
-    Represents a buffer for managing LLM response stream data.
+    """_StreamBuf 类。
 
-    :ivar text: Stores the text content of the buffer.
-    :type text: str
-    :ivar event_id: Identifier for the associated event. None indicates no
-        specific event association.
-    :type event_id: str | None
-    :ivar last_edit: Timestamp of the most recent edit to the buffer.
-    :type last_edit: float
-    """
+    【中文名称】_StreamBuf
+
+    【功能说明】
+    这是 Matrix 渠道适配器 中的核心数据结构或服务类。负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
     text: str = ""
     event_id: str | None = None
     last_edit: float = 0.0
 
 def _render_markdown_html(text: str) -> str | None:
-    """Render markdown to sanitized HTML; returns None for plain text."""
+    """执行 `_render_markdown_html`。
+
+    【中文名称】_render_markdown_html
+
+    【功能说明】
+    这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     try:
         formatted = MATRIX_HTML_CLEANER.clean(MATRIX_MARKDOWN(text)).strip()
     except Exception:
         return None
     if not formatted:
         return None
-    # Skip formatted_body for plain <p>text</p> to keep payload minimal.
+    # 说明：这里处理 Matrix 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     if formatted.startswith("<p>") and formatted.endswith("</p>"):
         inner = formatted[3:-4]
         if "<" not in inner and ">" not in inner:
@@ -151,24 +201,21 @@ def _build_matrix_text_content(
     event_id: str | None = None,
     thread_relates_to: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    """
-    Constructs and returns a dictionary representing the matrix text content with optional
-    HTML formatting and reference to an existing event for replacement. This function is
-    primarily used to create content payloads compatible with the Matrix messaging protocol.
+    """执行 `_build_matrix_text_content`。
 
-    :param text: The plain text content to include in the message.
-    :type text: str
-    :param event_id: Optional ID of the event to replace. If provided, the function will
-        include information indicating that the message is a replacement of the specified
-        event.
-    :type event_id: str | None
-    :param thread_relates_to: Optional Matrix thread relation metadata. For edits this is
-        stored in ``m.new_content`` so the replacement remains in the same thread.
-    :type thread_relates_to: dict[str, object] | None
-    :return: A dictionary containing the matrix text content, potentially enriched with
-        HTML formatting and replacement metadata if applicable.
-    :rtype: dict[str, object]
-    """
+    【中文名称】_build_matrix_text_content
+
+    【功能说明】
+    这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+    - event_id: 调用方传入的 `event_id` 数据；具体类型以函数签名为准。
+    - thread_relates_to: 调用方传入的 `thread_relates_to` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     content: dict[str, object] = {"msgtype": "m.text", "body": text, "m.mentions": {}}
     if html := _render_markdown_html(text):
         content["format"] = MATRIX_HTML_FORMAT
@@ -191,7 +238,17 @@ def _build_matrix_text_content(
 
 
 class MatrixConfig(Base):
-    """Matrix (Element) channel configuration."""
+    """MatrixConfig 类。
+
+    【中文名称】MatrixConfig
+
+    【功能说明】
+    这是 Matrix 渠道适配器 中的核心数据结构或服务类。负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     enabled: bool = False
     homeserver: str = "https://matrix.org"
@@ -212,15 +269,39 @@ class MatrixConfig(Base):
 
 
 class MatrixChannel(BaseChannel):
-    """Matrix (Element) channel using long-polling sync."""
+    """MatrixChannel 类。
+
+    【中文名称】MatrixChannel
+
+    【功能说明】
+    这是 Matrix 渠道适配器 中的核心数据结构或服务类。负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     name = "matrix"
     display_name = "Matrix"
-    _STREAM_EDIT_INTERVAL = 2 # min seconds between edit_message_text calls
+    _STREAM_EDIT_INTERVAL = 2 # 说明：这里处理 Matrix 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     monotonic_time = time.monotonic
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
+        """执行 `default_config`。
+
+        【中文名称】default_config
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return MatrixConfig().model_dump(by_alias=True)
 
     def __init__(
@@ -231,6 +312,23 @@ class MatrixChannel(BaseChannel):
         restrict_to_workspace: bool = False,
         workspace: str | Path | None = None,
     ):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - config: 调用方传入的 `config` 数据；具体类型以函数签名为准。
+        - bus: 调用方传入的 `bus` 数据；具体类型以函数签名为准。
+        - restrict_to_workspace: 调用方传入的 `restrict_to_workspace` 数据；具体类型以函数签名为准。
+        - workspace: 调用方传入的 `workspace` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if isinstance(config, dict):
             config = MatrixConfig.model_validate(config)
         super().__init__(config, bus)
@@ -251,7 +349,19 @@ class MatrixChannel(BaseChannel):
 
 
     async def start(self) -> None:
-        """Start Matrix client and begin sync loop."""
+        """异步执行 `start`。
+
+        【中文名称】start
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         self._running = True
         self._started_at_ms = int(time.time() * 1000)
         redirect_lib_logging("nio", level="WARNING")
@@ -260,7 +370,7 @@ class MatrixChannel(BaseChannel):
         self.store_path.mkdir(parents=True, exist_ok=True)
         self.session_path = self.store_path / "session.json"
 
-        # Replace ':' with '_' to produce a Windows-safe filename
+        # 说明：这里处理 Matrix 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         safe_store_name = self.config.user_id.replace(":", "_") + f"_{self.config.device_id}.db"
 
         self.client = AsyncClient(
@@ -328,7 +438,19 @@ class MatrixChannel(BaseChannel):
         self._sync_task = asyncio.create_task(self._sync_loop())
 
     async def stop(self) -> None:
-        """Stop the Matrix channel with graceful sync shutdown."""
+        """异步执行 `stop`。
+
+        【中文名称】stop
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         self._running = False
         for room_id in list(self._typing_tasks):
             await self._stop_typing_keepalive(room_id, clear_typing=False)
@@ -346,7 +468,19 @@ class MatrixChannel(BaseChannel):
             await self.client.close()
 
     def _write_session_to_disk(self, resp: LoginResponse) -> None:
-        """Save login session to disk for persistence across restarts."""
+        """执行 `_write_session_to_disk`。
+
+        【中文名称】_write_session_to_disk
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - resp: 调用方传入的 `resp` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         session = {
             "access_token": resp.access_token,
             "device_id": resp.device_id,
@@ -359,13 +493,37 @@ class MatrixChannel(BaseChannel):
             self.logger.warning("Failed to save session: {}", e)
 
     def _is_workspace_path_allowed(self, path: Path) -> bool:
-        """Check path is inside workspace (when restriction enabled)."""
+        """执行 `_is_workspace_path_allowed`。
+
+        【中文名称】_is_workspace_path_allowed
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self._restrict_to_workspace or not self._workspace:
             return True
         return is_path_within(path, self._workspace)
 
     def _collect_outbound_media_candidates(self, media: list[str]) -> list[Path]:
-        """Deduplicate and resolve outbound attachment paths."""
+        """执行 `_collect_outbound_media_candidates`。
+
+        【中文名称】_collect_outbound_media_candidates
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - media: 调用方传入的 `media` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         seen: set[str] = set()
         candidates: list[Path] = []
         for raw in media:
@@ -386,7 +544,23 @@ class MatrixChannel(BaseChannel):
         *, filename: str, mime: str, size_bytes: int,
         mxc_url: str, encryption_info: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Build Matrix content payload for an uploaded file/image/audio/video."""
+        """执行 `_build_outbound_attachment_content`。
+
+        【中文名称】_build_outbound_attachment_content
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - filename: 调用方传入的 `filename` 数据；具体类型以函数签名为准。
+        - mime: 调用方传入的 `mime` 数据；具体类型以函数签名为准。
+        - size_bytes: 调用方传入的 `size_bytes` 数据；具体类型以函数签名为准。
+        - mxc_url: 调用方传入的 `mxc_url` 数据；具体类型以函数签名为准。
+        - encryption_info: 调用方传入的 `encryption_info` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         prefix = mime.split("/")[0]
         msgtype = {"image": "m.image", "audio": "m.audio", "video": "m.video"}.get(prefix, "m.file")
         content: dict[str, Any] = {
@@ -400,6 +574,20 @@ class MatrixChannel(BaseChannel):
         return content
 
     def _is_encrypted_room(self, room_id: str) -> bool:
+        """执行 `_is_encrypted_room`。
+
+        【中文名称】_is_encrypted_room
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - room_id: 调用方传入的 `room_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self.client:
             return False
         room = getattr(self.client, "rooms", {}).get(room_id)
@@ -407,7 +595,20 @@ class MatrixChannel(BaseChannel):
 
     async def _send_room_content(self, room_id: str,
                                  content: dict[str, Any]) -> None | RoomSendResponse | RoomSendError:
-        """Send m.room.message with E2EE options."""
+        """异步执行 `_send_room_content`。
+
+        【中文名称】_send_room_content
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - room_id: 调用方传入的 `room_id` 数据；具体类型以函数签名为准。
+        - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self.client:
             return None
         kwargs: dict[str, Any] = {"room_id": room_id, "message_type": "m.room.message", "content": content}
@@ -418,7 +619,19 @@ class MatrixChannel(BaseChannel):
         return response
 
     async def _resolve_server_upload_limit_bytes(self) -> int | None:
-        """Query homeserver upload limit once per channel lifecycle."""
+        """异步执行 `_resolve_server_upload_limit_bytes`。
+
+        【中文名称】_resolve_server_upload_limit_bytes
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if self._server_upload_limit_checked:
             return self._server_upload_limit_bytes
         self._server_upload_limit_checked = True
@@ -436,7 +649,19 @@ class MatrixChannel(BaseChannel):
         return None
 
     async def _effective_media_limit_bytes(self) -> int:
-        """min(local config, server advertised) — 0 blocks all uploads."""
+        """异步执行 `_effective_media_limit_bytes`。
+
+        【中文名称】_effective_media_limit_bytes
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         local_limit = max(int(self.config.max_media_bytes), 0)
         server_limit = await self._resolve_server_upload_limit_bytes()
         if server_limit is None:
@@ -447,7 +672,22 @@ class MatrixChannel(BaseChannel):
         self, room_id: str, path: Path, limit_bytes: int,
         relates_to: dict[str, Any] | None = None,
     ) -> str | None:
-        """Upload one local file to Matrix and send it as a media message. Returns failure marker or None."""
+        """异步执行 `_upload_and_send_attachment`。
+
+        【中文名称】_upload_and_send_attachment
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - room_id: 调用方传入的 `room_id` 数据；具体类型以函数签名为准。
+        - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+        - limit_bytes: 调用方传入的 `limit_bytes` 数据；具体类型以函数签名为准。
+        - relates_to: 调用方传入的 `relates_to` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self.client:
             return _ATTACH_UPLOAD_FAILED.format(path.name or _DEFAULT_ATTACH_NAME)
 
@@ -498,7 +738,19 @@ class MatrixChannel(BaseChannel):
         return None
 
     async def send(self, msg: OutboundMessage) -> None:
-        """Send outbound content; clear typing for non-progress messages."""
+        """异步执行 `send`。
+
+        【中文名称】send
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - msg: 调用方传入的 `msg` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self.client:
             return
         text = msg.content or ""
@@ -529,6 +781,22 @@ class MatrixChannel(BaseChannel):
                 await self._stop_typing_keepalive(msg.chat_id, clear_typing=True)
 
     async def send_delta(self, chat_id: str, delta: str, metadata: dict[str, Any] | None = None) -> None:
+        """异步执行 `send_delta`。
+
+        【中文名称】send_delta
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - delta: 调用方传入的 `delta` 数据；具体类型以函数签名为准。
+        - metadata: 调用方传入的 `metadata` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         meta = metadata or {}
         relates_to = self._build_thread_relates_to(metadata)
 
@@ -568,7 +836,7 @@ class MatrixChannel(BaseChannel):
                 response = await self._send_room_content(chat_id, content)
                 buf.last_edit = now
                 if not buf.event_id:
-                    # we are editing the same message all the time, so only the first time the event id needs to be set
+                    # 说明：这里处理 Matrix 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                     buf.event_id = response.event_id
             except Exception:
                 self.logger.error("Stream send/edit failed for chat_id=%s", chat_id, exc_info=True)
@@ -576,11 +844,39 @@ class MatrixChannel(BaseChannel):
 
 
     def _register_event_callbacks(self) -> None:
+        """执行 `_register_event_callbacks`。
+
+        【中文名称】_register_event_callbacks
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self.client.add_event_callback(self._on_message, RoomMessageText)
         self.client.add_event_callback(self._on_media_message, MATRIX_MEDIA_EVENT_FILTER)
         self.client.add_event_callback(self._on_room_invite, InviteEvent)
 
     def _register_to_device_callbacks(self) -> None:
+        """执行 `_register_to_device_callbacks`。
+
+        【中文名称】_register_to_device_callbacks
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if self.config.e2ee_enabled and self.config.sas_verification:
             self.client.add_to_device_callback(
                 self._on_key_verification_event,
@@ -588,14 +884,56 @@ class MatrixChannel(BaseChannel):
             )
 
     def _register_response_callbacks(self) -> None:
+        """执行 `_register_response_callbacks`。
+
+        【中文名称】_register_response_callbacks
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self.client.add_response_callback(self._on_sync_error, SyncError)
         self.client.add_response_callback(self._on_join_error, JoinError)
         self.client.add_response_callback(self._on_send_error, RoomSendError)
 
     def _is_sas_sender_allowed(self, sender: str) -> bool:
+        """执行 `_is_sas_sender_allowed`。
+
+        【中文名称】_is_sas_sender_allowed
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - sender: 调用方传入的 `sender` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return bool(sender and self.is_allowed(sender))
 
     async def _on_key_verification_event(self, event: KeyVerificationEvent) -> None:
+        """异步执行 `_on_key_verification_event`。
+
+        【中文名称】_on_key_verification_event
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - event: 调用方传入的 `event` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         try:
             await self._handle_key_verification_event(event)
         except asyncio.CancelledError:
@@ -604,6 +942,20 @@ class MatrixChannel(BaseChannel):
             self.logger.exception("Matrix SAS verification handling failed")
 
     async def _handle_key_verification_event(self, event: KeyVerificationEvent) -> None:
+        """异步执行 `_handle_key_verification_event`。
+
+        【中文名称】_handle_key_verification_event
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - event: 调用方传入的 `event` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not (self.config.e2ee_enabled and self.config.sas_verification):
             return
         if not self.client:
@@ -652,20 +1004,61 @@ class MatrixChannel(BaseChannel):
             )
 
     def _is_fatal_auth_response(self, response: Any) -> bool:
+        """执行 `_is_fatal_auth_response`。
+
+        【中文名称】_is_fatal_auth_response
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - response: 调用方传入的 `response` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         code = getattr(response, "status_code", None)
         is_auth = code in {"M_UNKNOWN_TOKEN", "M_FORBIDDEN", "M_UNAUTHORIZED"}
         return is_auth or bool(getattr(response, "soft_logout", False))
 
     def _log_response_error(self, label: str, response: Any) -> None:
-        """Log Matrix response errors — auth errors at ERROR level, rest at WARNING."""
+        """执行 `_log_response_error`。
+
+        【中文名称】_log_response_error
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - label: 调用方传入的 `label` 数据；具体类型以函数签名为准。
+        - response: 调用方传入的 `response` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         is_fatal = self._is_fatal_auth_response(response)
         (self.logger.error if is_fatal else self.logger.warning)("{} failed: {}", label, response)
 
     async def _on_sync_error(self, response: SyncError) -> None:
+        """异步执行 `_on_sync_error`。
+
+        【中文名称】_on_sync_error
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - response: 调用方传入的 `response` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self._log_response_error("sync", response)
         if self._is_fatal_auth_response(response):
-            # Auth errors won't recover by retry; stop the sync loop instead of
-            # spamming the homeserver every 2s (#1851).
+            # 说明：这里处理 Matrix 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 Matrix 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             self.logger.error("Authentication failed irrecoverably; stopping sync loop")
             self._running = False
             if self.client:
@@ -673,13 +1066,54 @@ class MatrixChannel(BaseChannel):
                     self.client.stop_sync_forever()
 
     async def _on_join_error(self, response: JoinError) -> None:
+        """异步执行 `_on_join_error`。
+
+        【中文名称】_on_join_error
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - response: 调用方传入的 `response` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self._log_response_error("join", response)
 
     async def _on_send_error(self, response: RoomSendError) -> None:
+        """异步执行 `_on_send_error`。
+
+        【中文名称】_on_send_error
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - response: 调用方传入的 `response` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self._log_response_error("send", response)
 
     async def _set_typing(self, room_id: str, typing: bool) -> None:
-        """Best-effort typing indicator update."""
+        """异步执行 `_set_typing`。
+
+        【中文名称】_set_typing
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - room_id: 调用方传入的 `room_id` 数据；具体类型以函数签名为准。
+        - typing: 调用方传入的 `typing` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self.client:
             return
         with suppress(Exception):
@@ -689,13 +1123,39 @@ class MatrixChannel(BaseChannel):
                 self.logger.debug("typing failed for {}: {}", room_id, response)
 
     async def _start_typing_keepalive(self, room_id: str) -> None:
-        """Start periodic typing refresh (spec-recommended keepalive)."""
+        """异步执行 `_start_typing_keepalive`。
+
+        【中文名称】_start_typing_keepalive
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - room_id: 调用方传入的 `room_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         await self._stop_typing_keepalive(room_id, clear_typing=False)
         await self._set_typing(room_id, True)
         if not self._running:
             return
 
         async def loop() -> None:
+            """异步执行 `loop`。
+
+            【中文名称】loop
+
+            【功能说明】
+            这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - 无显式业务参数。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             with suppress(asyncio.CancelledError):
                 while self._running:
                     await asyncio.sleep(TYPING_KEEPALIVE_INTERVAL_MS / 1000)
@@ -704,6 +1164,21 @@ class MatrixChannel(BaseChannel):
         self._typing_tasks[room_id] = asyncio.create_task(loop())
 
     async def _stop_typing_keepalive(self, room_id: str, *, clear_typing: bool) -> None:
+        """异步执行 `_stop_typing_keepalive`。
+
+        【中文名称】_stop_typing_keepalive
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - room_id: 调用方传入的 `room_id` 数据；具体类型以函数签名为准。
+        - clear_typing: 调用方传入的 `clear_typing` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if task := self._typing_tasks.pop(room_id, None):
             task.cancel()
             with suppress(asyncio.CancelledError):
@@ -712,6 +1187,20 @@ class MatrixChannel(BaseChannel):
             await self._set_typing(room_id, False)
 
     async def _sync_loop(self) -> None:
+        """异步执行 `_sync_loop`。
+
+        【中文名称】_sync_loop
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         backoff = 2.0
         while self._running:
             try:
@@ -726,15 +1215,56 @@ class MatrixChannel(BaseChannel):
                 backoff = min(backoff * 2, 60.0)
 
     async def _on_room_invite(self, room: MatrixRoom, event: InviteEvent) -> None:
+        """异步执行 `_on_room_invite`。
+
+        【中文名称】_on_room_invite
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - room: 调用方传入的 `room` 数据；具体类型以函数签名为准。
+        - event: 调用方传入的 `event` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if self.is_allowed(event.sender):
             await self.client.join(room.room_id)
 
     def _is_direct_room(self, room: MatrixRoom) -> bool:
+        """执行 `_is_direct_room`。
+
+        【中文名称】_is_direct_room
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - room: 调用方传入的 `room` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         count = getattr(room, "member_count", None)
         return isinstance(count, int) and count <= 2
 
     def _is_bot_mentioned(self, event: RoomMessage) -> bool:
-        """Check m.mentions payload for bot mention."""
+        """执行 `_is_bot_mentioned`。
+
+        【中文名称】_is_bot_mentioned
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - event: 调用方传入的 `event` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         source = getattr(event, "source", None)
         if not isinstance(source, dict):
             return False
@@ -747,17 +1277,37 @@ class MatrixChannel(BaseChannel):
         return bool(self.config.allow_room_mentions and mentions.get("room") is True)
 
     def _is_pre_startup_event(self, event: RoomMessage) -> bool:
-        """Skip events that landed in the timeline before this process started.
+        """执行 `_is_pre_startup_event`。
 
-        Matrix sync replays the room timeline on each startup/restart; without
-        this filter old messages would be re-handled as if they were fresh
-        (#3553).
-        """
+        【中文名称】_is_pre_startup_event
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - event: 调用方传入的 `event` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         ts = getattr(event, "server_timestamp", None)
         return isinstance(ts, int) and ts < self._started_at_ms
 
     def _should_process_message(self, room: MatrixRoom, event: RoomMessage) -> bool:
-        """Apply sender and room policy checks."""
+        """执行 `_should_process_message`。
+
+        【中文名称】_should_process_message
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - room: 调用方传入的 `room` 数据；具体类型以函数签名为准。
+        - event: 调用方传入的 `event` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self.is_allowed(event.sender):
             return False
         if self._is_direct_room(room):
@@ -772,10 +1322,38 @@ class MatrixChannel(BaseChannel):
         return False
 
     def _media_dir(self) -> Path:
+        """执行 `_media_dir`。
+
+        【中文名称】_media_dir
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return get_media_dir("matrix")
 
     @staticmethod
     def _event_source_content(event: RoomMessage) -> dict[str, Any]:
+        """执行 `_event_source_content`。
+
+        【中文名称】_event_source_content
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - event: 调用方传入的 `event` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         source = getattr(event, "source", None)
         if not isinstance(source, dict):
             return {}
@@ -783,6 +1361,20 @@ class MatrixChannel(BaseChannel):
         return content if isinstance(content, dict) else {}
 
     def _event_thread_root_id(self, event: RoomMessage) -> str | None:
+        """执行 `_event_thread_root_id`。
+
+        【中文名称】_event_thread_root_id
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - event: 调用方传入的 `event` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         relates_to = self._event_source_content(event).get("m.relates_to")
         if not isinstance(relates_to, dict) or relates_to.get("rel_type") != "m.thread":
             return None
@@ -790,6 +1382,20 @@ class MatrixChannel(BaseChannel):
         return root_id if isinstance(root_id, str) and root_id else None
 
     def _thread_metadata(self, event: RoomMessage) -> dict[str, str] | None:
+        """执行 `_thread_metadata`。
+
+        【中文名称】_thread_metadata
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - event: 调用方传入的 `event` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not (root_id := self._event_thread_root_id(event)):
             return None
         meta: dict[str, str] = {"thread_root_event_id": root_id}
@@ -799,6 +1405,20 @@ class MatrixChannel(BaseChannel):
 
     @staticmethod
     def _build_thread_relates_to(metadata: dict[str, Any] | None) -> dict[str, Any] | None:
+        """执行 `_build_thread_relates_to`。
+
+        【中文名称】_build_thread_relates_to
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - metadata: 调用方传入的 `metadata` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not metadata:
             return None
         root_id = metadata.get("thread_root_event_id")
@@ -811,21 +1431,77 @@ class MatrixChannel(BaseChannel):
                 "m.in_reply_to": {"event_id": reply_to}, "is_falling_back": True}
 
     def _event_attachment_type(self, event: MatrixMediaEvent) -> str:
+        """执行 `_event_attachment_type`。
+
+        【中文名称】_event_attachment_type
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - event: 调用方传入的 `event` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         msgtype = self._event_source_content(event).get("msgtype")
         return _MSGTYPE_MAP.get(msgtype, "file")
 
     @staticmethod
     def _is_encrypted_media_event(event: MatrixMediaEvent) -> bool:
+        """执行 `_is_encrypted_media_event`。
+
+        【中文名称】_is_encrypted_media_event
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - event: 调用方传入的 `event` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return (isinstance(getattr(event, "key", None), dict)
                 and isinstance(getattr(event, "hashes", None), dict)
                 and isinstance(getattr(event, "iv", None), str))
 
     def _event_declared_size_bytes(self, event: MatrixMediaEvent) -> int | None:
+        """执行 `_event_declared_size_bytes`。
+
+        【中文名称】_event_declared_size_bytes
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - event: 调用方传入的 `event` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         info = self._event_source_content(event).get("info")
         size = info.get("size") if isinstance(info, dict) else None
         return size if type(size) is int and size >= 0 else None
 
     def _event_mime(self, event: MatrixMediaEvent) -> str | None:
+        """执行 `_event_mime`。
+
+        【中文名称】_event_mime
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - event: 调用方传入的 `event` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         info = self._event_source_content(event).get("info")
         if isinstance(info, dict) and isinstance(m := info.get("mimetype"), str) and m:
             return m
@@ -833,6 +1509,21 @@ class MatrixChannel(BaseChannel):
         return m if isinstance(m, str) and m else None
 
     def _event_filename(self, event: MatrixMediaEvent, attachment_type: str) -> str:
+        """执行 `_event_filename`。
+
+        【中文名称】_event_filename
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - event: 调用方传入的 `event` 数据；具体类型以函数签名为准。
+        - attachment_type: 调用方传入的 `attachment_type` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         body = getattr(event, "body", None)
         if isinstance(body, str) and body.strip():
             if candidate := safe_filename(Path(body).name):
@@ -841,6 +1532,23 @@ class MatrixChannel(BaseChannel):
 
     def _build_attachment_path(self, event: MatrixMediaEvent, attachment_type: str,
                                filename: str, mime: str | None) -> Path:
+        """执行 `_build_attachment_path`。
+
+        【中文名称】_build_attachment_path
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - event: 调用方传入的 `event` 数据；具体类型以函数签名为准。
+        - attachment_type: 调用方传入的 `attachment_type` 数据；具体类型以函数签名为准。
+        - filename: 调用方传入的 `filename` 数据；具体类型以函数签名为准。
+        - mime: 调用方传入的 `mime` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         safe_name = safe_filename(Path(filename).name) or _DEFAULT_ATTACH_NAME
         suffix = Path(safe_name).suffix
         if not suffix and mime:
@@ -853,6 +1561,21 @@ class MatrixChannel(BaseChannel):
         return self._media_dir() / f"{event_prefix}_{stem}{suffix}"
 
     async def _download_media_bytes(self, mxc_url: str, limit_bytes: int) -> bytes | None:
+        """异步执行 `_download_media_bytes`。
+
+        【中文名称】_download_media_bytes
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - mxc_url: 调用方传入的 `mxc_url` 数据；具体类型以函数签名为准。
+        - limit_bytes: 调用方传入的 `limit_bytes` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self.client or limit_bytes <= 0:
             raise _MediaTooLargeError
 
@@ -896,6 +1619,21 @@ class MatrixChannel(BaseChannel):
             return None
 
     def _decrypt_media_bytes(self, event: MatrixMediaEvent, ciphertext: bytes) -> bytes | None:
+        """执行 `_decrypt_media_bytes`。
+
+        【中文名称】_decrypt_media_bytes
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - event: 调用方传入的 `event` 数据；具体类型以函数签名为准。
+        - ciphertext: 调用方传入的 `ciphertext` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         key_obj, hashes, iv = getattr(event, "key", None), getattr(event, "hashes", None), getattr(event, "iv", None)
         key = key_obj.get("k") if isinstance(key_obj, dict) else None
         sha256 = hashes.get("sha256") if isinstance(hashes, dict) else None
@@ -910,7 +1648,20 @@ class MatrixChannel(BaseChannel):
     async def _fetch_media_attachment(
         self, room: MatrixRoom, event: MatrixMediaEvent,
     ) -> tuple[dict[str, Any] | None, str]:
-        """Download, decrypt if needed, and persist a Matrix attachment."""
+        """异步执行 `_fetch_media_attachment`。
+
+        【中文名称】_fetch_media_attachment
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - room: 调用方传入的 `room` 数据；具体类型以函数签名为准。
+        - event: 调用方传入的 `event` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         atype = self._event_attachment_type(event)
         mime = self._event_mime(event)
         filename = self._event_filename(event, atype)
@@ -957,7 +1708,20 @@ class MatrixChannel(BaseChannel):
         return attachment, _ATTACH_MARKER.format(path)
 
     def _base_metadata(self, room: MatrixRoom, event: RoomMessage) -> dict[str, Any]:
-        """Build common metadata for text and media handlers."""
+        """执行 `_base_metadata`。
+
+        【中文名称】_base_metadata
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - room: 调用方传入的 `room` 数据；具体类型以函数签名为准。
+        - event: 调用方传入的 `event` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         meta: dict[str, Any] = {"room": getattr(room, "display_name", room.room_id)}
         if isinstance(eid := getattr(event, "event_id", None), str) and eid:
             meta["event_id"] = eid
@@ -966,6 +1730,21 @@ class MatrixChannel(BaseChannel):
         return meta
 
     async def _on_message(self, room: MatrixRoom, event: RoomMessageText) -> None:
+        """异步执行 `_on_message`。
+
+        【中文名称】_on_message
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - room: 调用方传入的 `room` 数据；具体类型以函数签名为准。
+        - event: 调用方传入的 `event` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if (
             event.sender == self.config.user_id
             or self._is_pre_startup_event(event)
@@ -984,6 +1763,21 @@ class MatrixChannel(BaseChannel):
             raise
 
     async def _on_media_message(self, room: MatrixRoom, event: MatrixMediaEvent) -> None:
+        """异步执行 `_on_media_message`。
+
+        【中文名称】_on_media_message
+
+        【功能说明】
+        这是 Matrix 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Matrix 房间、同步消息和附件、处理加密/未加密房间差异，并把回复发送回对应 room。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - room: 调用方传入的 `room` 数据；具体类型以函数签名为准。
+        - event: 调用方传入的 `event` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if (
             event.sender == self.config.user_id
             or self._is_pre_startup_event(event)

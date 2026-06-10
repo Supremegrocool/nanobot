@@ -1,4 +1,18 @@
-"""DingTalk/DingDing channel implementation using Stream Mode."""
+"""钉钉渠道适配器。
+
+【中文名称】钉钉渠道适配器
+
+【功能说明】
+负责把钉钉 Stream 模式收到的会话、群聊、文件和指令事件转换为 InboundMessage，并把 Agent 生成的文本、流式片段、文件编辑提示发送回钉钉。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的渠道适配器代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 import asyncio
 import json
@@ -36,7 +50,7 @@ try:
     DINGTALK_AVAILABLE = True
 except ImportError:
     DINGTALK_AVAILABLE = False
-    # Fallback so class definitions don't crash at module level
+    # 说明：这里处理 钉钉渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     CallbackHandler = object  # type: ignore[assignment,misc]
     CallbackMessage = None  # type: ignore[assignment,misc]
     AckMessage = None  # type: ignore[assignment,misc]
@@ -44,22 +58,55 @@ except ImportError:
 
 
 class NanobotDingTalkHandler(CallbackHandler):
-    """
-    Standard DingTalk Stream SDK Callback Handler.
-    Parses incoming messages and forwards them to the Nanobot channel.
-    """
+    """NanobotDingTalkHandler 类。
+
+    【中文名称】NanobotDingTalkHandler
+
+    【功能说明】
+    这是 钉钉渠道适配器 中的核心数据结构或服务类。负责把钉钉 Stream 模式收到的会话、群聊、文件和指令事件转换为 InboundMessage，并把 Agent 生成的文本、流式片段、文件编辑提示发送回钉钉。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     def __init__(self, channel: "DingTalkChannel"):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 钉钉渠道适配器 中的一个步骤函数，用来支撑：负责把钉钉 Stream 模式收到的会话、群聊、文件和指令事件转换为 InboundMessage，并把 Agent 生成的文本、流式片段、文件编辑提示发送回钉钉。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - channel: 调用方传入的 `channel` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         super().__init__()
         self.channel = channel
 
     async def process(self, message: CallbackMessage):
-        """Process incoming stream message."""
+        """异步执行 `process`。
+
+        【中文名称】process
+
+        【功能说明】
+        这是 钉钉渠道适配器 中的一个步骤函数，用来支撑：负责把钉钉 Stream 模式收到的会话、群聊、文件和指令事件转换为 InboundMessage，并把 Agent 生成的文本、流式片段、文件编辑提示发送回钉钉。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - message: 调用方传入的 `message` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         try:
-            # Parse using SDK's ChatbotMessage for robust handling
+            # 说明：这里处理 钉钉渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             chatbot_msg = ChatbotMessage.from_dict(message.data)
 
-            # Extract text content; fall back to raw dict if SDK object is empty
+            # 说明：这里处理 钉钉渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             content = ""
             if chatbot_msg.text:
                 content = chatbot_msg.text.content.strip()
@@ -68,7 +115,7 @@ class NanobotDingTalkHandler(CallbackHandler):
             if not content:
                 content = message.data.get("text", {}).get("content", "").strip()
 
-            # Handle file/image messages
+            # 说明：这里处理 钉钉渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             file_paths = []
             if chatbot_msg.message_type == "picture" and chatbot_msg.image_content:
                 download_code = chatbot_msg.image_content.download_code
@@ -129,8 +176,8 @@ class NanobotDingTalkHandler(CallbackHandler):
 
             self.channel.logger.info("Received message from {} ({}): {}", sender_name, sender_id, content)
 
-            # Forward to Nanobot via _on_message (non-blocking).
-            # Store reference to prevent GC before task completes.
+            # 说明：这里处理 钉钉渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 钉钉渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             task = asyncio.create_task(
                 self.channel._on_message(
                     content,
@@ -147,12 +194,22 @@ class NanobotDingTalkHandler(CallbackHandler):
 
         except Exception:
             self.channel.logger.exception("Error processing message")
-            # Return OK to avoid retry loop from DingTalk server
+            # 说明：这里处理 钉钉渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             return AckMessage.STATUS_OK, "Error"
 
 
 class DingTalkConfig(Base):
-    """DingTalk channel configuration using Stream mode."""
+    """DingTalkConfig 类。
+
+    【中文名称】DingTalkConfig
+
+    【功能说明】
+    这是 钉钉渠道适配器 中的核心数据结构或服务类。负责把钉钉 Stream 模式收到的会话、群聊、文件和指令事件转换为 InboundMessage，并把 Agent 生成的文本、流式片段、文件编辑提示发送回钉钉。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     enabled: bool = False
     client_id: str = ""
@@ -160,19 +217,21 @@ class DingTalkConfig(Base):
     allow_from: list[str] = Field(default_factory=list)
     allow_remote_media_redirects: bool = False
     remote_media_redirect_allowed_hosts: list[str] = Field(default_factory=list)
-    group_user_isolation: bool = False  # If True, each user in group chat gets their own session
+    group_user_isolation: bool = False  # 说明：这里处理 钉钉渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
 
 class DingTalkChannel(BaseChannel):
-    """
-    DingTalk channel using Stream Mode.
+    """DingTalkChannel 类。
 
-    Uses WebSocket to receive events via `dingtalk-stream` SDK.
-    Uses direct HTTP API to send messages (SDK is mainly for receiving).
+    【中文名称】DingTalkChannel
 
-    Supports both private (1:1) and group chats.
-    Group chat_id is stored with a "group:" prefix to route replies back.
-    """
+    【功能说明】
+    这是 钉钉渠道适配器 中的核心数据结构或服务类。负责把钉钉 Stream 模式收到的会话、群聊、文件和指令事件转换为 InboundMessage，并把 Agent 生成的文本、流式片段、文件编辑提示发送回钉钉。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     name = "dingtalk"
     display_name = "DingTalk"
@@ -183,9 +242,38 @@ class DingTalkChannel(BaseChannel):
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
+        """执行 `default_config`。
+
+        【中文名称】default_config
+
+        【功能说明】
+        这是 钉钉渠道适配器 中的一个步骤函数，用来支撑：负责把钉钉 Stream 模式收到的会话、群聊、文件和指令事件转换为 InboundMessage，并把 Agent 生成的文本、流式片段、文件编辑提示发送回钉钉。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return DingTalkConfig().model_dump(by_alias=True)
 
     def __init__(self, config: Any, bus: MessageBus):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 钉钉渠道适配器 中的一个步骤函数，用来支撑：负责把钉钉 Stream 模式收到的会话、群聊、文件和指令事件转换为 InboundMessage，并把 Agent 生成的文本、流式片段、文件编辑提示发送回钉钉。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - config: 调用方传入的 `config` 数据；具体类型以函数签名为准。
+        - bus: 调用方传入的 `bus` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if isinstance(config, dict):
             config = DingTalkConfig.model_validate(config)
         super().__init__(config, bus)
@@ -193,15 +281,27 @@ class DingTalkChannel(BaseChannel):
         self._client: Any = None
         self._http: httpx.AsyncClient | None = None
 
-        # Access Token management for sending messages
+        # 说明：这里处理 钉钉渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         self._access_token: str | None = None
         self._token_expiry: float = 0
 
-        # Hold references to background tasks to prevent GC
+        # 说明：这里处理 钉钉渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         self._background_tasks: set[asyncio.Task] = set()
 
     async def start(self) -> None:
-        """Start the DingTalk bot with Stream Mode."""
+        """异步执行 `start`。
+
+        【中文名称】start
+
+        【功能说明】
+        这是 钉钉渠道适配器 中的一个步骤函数，用来支撑：负责把钉钉 Stream 模式收到的会话、群聊、文件和指令事件转换为 InboundMessage，并把 Agent 生成的文本、流式片段、文件编辑提示发送回钉钉。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         try:
             if not DINGTALK_AVAILABLE:
                 self.logger.error(
@@ -223,13 +323,13 @@ class DingTalkChannel(BaseChannel):
             credential = Credential(self.config.client_id, self.config.client_secret)
             self._client = DingTalkStreamClient(credential)
 
-            # Register standard handler
+            # 说明：这里处理 钉钉渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             handler = NanobotDingTalkHandler(self)
             self._client.register_callback_handler(ChatbotMessage.TOPIC, handler)
 
             self.logger.info("bot started with Stream Mode")
 
-            # Reconnect loop: restart stream if SDK exits or crashes
+            # 说明：这里处理 钉钉渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             while self._running:
                 try:
                     await self._client.start()
@@ -243,19 +343,43 @@ class DingTalkChannel(BaseChannel):
             self.logger.exception("Failed to start channel")
 
     async def stop(self) -> None:
-        """Stop the DingTalk bot."""
+        """异步执行 `stop`。
+
+        【中文名称】stop
+
+        【功能说明】
+        这是 钉钉渠道适配器 中的一个步骤函数，用来支撑：负责把钉钉 Stream 模式收到的会话、群聊、文件和指令事件转换为 InboundMessage，并把 Agent 生成的文本、流式片段、文件编辑提示发送回钉钉。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         self._running = False
-        # Close the shared HTTP client
+        # 说明：这里处理 钉钉渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if self._http:
             await self._http.aclose()
             self._http = None
-        # Cancel outstanding background tasks
+        # 说明：这里处理 钉钉渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         for task in self._background_tasks:
             task.cancel()
         self._background_tasks.clear()
 
     async def _get_access_token(self) -> str | None:
-        """Get or refresh Access Token."""
+        """异步执行 `_get_access_token`。
+
+        【中文名称】_get_access_token
+
+        【功能说明】
+        这是 钉钉渠道适配器 中的一个步骤函数，用来支撑：负责把钉钉 Stream 模式收到的会话、群聊、文件和指令事件转换为 InboundMessage，并把 Agent 生成的文本、流式片段、文件编辑提示发送回钉钉。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if self._access_token and time.time() < self._token_expiry:
             return self._access_token
 
@@ -274,7 +398,7 @@ class DingTalkChannel(BaseChannel):
             resp.raise_for_status()
             res_data = resp.json()
             self._access_token = res_data.get("accessToken")
-            # Expire 60s early to be safe
+            # 说明：这里处理 钉钉渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             self._token_expiry = time.time() + int(res_data.get("expireIn", 7200)) - 60
             return self._access_token
         except Exception:
@@ -283,9 +407,37 @@ class DingTalkChannel(BaseChannel):
 
     @staticmethod
     def _is_http_url(value: str) -> bool:
+        """执行 `_is_http_url`。
+
+        【中文名称】_is_http_url
+
+        【功能说明】
+        这是 钉钉渠道适配器 中的一个步骤函数，用来支撑：负责把钉钉 Stream 模式收到的会话、群聊、文件和指令事件转换为 InboundMessage，并把 Agent 生成的文本、流式片段、文件编辑提示发送回钉钉。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return urlparse(value).scheme in ("http", "https")
 
     def _guess_upload_type(self, media_ref: str) -> str:
+        """执行 `_guess_upload_type`。
+
+        【中文名称】_guess_upload_type
+
+        【功能说明】
+        这是 钉钉渠道适配器 中的一个步骤函数，用来支撑：负责把钉钉 Stream 模式收到的会话、群聊、文件和指令事件转换为 InboundMessage，并把 Agent 生成的文本、流式片段、文件编辑提示发送回钉钉。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - media_ref: 调用方传入的 `media_ref` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         ext = Path(urlparse(media_ref).path).suffix.lower()
         if ext in self._IMAGE_EXTS:
             return "image"
@@ -296,11 +448,41 @@ class DingTalkChannel(BaseChannel):
         return "file"
 
     def _guess_filename(self, media_ref: str, upload_type: str) -> str:
+        """执行 `_guess_filename`。
+
+        【中文名称】_guess_filename
+
+        【功能说明】
+        这是 钉钉渠道适配器 中的一个步骤函数，用来支撑：负责把钉钉 Stream 模式收到的会话、群聊、文件和指令事件转换为 InboundMessage，并把 Agent 生成的文本、流式片段、文件编辑提示发送回钉钉。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - media_ref: 调用方传入的 `media_ref` 数据；具体类型以函数签名为准。
+        - upload_type: 调用方传入的 `upload_type` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         name = os.path.basename(urlparse(media_ref).path)
         return name or {"image": "image.jpg", "voice": "audio.amr", "video": "video.mp4"}.get(upload_type, "file.bin")
 
     @staticmethod
     def _zip_bytes(filename: str, data: bytes) -> tuple[bytes, str, str]:
+        """执行 `_zip_bytes`。
+
+        【中文名称】_zip_bytes
+
+        【功能说明】
+        这是 钉钉渠道适配器 中的一个步骤函数，用来支撑：负责把钉钉 Stream 模式收到的会话、群聊、文件和指令事件转换为 InboundMessage，并把 Agent 生成的文本、流式片段、文件编辑提示发送回钉钉。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - filename: 调用方传入的 `filename` 数据；具体类型以函数签名为准。
+        - data: 调用方传入的 `data` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         stem = Path(filename).stem or "attachment"
         safe_name = filename or "attachment.bin"
         zip_name = f"{stem}.zip"
@@ -315,6 +497,22 @@ class DingTalkChannel(BaseChannel):
         data: bytes,
         content_type: str | None,
     ) -> tuple[bytes, str, str | None]:
+        """执行 `_normalize_upload_payload`。
+
+        【中文名称】_normalize_upload_payload
+
+        【功能说明】
+        这是 钉钉渠道适配器 中的一个步骤函数，用来支撑：负责把钉钉 Stream 模式收到的会话、群聊、文件和指令事件转换为 InboundMessage，并把 Agent 生成的文本、流式片段、文件编辑提示发送回钉钉。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - filename: 调用方传入的 `filename` 数据；具体类型以函数签名为准。
+        - data: 调用方传入的 `data` 数据；具体类型以函数签名为准。
+        - content_type: 调用方传入的 `content_type` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         ext = Path(filename).suffix.lower()
         if ext in self._ZIP_BEFORE_UPLOAD_EXTS or content_type == "text/html":
             self.logger.info(
@@ -325,6 +523,20 @@ class DingTalkChannel(BaseChannel):
         return data, filename, content_type
 
     def _validate_remote_media_url(self, media_ref: str) -> bool:
+        """执行 `_validate_remote_media_url`。
+
+        【中文名称】_validate_remote_media_url
+
+        【功能说明】
+        这是 钉钉渠道适配器 中的一个步骤函数，用来支撑：负责把钉钉 Stream 模式收到的会话、群聊、文件和指令事件转换为 InboundMessage，并把 Agent 生成的文本、流式片段、文件编辑提示发送回钉钉。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - media_ref: 调用方传入的 `media_ref` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         ok, err = validate_url_target(media_ref)
         if not ok:
             self.logger.warning("remote media URL blocked ref={} reason={}", media_ref, err)
@@ -332,6 +544,21 @@ class DingTalkChannel(BaseChannel):
         return True
 
     def _redirect_host_allowed(self, current_url: str, next_url: str) -> bool:
+        """执行 `_redirect_host_allowed`。
+
+        【中文名称】_redirect_host_allowed
+
+        【功能说明】
+        这是 钉钉渠道适配器 中的一个步骤函数，用来支撑：负责把钉钉 Stream 模式收到的会话、群聊、文件和指令事件转换为 InboundMessage，并把 Agent 生成的文本、流式片段、文件编辑提示发送回钉钉。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - current_url: 调用方传入的 `current_url` 数据；具体类型以函数签名为准。
+        - next_url: 调用方传入的 `next_url` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         current_host = (urlparse(current_url).hostname or "").lower()
         next_host = (urlparse(next_url).hostname or "").lower()
         if not next_host:
@@ -342,6 +569,21 @@ class DingTalkChannel(BaseChannel):
         return next_host in allowed_hosts
 
     def _next_remote_media_url(self, current_url: str, location: str | None) -> str | None:
+        """执行 `_next_remote_media_url`。
+
+        【中文名称】_next_remote_media_url
+
+        【功能说明】
+        这是 钉钉渠道适配器 中的一个步骤函数，用来支撑：负责把钉钉 Stream 模式收到的会话、群聊、文件和指令事件转换为 InboundMessage，并把 Agent 生成的文本、流式片段、文件编辑提示发送回钉钉。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - current_url: 调用方传入的 `current_url` 数据；具体类型以函数签名为准。
+        - location: 调用方传入的 `location` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self.config.allow_remote_media_redirects:
             self.logger.warning("media download redirect refused ref={}", current_url)
             return None
@@ -364,7 +606,19 @@ class DingTalkChannel(BaseChannel):
         self,
         media_ref: str,
     ) -> tuple[bytes | None, str | None]:
-        """Fetch a remote media URL with SSRF, redirect, and size checks."""
+        """异步执行 `_fetch_remote_media_bytes`。
+
+        【中文名称】_fetch_remote_media_bytes
+
+        【功能说明】
+        这是 钉钉渠道适配器 中的一个步骤函数，用来支撑：负责把钉钉 Stream 模式收到的会话、群聊、文件和指令事件转换为 InboundMessage，并把 Agent 生成的文本、流式片段、文件编辑提示发送回钉钉。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - media_ref: 调用方传入的 `media_ref` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self._http:
             return None, None
 
@@ -372,9 +626,9 @@ class DingTalkChannel(BaseChannel):
             return None, None
 
         try:
-            # Prefer streaming with a running byte cap so large responses are not
-            # materialized before the limit is enforced. Test fakes may only
-            # implement get(), so keep a small compatibility fallback below.
+            # 说明：这里处理 钉钉渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 钉钉渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 钉钉渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             stream = getattr(self._http, "stream", None)
             if stream is not None:
                 current_url = media_ref
@@ -468,6 +722,20 @@ class DingTalkChannel(BaseChannel):
         self,
         media_ref: str,
     ) -> tuple[bytes | None, str | None, str | None]:
+        """异步执行 `_read_media_bytes`。
+
+        【中文名称】_read_media_bytes
+
+        【功能说明】
+        这是 钉钉渠道适配器 中的一个步骤函数，用来支撑：负责把钉钉 Stream 模式收到的会话、群聊、文件和指令事件转换为 InboundMessage，并把 Agent 生成的文本、流式片段、文件编辑提示发送回钉钉。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - media_ref: 调用方传入的 `media_ref` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not media_ref:
             return None, None, None
 
@@ -503,6 +771,24 @@ class DingTalkChannel(BaseChannel):
         filename: str,
         content_type: str | None,
     ) -> str | None:
+        """异步执行 `_upload_media`。
+
+        【中文名称】_upload_media
+
+        【功能说明】
+        这是 钉钉渠道适配器 中的一个步骤函数，用来支撑：负责把钉钉 Stream 模式收到的会话、群聊、文件和指令事件转换为 InboundMessage，并把 Agent 生成的文本、流式片段、文件编辑提示发送回钉钉。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - token: 调用方传入的 `token` 数据；具体类型以函数签名为准。
+        - data: 调用方传入的 `data` 数据；具体类型以函数签名为准。
+        - media_type: 调用方传入的 `media_type` 数据；具体类型以函数签名为准。
+        - filename: 调用方传入的 `filename` 数据；具体类型以函数签名为准。
+        - content_type: 调用方传入的 `content_type` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self._http:
             return None
         url = f"https://oapi.dingtalk.com/media/upload?access_token={token}&type={media_type}"
@@ -540,22 +826,39 @@ class DingTalkChannel(BaseChannel):
         msg_key: str,
         msg_param: dict[str, Any],
     ) -> bool:
+        """异步执行 `_send_batch_message`。
+
+        【中文名称】_send_batch_message
+
+        【功能说明】
+        这是 钉钉渠道适配器 中的一个步骤函数，用来支撑：负责把钉钉 Stream 模式收到的会话、群聊、文件和指令事件转换为 InboundMessage，并把 Agent 生成的文本、流式片段、文件编辑提示发送回钉钉。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - token: 调用方传入的 `token` 数据；具体类型以函数签名为准。
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - msg_key: 调用方传入的 `msg_key` 数据；具体类型以函数签名为准。
+        - msg_param: 调用方传入的 `msg_param` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self._http:
             self.logger.warning("HTTP client not initialized, cannot send")
             return False
 
         headers = {"x-acs-dingtalk-access-token": token}
         if chat_id.startswith("group:"):
-            # Group chat
+            # 说明：这里处理 钉钉渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             url = "https://api.dingtalk.com/v1.0/robot/groupMessages/send"
             payload = {
                 "robotCode": self.config.client_id,
-                "openConversationId": chat_id[6:],  # Remove "group:" prefix,
+                "openConversationId": chat_id[6:],  # 说明：这里处理 钉钉渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 "msgKey": msg_key,
                 "msgParam": json.dumps(msg_param, ensure_ascii=False),
             }
         else:
-            # Private chat
+            # 说明：这里处理 钉钉渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             url = "https://api.dingtalk.com/v1.0/robot/oToMessages/batchSend"
             payload = {
                 "robotCode": self.config.client_id,
@@ -588,6 +891,22 @@ class DingTalkChannel(BaseChannel):
             return False
 
     async def _send_markdown_text(self, token: str, chat_id: str, content: str) -> bool:
+        """异步执行 `_send_markdown_text`。
+
+        【中文名称】_send_markdown_text
+
+        【功能说明】
+        这是 钉钉渠道适配器 中的一个步骤函数，用来支撑：负责把钉钉 Stream 模式收到的会话、群聊、文件和指令事件转换为 InboundMessage，并把 Agent 生成的文本、流式片段、文件编辑提示发送回钉钉。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - token: 调用方传入的 `token` 数据；具体类型以函数签名为准。
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return await self._send_batch_message(
             token,
             chat_id,
@@ -596,6 +915,22 @@ class DingTalkChannel(BaseChannel):
         )
 
     async def _send_media_ref(self, token: str, chat_id: str, media_ref: str) -> bool:
+        """异步执行 `_send_media_ref`。
+
+        【中文名称】_send_media_ref
+
+        【功能说明】
+        这是 钉钉渠道适配器 中的一个步骤函数，用来支撑：负责把钉钉 Stream 模式收到的会话、群聊、文件和指令事件转换为 InboundMessage，并把 Agent 生成的文本、流式片段、文件编辑提示发送回钉钉。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - token: 调用方传入的 `token` 数据；具体类型以函数签名为准。
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - media_ref: 调用方传入的 `media_ref` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         media_ref = (media_ref or "").strip()
         if not media_ref:
             return True
@@ -637,7 +972,7 @@ class DingTalkChannel(BaseChannel):
             return False
 
         if upload_type == "image":
-            # Verified in production: sampleImageMsg accepts media_id in photoURL.
+            # 说明：这里处理 钉钉渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             ok = await self._send_batch_message(
                 token,
                 chat_id,
@@ -656,7 +991,19 @@ class DingTalkChannel(BaseChannel):
         )
 
     async def send(self, msg: OutboundMessage) -> None:
-        """Send a message through DingTalk."""
+        """异步执行 `send`。
+
+        【中文名称】send
+
+        【功能说明】
+        这是 钉钉渠道适配器 中的一个步骤函数，用来支撑：负责把钉钉 Stream 模式收到的会话、群聊、文件和指令事件转换为 InboundMessage，并把 Agent 生成的文本、流式片段、文件编辑提示发送回钉钉。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - msg: 调用方传入的 `msg` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         token = await self._get_access_token()
         if not token:
             return
@@ -669,7 +1016,7 @@ class DingTalkChannel(BaseChannel):
             if ok:
                 continue
             self.logger.error("media send failed for {}", media_ref)
-            # Send visible fallback so failures are observable by the user.
+            # 说明：这里处理 钉钉渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             filename = self._guess_filename(media_ref, self._guess_upload_type(media_ref))
             await self._send_markdown_text(
                 token,
@@ -685,11 +1032,23 @@ class DingTalkChannel(BaseChannel):
         conversation_type: str | None = None,
         conversation_id: str | None = None,
     ) -> None:
-        """Handle incoming message (called by NanobotDingTalkHandler).
+        """异步执行 `_on_message`。
 
-        Delegates to BaseChannel._handle_message() which enforces allow_from
-        permission checks before publishing to the bus.
-        """
+        【中文名称】_on_message
+
+        【功能说明】
+        这是 钉钉渠道适配器 中的一个步骤函数，用来支撑：负责把钉钉 Stream 模式收到的会话、群聊、文件和指令事件转换为 InboundMessage，并把 Agent 生成的文本、流式片段、文件编辑提示发送回钉钉。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+        - sender_id: 调用方传入的 `sender_id` 数据；具体类型以函数签名为准。
+        - sender_name: 调用方传入的 `sender_name` 数据；具体类型以函数签名为准。
+        - conversation_type: 调用方传入的 `conversation_type` 数据；具体类型以函数签名为准。
+        - conversation_id: 调用方传入的 `conversation_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         try:
             self.logger.info("inbound: {} from {}", content, sender_name)
             is_group = conversation_type == "2" and conversation_id
@@ -717,7 +1076,21 @@ class DingTalkChannel(BaseChannel):
         filename: str,
         sender_id: str,
     ) -> str | None:
-        """Download a DingTalk file to the media directory, return local path."""
+        """异步执行 `_download_dingtalk_file`。
+
+        【中文名称】_download_dingtalk_file
+
+        【功能说明】
+        这是 钉钉渠道适配器 中的一个步骤函数，用来支撑：负责把钉钉 Stream 模式收到的会话、群聊、文件和指令事件转换为 InboundMessage，并把 Agent 生成的文本、流式片段、文件编辑提示发送回钉钉。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - download_code: 调用方传入的 `download_code` 数据；具体类型以函数签名为准。
+        - filename: 调用方传入的 `filename` 数据；具体类型以函数签名为准。
+        - sender_id: 调用方传入的 `sender_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         from nanobot.config.paths import get_media_dir
 
         try:
@@ -726,7 +1099,7 @@ class DingTalkChannel(BaseChannel):
                 self.logger.error("file download: no token or http client")
                 return None
 
-            # Step 1: Exchange downloadCode for a temporary download URL
+            # 说明：这里处理 钉钉渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             api_url = "https://api.dingtalk.com/v1.0/robot/messageFiles/download"
             headers = {"x-acs-dingtalk-access-token": token, "Content-Type": "application/json"}
             payload = {"downloadCode": download_code, "robotCode": self.config.client_id}
@@ -741,13 +1114,13 @@ class DingTalkChannel(BaseChannel):
                 self.logger.error("download URL not found in response: {}", result)
                 return None
 
-            # Step 2: Download the file content
+            # 说明：这里处理 钉钉渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             file_resp = await self._http.get(download_url, follow_redirects=True)
             if file_resp.status_code != 200:
                 self.logger.error("file download failed: status={}", file_resp.status_code)
                 return None
 
-            # Save to media directory (accessible under workspace)
+            # 说明：这里处理 钉钉渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             download_dir = get_media_dir("dingtalk") / sender_id
             download_dir.mkdir(parents=True, exist_ok=True)
             file_path = download_dir / filename

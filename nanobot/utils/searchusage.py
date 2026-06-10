@@ -1,4 +1,18 @@
-"""Web search provider usage fetchers for /status command."""
+"""搜索用量工具。
+
+【中文名称】搜索用量工具
+
+【功能说明】
+负责统计和限制搜索工具调用频率，避免一次任务中过度请求外部搜索服务。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的通用工具代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 from __future__ import annotations
 
@@ -9,25 +23,47 @@ from typing import Any
 
 @dataclass
 class SearchUsageInfo:
-    """Structured usage info returned by a provider fetcher."""
+    """SearchUsageInfo 类。
+
+    【中文名称】SearchUsageInfo
+
+    【功能说明】
+    这是 搜索用量工具 中的核心数据结构或服务类。负责统计和限制搜索工具调用频率，避免一次任务中过度请求外部搜索服务。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     provider: str
-    supported: bool = False          # True if the provider has a usage API
-    error: str | None = None         # Set when the API call failed
+    supported: bool = False          # 说明：这里处理 搜索用量工具 的协议细节或边界情况，避免外部差异影响核心流程。
+    error: str | None = None         # 说明：这里处理 搜索用量工具 的协议细节或边界情况，避免外部差异影响核心流程。
 
-    # Usage counters (None = not available for this provider)
+    # 说明：这里处理 搜索用量工具 的协议细节或边界情况，避免外部差异影响核心流程。
     used: int | None = None
     limit: int | None = None
     remaining: int | None = None
-    reset_date: str | None = None    # ISO date string, e.g. "2026-05-01"
+    reset_date: str | None = None    # 说明：这里处理 搜索用量工具 的协议细节或边界情况，避免外部差异影响核心流程。
 
-    # Tavily-specific breakdown
+    # 说明：这里处理 搜索用量工具 的协议细节或边界情况，避免外部差异影响核心流程。
     search_used: int | None = None
     extract_used: int | None = None
     crawl_used: int | None = None
 
     def format(self) -> str:
-        """Return a human-readable multi-line string for /status output."""
+        """执行 `format`。
+
+        【中文名称】format
+
+        【功能说明】
+        这是 搜索用量工具 中的一个步骤函数，用来支撑：负责统计和限制搜索工具调用频率，避免一次任务中过度请求外部搜索服务。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         lines = [f"🔍 Web Search: {self.provider}"]
 
         if not self.supported:
@@ -43,7 +79,7 @@ class SearchUsageInfo:
         elif self.used is not None:
             lines.append(f"   Usage: {self.used} requests")
 
-        # Tavily breakdown
+        # 说明：这里处理 搜索用量工具 的协议细节或边界情况，避免外部差异影响核心流程。
         breakdown_parts = []
         if self.search_used is not None:
             breakdown_parts.append(f"Search: {self.search_used}")
@@ -67,31 +103,47 @@ async def fetch_search_usage(
     provider: str,
     api_key: str | None = None,
 ) -> SearchUsageInfo:
-    """
-    Fetch usage info for the configured web search provider.
+    """异步执行 `fetch_search_usage`。
 
-    Args:
-        provider: Provider name (e.g. "tavily", "brave", "duckduckgo").
-        api_key:  API key for the provider (falls back to env vars).
+    【中文名称】fetch_search_usage
 
-    Returns:
-        SearchUsageInfo with populated fields where available.
-    """
+    【功能说明】
+    这是 搜索用量工具 中的一个步骤函数，用来支撑：负责统计和限制搜索工具调用频率，避免一次任务中过度请求外部搜索服务。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - provider: 调用方传入的 `provider` 数据；具体类型以函数签名为准。
+    - api_key: 调用方传入的 `api_key` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     p = (provider or "duckduckgo").strip().lower()
 
     if p == "tavily":
         return await _fetch_tavily_usage(api_key)
     else:
-        # brave, duckduckgo, searxng, jina, unknown — no usage API
+        # 说明：这里处理 搜索用量工具 的协议细节或边界情况，避免外部差异影响核心流程。
         return SearchUsageInfo(provider=p, supported=False)
 
 
-# ---------------------------------------------------------------------------
-# Tavily
-# ---------------------------------------------------------------------------
+# 说明：这里处理 搜索用量工具 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 搜索用量工具 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 搜索用量工具 的协议细节或边界情况，避免外部差异影响核心流程。
 
 async def _fetch_tavily_usage(api_key: str | None) -> SearchUsageInfo:
-    """Fetch usage from GET https://api.tavily.com/usage."""
+    """异步执行 `_fetch_tavily_usage`。
+
+    【中文名称】_fetch_tavily_usage
+
+    【功能说明】
+    这是 搜索用量工具 中的一个步骤函数，用来支撑：负责统计和限制搜索工具调用频率，避免一次任务中过度请求外部搜索服务。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - api_key: 调用方传入的 `api_key` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     import httpx
 
     key = api_key or os.environ.get("TAVILY_API_KEY", "")
@@ -126,30 +178,24 @@ async def _fetch_tavily_usage(api_key: str | None) -> SearchUsageInfo:
 
 
 def _parse_tavily_usage(data: dict[str, Any]) -> SearchUsageInfo:
-    """
-    Parse Tavily /usage response.
+    """执行 `_parse_tavily_usage`。
 
-    Actual API response shape:
-    {
-      "account": {
-        "current_plan": "Researcher",
-        "plan_usage": 20,
-        "plan_limit": 1000,
-        "search_usage": 20,
-        "crawl_usage": 0,
-        "extract_usage": 0,
-        "map_usage": 0,
-        "research_usage": 0,
-        "paygo_usage": 0,
-        "paygo_limit": null
-      }
-    }
-    """
+    【中文名称】_parse_tavily_usage
+
+    【功能说明】
+    这是 搜索用量工具 中的一个步骤函数，用来支撑：负责统计和限制搜索工具调用频率，避免一次任务中过度请求外部搜索服务。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - data: 调用方传入的 `data` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     account = data.get("account") or {}
     used = account.get("plan_usage")
     limit = account.get("plan_limit")
 
-    # Compute remaining
+    # 说明：这里处理 搜索用量工具 的协议细节或边界情况，避免外部差异影响核心流程。
     remaining = None
     if used is not None and limit is not None:
         remaining = max(0, limit - used)

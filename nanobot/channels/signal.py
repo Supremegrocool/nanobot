@@ -1,4 +1,18 @@
-"""Signal channel implementation using signal-cli daemon JSON-RPC interface."""
+"""Signal 渠道适配器。
+
+【中文名称】Signal 渠道适配器
+
+【功能说明】
+负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的渠道适配器代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 from __future__ import annotations
 
@@ -28,9 +42,21 @@ from nanobot.utils.helpers import safe_filename, split_message
 
 @dataclass
 class _Run:
+    """_Run 类。
+
+    【中文名称】_Run
+
+    【功能说明】
+    这是 Signal 渠道适配器 中的核心数据结构或服务类。负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
+
     text: str
     styles: frozenset[str] = field(default_factory=frozenset)
-    opaque: bool = False  # code / table content — skip further pattern processing
+    opaque: bool = False  # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
 
 _SIG_CODE_BLOCK_RE = re.compile(r"```(?:\w+)?\n?([\s\S]*?)```")
@@ -47,11 +73,11 @@ _SIG_ITALIC_RE = re.compile(
 _SIG_STRIKE_RE = re.compile(r"~~(.+?)~~|(?<![~\w])~([^~\n]+)~(?![~\w])", re.DOTALL)
 _SIG_TOKEN_RE = re.compile(r"\x00C(\d+)\x00")
 
-# Patterns used to strip inline markdown when rendering table cells as plain
-# text. Defined separately from the styling regexes above because the cell
-# stripper needs a fixed, narrow subset (no single-asterisk italic, no
-# single-tilde strikethrough) and benefits from each pattern's group 1 being
-# the content directly.
+# 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 _SIG_CELL_STRIP_PATTERNS: tuple[tuple[re.Pattern, str], ...] = (
     (re.compile(r"\*\*(.+?)\*\*"), r"\1"),
     (re.compile(r"__(.+?)__"), r"\1"),
@@ -61,21 +87,71 @@ _SIG_CELL_STRIP_PATTERNS: tuple[tuple[re.Pattern, str], ...] = (
 
 
 def _utf16_len(s: str) -> int:
-    """UTF-16 code-unit length, matching Signal BodyRange semantics."""
+    """执行 `_utf16_len`。
+
+    【中文名称】_utf16_len
+
+    【功能说明】
+    这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - s: 调用方传入的 `s` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     return len(s.encode("utf-16-le")) // 2
 
 
 def _sig_strip_cell(s: str) -> str:
-    """Strip inline markdown from a table cell for plain-text rendering."""
+    """执行 `_sig_strip_cell`。
+
+    【中文名称】_sig_strip_cell
+
+    【功能说明】
+    这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - s: 调用方传入的 `s` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     for pattern, repl in _SIG_CELL_STRIP_PATTERNS:
         s = pattern.sub(repl, s)
     return s.strip()
 
 
 def _sig_render_table(table_lines: list[str]) -> str:
-    """Render a markdown pipe-table as fixed-width plain text."""
+    """执行 `_sig_render_table`。
+
+    【中文名称】_sig_render_table
+
+    【功能说明】
+    这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - table_lines: 调用方传入的 `table_lines` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
 
     def dw(s: str) -> int:
+        """执行 `dw`。
+
+        【中文名称】dw
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - s: 调用方传入的 `s` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in s)
 
     rows: list[list[str]] = []
@@ -95,6 +171,20 @@ def _sig_render_table(table_lines: list[str]) -> str:
     widths = [max(dw(r[c]) for r in rows) for c in range(ncols)]
 
     def dr(cells: list[str]) -> str:
+        """执行 `dr`。
+
+        【中文名称】dr
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - cells: 调用方传入的 `cells` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return "  ".join(f"{c}{' ' * (w - dw(c))}" for c, w in zip(cells, widths))
 
     out = [dr(rows[0])]
@@ -105,25 +195,47 @@ def _sig_render_table(table_lines: list[str]) -> str:
 
 
 def _markdown_to_signal(text: str) -> tuple[str, list[str]]:
-    """Convert markdown text to Signal plain text + textStyle ranges.
+    """执行 `_markdown_to_signal`。
 
-    Returns ``(plain_text, text_styles)`` where ``text_styles`` are
-    ``"start:length:STYLE"`` strings for the signal-cli ``textStyle`` parameter.
-    """
+    【中文名称】_markdown_to_signal
+
+    【功能说明】
+    这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if not text:
         return text, []
 
-    # Phase 1 (text-level): extract code blocks and tables with placeholder tokens
-    # so they're protected from inline-style processing.
+    # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     protected: list[str] = []
 
     def save_code(m: re.Match) -> str:
+        """执行 `save_code`。
+
+        【中文名称】save_code
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - m: 调用方传入的 `m` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         protected.append(m.group(1))
         return f"\x00C{len(protected) - 1}\x00"
 
     text = _SIG_CODE_BLOCK_RE.sub(save_code, text)
 
-    # Detect and render pipe-tables line by line.
+    # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     lines = text.split("\n")
     rebuilt: list[str] = []
     i = 0
@@ -144,13 +256,28 @@ def _markdown_to_signal(text: str) -> tuple[str, list[str]]:
             i += 1
     text = "\n".join(rebuilt)
 
-    # Phase 2 (run-based): process inline patterns.
+    # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     runs: list[_Run] = [_Run(text)]
 
     def transform(
         pattern: re.Pattern,
         make_runs: Callable[[re.Match, frozenset[str]], list[_Run]],
     ) -> None:
+        """执行 `transform`。
+
+        【中文名称】transform
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - pattern: 调用方传入的 `pattern` 数据；具体类型以函数签名为准。
+        - make_runs: 调用方传入的 `make_runs` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         new_runs: list[_Run] = []
         for run in runs:
             if run.opaque:
@@ -166,32 +293,61 @@ def _markdown_to_signal(text: str) -> tuple[str, list[str]]:
                 new_runs.append(_Run(run.text[pos:], run.styles))
         runs[:] = new_runs
 
-    # Restore code/table placeholders as opaque MONOSPACE runs.
+    # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     transform(
         _SIG_TOKEN_RE,
         lambda m, s: [_Run(protected[int(m.group(1))], s | {"MONOSPACE"}, opaque=True)],
     )
 
-    # Inline code (opaque).
+    # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     transform(_SIG_INLINE_CODE_RE, lambda m, s: [_Run(m.group(1), s | {"MONOSPACE"}, opaque=True)])
 
-    # Headers → bold plain text.
+    # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     transform(_SIG_HEADER_RE, lambda m, s: [_Run(m.group(1), s | {"BOLD"})])
 
-    # Blockquotes → strip marker.
+    # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     transform(_SIG_BLOCKQUOTE_RE, lambda m, s: [_Run(m.group(1), s)])
 
-    # Bullet lists → bullet character.
+    # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     transform(_SIG_BULLET_RE, lambda m, s: [_Run("• ", s)])
 
-    # Numbered lists → normalize spacing.
+    # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     transform(_SIG_OLIST_RE, lambda m, s: [_Run(m.group(1) + ". ", s)])
 
-    # Links → "text (url)" or bare url when text equals url.
+    # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     def _link_runs(m: re.Match, s: frozenset) -> list[_Run]:
+        """执行 `_link_runs`。
+
+        【中文名称】_link_runs
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - m: 调用方传入的 `m` 数据；具体类型以函数签名为准。
+        - s: 调用方传入的 `s` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         link_text, url = m.group(1), m.group(2)
 
         def _norm(u: str) -> str:
+            """执行 `_norm`。
+
+            【中文名称】_norm
+
+            【功能说明】
+            这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - u: 调用方传入的 `u` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             return re.sub(r"^https?://(www\.)?", "", u).rstrip("/").lower()
 
         if _norm(url) == _norm(link_text):
@@ -200,19 +356,19 @@ def _markdown_to_signal(text: str) -> tuple[str, list[str]]:
 
     transform(_SIG_LINK_RE, _link_runs)
 
-    # Bold (before italic so ** doesn't interfere).
+    # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     transform(_SIG_BOLD_RE, lambda m, s: [_Run(m.group(1) or m.group(2), s | {"BOLD"})])
 
-    # Italic (single * or _).
+    # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     transform(_SIG_ITALIC_RE, lambda m, s: [_Run(m.group(1) or m.group(2), s | {"ITALIC"})])
 
-    # Strikethrough: ~~text~~ (standard) or ~text~ (single-tilde variant).
+    # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     transform(_SIG_STRIKE_RE, lambda m, s: [_Run(m.group(1) or m.group(2), s | {"STRIKETHROUGH"})])
 
-    # Phase 3: assemble output. Offsets and lengths are emitted in UTF-16 code
-    # units because Signal's BodyRange (via signal-cli's textStyle) interprets
-    # them as such; Python's len() counts code points, which would shift ranges
-    # left by 1 unit per non-BMP character preceding them.
+    # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     plain_text = ""
     text_styles: list[str] = []
     utf16_offset = 0
@@ -232,26 +388,31 @@ def _markdown_to_signal(text: str) -> tuple[str, list[str]]:
 def _partition_styles(
     plain_text: str, chunks: list[str], text_styles: list[str]
 ) -> list[list[str]]:
-    """Partition Signal textStyle ranges across message chunks.
+    """执行 `_partition_styles`。
 
-    ``split_message`` slices ``plain_text`` into pieces (optionally trimming
-    whitespace at the boundaries), but the style ranges produced by
-    ``_markdown_to_signal`` are expressed in UTF-16 offsets relative to the
-    full ``plain_text``. This redistributes them per chunk with offsets
-    rebased to each chunk's start. Ranges that span a boundary are split
-    across the chunks they touch; ranges that fall entirely in trimmed
-    whitespace are dropped.
-    """
+    【中文名称】_partition_styles
+
+    【功能说明】
+    这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - plain_text: 调用方传入的 `plain_text` 数据；具体类型以函数签名为准。
+    - chunks: 调用方传入的 `chunks` 数据；具体类型以函数签名为准。
+    - text_styles: 调用方传入的 `text_styles` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if not chunks:
         return []
     if not text_styles:
         return [[] for _ in chunks]
 
-    # Locate each chunk's UTF-16 start in plain_text. split_message lstrips at
-    # boundaries (but not before the first chunk), so we skip whitespace
-    # between chunks to mirror that.
+    # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     chunk_ranges: list[tuple[int, int]] = []
-    cursor = 0  # Python codepoint cursor in plain_text
+    cursor = 0  # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     for i, chunk in enumerate(chunks):
         if i > 0:
             while cursor < len(plain_text) and plain_text[cursor].isspace():
@@ -278,34 +439,64 @@ def _partition_styles(
 
 
 class SignalDMConfig(Base):
-    """Signal DM policy configuration."""
+    """SignalDMConfig 类。
+
+    【中文名称】SignalDMConfig
+
+    【功能说明】
+    这是 Signal 渠道适配器 中的核心数据结构或服务类。负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     enabled: bool = False
-    policy: str = "allowlist"  # "open" or "allowlist"
-    allow_from: list[str] = Field(default_factory=list)  # Allowed phone numbers/UUIDs
+    policy: str = "allowlist"  # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    allow_from: list[str] = Field(default_factory=list)  # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
 
 class SignalGroupConfig(Base):
-    """Signal group policy configuration."""
+    """SignalGroupConfig 类。
+
+    【中文名称】SignalGroupConfig
+
+    【功能说明】
+    这是 Signal 渠道适配器 中的核心数据结构或服务类。负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     enabled: bool = False
-    policy: str = "allowlist"  # "open" or "allowlist" - which groups to operate in
-    allow_from: list[str] = Field(default_factory=list)  # Allowed group IDs if allowlist policy
-    require_mention: bool = True  # Whether bot must be mentioned to respond
+    policy: str = "allowlist"  # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    allow_from: list[str] = Field(default_factory=list)  # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    require_mention: bool = True  # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
 
 class SignalConfig(Base):
-    """Signal channel configuration using signal-cli daemon (HTTP mode with -a flag only)."""
+    """SignalConfig 类。
+
+    【中文名称】SignalConfig
+
+    【功能说明】
+    这是 Signal 渠道适配器 中的核心数据结构或服务类。负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     enabled: bool = False
-    phone_number: str = ""  # Your Signal phone number (e.g., "+1234567890")
+    phone_number: str = ""  # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     daemon_host: str = "localhost"
     daemon_port: int = 8080
-    group_message_buffer_size: int = 20  # Number of recent group messages to keep for context
-    # Override the directory signal-cli writes inbound attachments to. When
-    # None, defaults to ~/.local/share/signal-cli/attachments (the daemon's
-    # platform default on Linux). Set this if the daemon is running with a
-    # custom XDG_DATA_HOME or on macOS/Windows where the default path differs.
+    group_message_buffer_size: int = 20  # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     attachments_dir: str | None = None
     dm: SignalDMConfig = Field(default_factory=SignalDMConfig)
     group: SignalGroupConfig = Field(default_factory=SignalGroupConfig)
@@ -313,6 +504,20 @@ class SignalConfig(Base):
     @field_validator("group_message_buffer_size")
     @classmethod
     def _validate_buffer_size(cls, v: int) -> int:
+        """执行 `_validate_buffer_size`。
+
+        【中文名称】_validate_buffer_size
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - v: 调用方传入的 `v` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if v <= 0:
             raise ValueError("group_message_buffer_size must be > 0")
         return v
@@ -320,36 +525,75 @@ class SignalConfig(Base):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def allow_from(self) -> list[str]:
-        """Aggregate allowlist for the base-class is_allowed() check.
+        """执行 `allow_from`。
 
-        Returns the union of dm.allow_from and group.allow_from so the base
-        channel gate sees a populated list when either sub-policy is configured.
-        A ``"*"`` wildcard in either sub-list propagates to allow all.
-        """
+        【中文名称】allow_from
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         return list(dict.fromkeys(self.dm.allow_from + self.group.allow_from))
 
 
 class SignalChannel(BaseChannel):
-    """
-    Signal channel using signal-cli daemon via HTTP JSON-RPC interface.
+    """SignalChannel 类。
 
-    Requires signal-cli daemon in HTTP mode:
-    - signal-cli -a +1234567890 daemon --http localhost:8080
+    【中文名称】SignalChannel
 
-    See https://github.com/AsamK/signal-cli for setup instructions.
-    """
+    【功能说明】
+    这是 Signal 渠道适配器 中的核心数据结构或服务类。负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     name = "signal"
     display_name = "Signal"
     _TYPING_REFRESH_SECONDS = 10.0
-    _MAX_MESSAGE_LEN = 64_000  # signal-cli practical limit (protocol max ~64 KB)
+    _MAX_MESSAGE_LEN = 64_000  # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     _HTTP_TIMEOUT_SECONDS = 60.0
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
+        """执行 `default_config`。
+
+        【中文名称】default_config
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return SignalConfig().model_dump(by_alias=True)
 
     def __init__(self, config: SignalConfig, bus: MessageBus):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - config: 调用方传入的 `config` 数据；具体类型以函数签名为准。
+        - bus: 调用方传入的 `bus` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if isinstance(config, dict):
             config = SignalConfig.model_validate(config)
         super().__init__(config, bus)
@@ -362,19 +606,24 @@ class SignalChannel(BaseChannel):
         self._account_id_aliases: set[str] = set()
         self._remember_account_id_alias(self.config.phone_number)
 
-        # Rolling message buffer for group context (group_id -> deque of messages)
-        # Each message is a dict with: sender_name, sender_number, content, timestamp
+        # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         self._group_buffers: dict[str, deque] = {}
 
     def is_allowed(self, sender_id: str) -> bool:
-        """Override base check to normalize and split pipe-joined identifiers.
+        """执行 `is_allowed`。
 
-        ``sender_id`` from Signal is the pipe-joined composite produced by
-        ``_collect_sender_id_parts``; allow_from entries may be single
-        identifiers or composites and may use the ``+`` prefix variant or
-        not. Delegates to ``_sender_matches_allowlist`` so the base gate
-        matches the per-policy DM gate.
-        """
+        【中文名称】is_allowed
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - sender_id: 调用方传入的 `sender_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         allow_list = self.config.allow_from
         if "*" in allow_list:
             return True
@@ -387,12 +636,19 @@ class SignalChannel(BaseChannel):
         return False
 
     def _sender_approved_via_pairing(self, sender_id: str) -> bool:
-        """Return True if any normalized variant of sender_id is in the pairing store.
+        """执行 `_sender_approved_via_pairing`。
 
-        Pairing approval may be recorded under any of the identifier forms
-        signal exposes (phone with/without ``+``, UUID, ACI), so we check
-        each part of the pipe-joined composite against ``is_approved``.
-        """
+        【中文名称】_sender_approved_via_pairing
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - sender_id: 调用方传入的 `sender_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         for part in str(sender_id).split("|"):
             for variant in self._normalize_signal_id(part):
                 if is_approved(self.name, variant):
@@ -409,14 +665,25 @@ class SignalChannel(BaseChannel):
         session_key: str | None = None,
         is_dm: bool = False,
     ) -> None:
-        """Handle an inbound message whose policy has already been checked.
+        """异步执行 `_handle_message`。
 
-        ``_check_inbound_policy`` is the authoritative gate for DM/group
-        access, so we skip the base-class ``is_allowed()`` check and publish
-        directly to the bus.  The denied-DM pairing path calls
-        ``super()._handle_message`` instead, which goes through
-        ``is_allowed`` and issues a pairing code.
-        """
+        【中文名称】_handle_message
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - sender_id: 调用方传入的 `sender_id` 数据；具体类型以函数签名为准。
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+        - media: 调用方传入的 `media` 数据；具体类型以函数签名为准。
+        - metadata: 调用方传入的 `metadata` 数据；具体类型以函数签名为准。
+        - session_key: 调用方传入的 `session_key` 数据；具体类型以函数签名为准。
+        - is_dm: 调用方传入的 `is_dm` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         meta = metadata or {}
         if self.supports_streaming:
             meta = {**meta, "_wants_stream": True}
@@ -433,7 +700,19 @@ class SignalChannel(BaseChannel):
         )
 
     async def start(self) -> None:
-        """Start the Signal channel and connect to signal-cli daemon."""
+        """异步执行 `start`。
+
+        【中文名称】start
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self.config.phone_number:
             self.logger.error("Signal account not configured")
             return
@@ -442,7 +721,19 @@ class SignalChannel(BaseChannel):
         await self._start_http_mode()
 
     async def _start_http_mode(self) -> None:
-        """Start Signal channel using Server-Sent Events for receiving messages."""
+        """异步执行 `_start_http_mode`。
+
+        【中文名称】_start_http_mode
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         base_url = f"http://{self.config.daemon_host}:{self.config.daemon_port}"
         reconnect_delay_s = 1.0
         max_reconnect_delay_s = 30.0
@@ -451,12 +742,12 @@ class SignalChannel(BaseChannel):
             try:
                 self.logger.info("Connecting to signal-cli daemon at {}...", base_url)
 
-                # Create HTTP client
+                # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 self._http = httpx.AsyncClient(
                     timeout=self._HTTP_TIMEOUT_SECONDS, base_url=base_url
                 )
 
-                # Test connection
+                # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 try:
                     response = await self._http.get("/api/v1/check")
                     if response.status_code == 200:
@@ -468,14 +759,14 @@ class SignalChannel(BaseChannel):
                 except Exception as e:
                     raise ConnectionRefusedError(f"signal-cli daemon not responding: {e}")
 
-                # Reset reconnect delay after successful connection check.
+                # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 reconnect_delay_s = 1.0
 
-                # Ensure account-level typing indicators are enabled.
+                # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 await self._ensure_typing_indicators_enabled()
 
-                # Start SSE receiver and supervise it. If it exits while we're still
-                # running, treat it as a disconnect and reconnect.
+                # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+                # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 self._sse_task = asyncio.create_task(self._sse_receive_loop())
                 await self._sse_task
                 if self._running:
@@ -517,10 +808,22 @@ class SignalChannel(BaseChannel):
                 reconnect_delay_s = min(reconnect_delay_s * 2, max_reconnect_delay_s)
 
     async def stop(self) -> None:
-        """Stop the Signal channel."""
+        """异步执行 `stop`。
+
+        【中文名称】stop
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         self._running = False
 
-        # Stop SSE task
+        # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if self._sse_task:
             self._sse_task.cancel()
             try:
@@ -528,17 +831,29 @@ class SignalChannel(BaseChannel):
             except asyncio.CancelledError:
                 pass
 
-        # Cancel active typing indicators
+        # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         for chat_id in list(self._typing_tasks):
             await self._stop_typing(chat_id)
 
-        # Close HTTP client
+        # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if self._http:
             await self._http.aclose()
             self._http = None
 
     async def send(self, msg: OutboundMessage) -> None:
-        """Send a message through Signal."""
+        """异步执行 `send`。
+
+        【中文名称】send
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - msg: 调用方传入的 `msg` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         is_progress_message = bool(msg.metadata.get("_progress"))
         try:
             plain_text, text_styles = _markdown_to_signal(msg.content)
@@ -570,14 +885,26 @@ class SignalChannel(BaseChannel):
             self.logger.exception("Error sending Signal message")
             raise
         finally:
-            # Keep typing active across progress updates; stop on the final reply.
+            # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if not is_progress_message:
-                # Avoid immediate START->STOP for fast responses, which can be invisible
-                # in some Signal clients. Let indicator expire naturally (~15s).
+                # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+                # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 await self._stop_typing(msg.chat_id, send_stop=False)
 
     async def _sse_receive_loop(self) -> None:
-        """Receive messages via Server-Sent Events (HTTP mode)."""
+        """异步执行 `_sse_receive_loop`。
+
+        【中文名称】_sse_receive_loop
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self._http:
             raise RuntimeError("HTTP client not initialized for Signal SSE stream")
 
@@ -592,23 +919,23 @@ class SignalChannel(BaseChannel):
 
                 self.logger.info("Subscribed to Signal messages via SSE")
 
-                # Buffer for accumulating SSE data across multiple lines
+                # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 event_buffer = []
 
                 async for line in response.aiter_lines():
                     if not self._running:
                         break
 
-                    # Debug: log raw SSE lines (except keepalive pings)
+                    # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                     if line and line != ":":
                         self.logger.debug("SSE line received: {}", line[:200])
 
-                    # SSE format handling
+                    # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                     if isinstance(line, str):
-                        # Empty line signals end of event
+                        # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                         if not line or line == ":":
                             if event_buffer:
-                                # Try to parse the accumulated data
+                                # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                                 data_str = ""
                                 try:
                                     data_str = "\n".join(event_buffer)
@@ -624,14 +951,14 @@ class SignalChannel(BaseChannel):
                                 finally:
                                     event_buffer = []
 
-                        # "data:" line - accumulate it
+                        # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                         elif line.startswith("data:"):
-                            # SSE spec: strip one optional leading space after "data:".
+                            # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                             event_buffer.append(line[6:] if line[5:6] == " " else line[5:])
 
-                        # "event:" line - just log it (we only care about data)
+                        # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                         elif line.startswith("event:"):
-                            pass  # Ignore event type for now
+                            pass  # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
                 if self._running:
                     raise ConnectionError("Signal SSE stream closed by remote endpoint")
@@ -645,12 +972,20 @@ class SignalChannel(BaseChannel):
 
     @asynccontextmanager
     async def _safe_handle(self, action: str, payload: Any = None) -> AsyncIterator[None]:
-        """Swallow and log any exception from a top-level handler block.
+        """异步执行 `_safe_handle`。
 
-        Logs `self.logger.error` with the action name, the exception, and a
-        bounded ``repr`` of the offending payload so the offending input is
-        recoverable from logs without having to correlate by timestamp.
-        """
+        【中文名称】_safe_handle
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - action: 调用方传入的 `action` 数据；具体类型以函数签名为准。
+        - payload: 调用方传入的 `payload` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         try:
             yield
         except Exception as e:
@@ -661,10 +996,22 @@ class SignalChannel(BaseChannel):
             self.logger.opt(exception=True).error(text)
 
     async def _handle_receive_notification(self, params: dict[str, Any]) -> None:
-        """Handle incoming message notification from signal-cli."""
+        """异步执行 `_handle_receive_notification`。
+
+        【中文名称】_handle_receive_notification
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - params: 调用方传入的 `params` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         self.logger.debug("_handle_receive_notification called with: {}", params)
         async with self._safe_handle("receive notification", params):
-            # Extract envelope from SSE notification: {"envelope": {...}}
+            # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             envelope = params.get("envelope", {})
 
             self.logger.debug("Extracted envelope: {}", envelope)
@@ -673,7 +1020,7 @@ class SignalChannel(BaseChannel):
                 self.logger.debug("No envelope found in params")
                 return
 
-            # Extract sender information
+            # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             sender_parts = self._collect_sender_id_parts(envelope)
             source_name = envelope.get("sourceName")
 
@@ -684,26 +1031,26 @@ class SignalChannel(BaseChannel):
             sender_number = self._primary_sender_id(sender_parts)
             sender_id = "|".join(sender_parts)
 
-            # Keep aliases of the bot account for robust mention matching.
+            # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if any(self._id_matches_account(part) for part in sender_parts):
                 for part in sender_parts:
                     self._remember_account_id_alias(part)
 
-            # Check different message types
+            # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             data_message = envelope.get("dataMessage")
             sync_message = envelope.get("syncMessage")
             typing_message = envelope.get("typingMessage")
             receipt_message = envelope.get("receiptMessage")
 
-            # Ignore receipt messages (delivery/read receipts)
+            # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if receipt_message:
                 return
 
-            # Handle data messages (incoming messages from others)
+            # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if data_message:
                 await self._handle_data_message(sender_id, sender_number, data_message, source_name)
 
-            # Handle sync messages (messages sent from another device)
+            # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             elif sync_message and sync_message.get("sentMessage"):
                 sent_msg = sync_message["sentMessage"]
                 destination = sent_msg.get("destination") or sent_msg.get("destinationNumber")
@@ -712,9 +1059,9 @@ class SignalChannel(BaseChannel):
                         "Sync message sent to {}: {}", destination, sent_msg.get("message", "")[:50]
                     )
 
-            # Handle typing indicators (silently ignore)
+            # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             elif typing_message:
-                pass  # Ignore typing indicators
+                pass  # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     async def _handle_data_message(
         self,
@@ -723,7 +1070,22 @@ class SignalChannel(BaseChannel):
         data_message: dict[str, Any],
         sender_name: str | None,
     ) -> None:
-        """Handle a data message (text, attachments, etc.)."""
+        """异步执行 `_handle_data_message`。
+
+        【中文名称】_handle_data_message
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - sender_id: 调用方传入的 `sender_id` 数据；具体类型以函数签名为准。
+        - sender_number: 调用方传入的 `sender_number` 数据；具体类型以函数签名为准。
+        - data_message: 调用方传入的 `data_message` 数据；具体类型以函数签名为准。
+        - sender_name: 调用方传入的 `sender_name` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         message_text = data_message.get("message") or ""
         attachments = data_message.get("attachments", [])
         mentions = data_message.get("mentions", [])
@@ -762,9 +1124,9 @@ class SignalChannel(BaseChannel):
             timestamp=timestamp,
         )
         if not allowed:
-            # Mirror Slack: let denied DMs reach the base-class
-            # _handle_message so it can reply with a pairing code.
-            # Group denials stay dropped.
+            # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if not is_group_message and self.config.dm.enabled:
                 await super()._handle_message(
                     sender_id=sender_id,
@@ -818,12 +1180,26 @@ class SignalChannel(BaseChannel):
         sender_name: str | None,
         timestamp: int | None,
     ) -> tuple[bool, str]:
-        """Decide whether to route an inbound message past DM/group policy.
+        """执行 `_check_inbound_policy`。
 
-        Returns ``(allow, chat_id)``. Has one side effect: when a group
-        message passes the enabled+allowlist gates, it is appended to the
-        group's rolling context buffer before the mention check.
-        """
+        【中文名称】_check_inbound_policy
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - sender_id: 调用方传入的 `sender_id` 数据；具体类型以函数签名为准。
+        - sender_number: 调用方传入的 `sender_number` 数据；具体类型以函数签名为准。
+        - group_id: 调用方传入的 `group_id` 数据；具体类型以函数签名为准。
+        - is_group_message: 调用方传入的 `is_group_message` 数据；具体类型以函数签名为准。
+        - message_text: 调用方传入的 `message_text` 数据；具体类型以函数签名为准。
+        - mentions: 调用方传入的 `mentions` 数据；具体类型以函数签名为准。
+        - sender_name: 调用方传入的 `sender_name` 数据；具体类型以函数签名为准。
+        - timestamp: 调用方传入的 `timestamp` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if is_group_message:
             chat_id = group_id or sender_number
             if not self.config.group.enabled:
@@ -857,7 +1233,7 @@ class SignalChannel(BaseChannel):
                 return False, chat_id
             return True, chat_id
 
-        # Direct message
+        # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         chat_id = sender_number
         if not self.config.dm.enabled:
             self.logger.debug("Ignoring DM from {} (DMs disabled)", sender_id)
@@ -881,12 +1257,25 @@ class SignalChannel(BaseChannel):
         is_group_message: bool,
         chat_id: str,
     ) -> tuple[str, list[str]]:
-        """Build ``(content, media_paths)`` for an inbound message.
+        """执行 `_assemble_inbound_content`。
 
-        Pulls in group context, strips bot mentions, prefixes the sender's
-        display name on group messages, and copies any attachments from
-        signal-cli's storage into the channel media dir.
-        """
+        【中文名称】_assemble_inbound_content
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - sender_name: 调用方传入的 `sender_name` 数据；具体类型以函数签名为准。
+        - sender_number: 调用方传入的 `sender_number` 数据；具体类型以函数签名为准。
+        - message_text: 调用方传入的 `message_text` 数据；具体类型以函数签名为准。
+        - attachments: 调用方传入的 `attachments` 数据；具体类型以函数签名为准。
+        - mentions: 调用方传入的 `mentions` 数据；具体类型以函数签名为准。
+        - is_group_message: 调用方传入的 `is_group_message` 数据；具体类型以函数签名为准。
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         content_parts: list[str] = []
         media_paths: list[str] = []
 
@@ -939,21 +1328,28 @@ class SignalChannel(BaseChannel):
         message_text: str,
         timestamp: int | None,
     ) -> None:
-        """
-        Add a message to the group's rolling buffer.
+        """执行 `_add_to_group_buffer`。
 
-        Args:
-            group_id: The group ID
-            sender_name: Display name of sender
-            sender_number: Phone number of sender
-            message_text: The message content
-            timestamp: Message timestamp
-        """
-        # Create buffer for this group if it doesn't exist
+        【中文名称】_add_to_group_buffer
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - group_id: 调用方传入的 `group_id` 数据；具体类型以函数签名为准。
+        - sender_name: 调用方传入的 `sender_name` 数据；具体类型以函数签名为准。
+        - sender_number: 调用方传入的 `sender_number` 数据；具体类型以函数签名为准。
+        - message_text: 调用方传入的 `message_text` 数据；具体类型以函数签名为准。
+        - timestamp: 调用方传入的 `timestamp` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+        # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if group_id not in self._group_buffers:
             self._group_buffers[group_id] = deque(maxlen=self.config.group_message_buffer_size)
 
-        # Add message to buffer (deque will automatically drop oldest when full)
+        # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         self._group_buffers[group_id].append(
             {
                 "sender_name": sender_name,
@@ -971,40 +1367,52 @@ class SignalChannel(BaseChannel):
         )
 
     def _get_group_buffer_context(self, group_id: str) -> str:
-        """
-        Get formatted context from the group's message buffer.
+        """执行 `_get_group_buffer_context`。
 
-        Args:
-            group_id: The group ID
+        【中文名称】_get_group_buffer_context
 
-        Returns:
-            Formatted string of recent messages (excluding the current one)
-        """
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - group_id: 调用方传入的 `group_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if group_id not in self._group_buffers:
             return ""
 
         buffer = self._group_buffers[group_id]
-        if len(buffer) <= 1:  # Only current message, no context
+        if len(buffer) <= 1:  # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             return ""
 
-        # Format all messages except the last one (which is the current message)
-        # We want to show context BEFORE the mention
-        context_messages = list(buffer)[:-1]  # Exclude the last (current) message
+        # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        context_messages = list(buffer)[:-1]  # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
         lines = []
         for msg in context_messages:
             sender = msg["sender_name"]
-            content = msg["content"][:200]  # Limit to 200 chars per message
+            content = msg["content"][:200]  # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             lines.append(f"{sender}: {content}")
 
         return "\n".join(lines)
 
     def _signal_attachments_dir(self) -> Path:
-        """Return the directory signal-cli writes inbound attachments to.
+        """执行 `_signal_attachments_dir`。
 
-        Defaults to ``~/.local/share/signal-cli/attachments`` (the daemon's
-        platform default on Linux) when ``config.attachments_dir`` is unset.
-        """
+        【中文名称】_signal_attachments_dir
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         configured = self.config.attachments_dir
         if configured:
             return Path(configured).expanduser()
@@ -1012,7 +1420,19 @@ class SignalChannel(BaseChannel):
 
     @staticmethod
     def _normalize_signal_id(value: str) -> list[str]:
-        """Normalize Signal identifiers (phone/uuid/service-id) for matching."""
+        """执行 `_normalize_signal_id`。
+
+        【中文名称】_normalize_signal_id
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         raw = value.strip()
         if not raw:
             return []
@@ -1026,15 +1446,20 @@ class SignalChannel(BaseChannel):
 
     @classmethod
     def _sender_matches_allowlist(cls, sender_id: str, allow_list: list[str]) -> bool:
-        """Return True if any normalized variant of sender_id is on allow_list.
+        """执行 `_sender_matches_allowlist`。
 
-        Both ``sender_id`` and each allow_list entry can be a single
-        identifier or a pipe-joined composite of several (e.g.
-        ``"+1234567890|uuid-abc"``); both sides are split on ``|`` and each
-        part is run through ``_normalize_signal_id`` so an allowlist entry
-        like ``1234567890`` matches a sender ``+1234567890`` (and vice
-        versa), and case-only differences in UUIDs/ACIs match too.
-        """
+        【中文名称】_sender_matches_allowlist
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - sender_id: 调用方传入的 `sender_id` 数据；具体类型以函数签名为准。
+        - allow_list: 调用方传入的 `allow_list` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not allow_list:
             return False
         sender_variants: set[str] = set()
@@ -1049,7 +1474,19 @@ class SignalChannel(BaseChannel):
         return bool(sender_variants & allow_variants)
 
     def _remember_account_id_alias(self, value: str | None) -> None:
-        """Remember known bot identifiers for mention matching."""
+        """执行 `_remember_account_id_alias`。
+
+        【中文名称】_remember_account_id_alias
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not value:
             return
         if not isinstance(value, str):
@@ -1058,7 +1495,19 @@ class SignalChannel(BaseChannel):
             self._account_id_aliases.add(candidate)
 
     def _id_matches_account(self, value: str | None) -> bool:
-        """Return True when an identifier refers to the bot account."""
+        """执行 `_id_matches_account`。
+
+        【中文名称】_id_matches_account
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not value:
             return False
         if not isinstance(value, str):
@@ -1069,7 +1518,19 @@ class SignalChannel(BaseChannel):
 
     @staticmethod
     def _collect_sender_id_parts(envelope: dict[str, Any]) -> list[str]:
-        """Collect all known sender identifier variants from an envelope."""
+        """执行 `_collect_sender_id_parts`。
+
+        【中文名称】_collect_sender_id_parts
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - envelope: 调用方传入的 `envelope` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         parts: list[str] = []
         for key in (
             "sourceNumber",
@@ -1089,7 +1550,19 @@ class SignalChannel(BaseChannel):
 
     @staticmethod
     def _primary_sender_id(sender_parts: list[str]) -> str:
-        """Pick the best sender identifier for routing (prefer phone-like IDs)."""
+        """执行 `_primary_sender_id`。
+
+        【中文名称】_primary_sender_id
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - sender_parts: 调用方传入的 `sender_parts` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         for part in sender_parts:
             if part.startswith("+") or part.isdigit():
                 return part
@@ -1097,7 +1570,20 @@ class SignalChannel(BaseChannel):
 
     @staticmethod
     def _extract_group_id(group_info: Any, group_v2: Any) -> str | None:
-        """Extract group ID from groupInfo/groupV2 payloads across signal-cli variants."""
+        """执行 `_extract_group_id`。
+
+        【中文名称】_extract_group_id
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - group_info: 调用方传入的 `group_info` 数据；具体类型以函数签名为准。
+        - group_v2: 调用方传入的 `group_v2` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         for group_obj in (group_info, group_v2):
             if not isinstance(group_obj, dict):
                 continue
@@ -1109,10 +1595,37 @@ class SignalChannel(BaseChannel):
 
     @staticmethod
     def _mention_id_candidates(mention: dict[str, Any]) -> list[str]:
-        """Extract possible identifier fields from a mention payload."""
+        """执行 `_mention_id_candidates`。
+
+        【中文名称】_mention_id_candidates
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - mention: 调用方传入的 `mention` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         ids: list[str] = []
 
         def _walk(value: dict[str, Any] | Any, depth: int = 0) -> None:
+            """执行 `_walk`。
+
+            【中文名称】_walk
+
+            【功能说明】
+            这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+            - depth: 调用方传入的 `depth` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             if depth > 2:
                 return
             if not isinstance(value, dict):
@@ -1130,7 +1643,19 @@ class SignalChannel(BaseChannel):
 
     @staticmethod
     def _mention_span(mention: dict[str, Any]) -> tuple[int, int] | None:
-        """Extract a safe (start, length) span from a mention."""
+        """执行 `_mention_span`。
+
+        【中文名称】_mention_span
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - mention: 调用方传入的 `mention` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         try:
             start = int(mention.get("start", 0))
             length = int(mention.get("length", 0))
@@ -1143,12 +1668,19 @@ class SignalChannel(BaseChannel):
 
     @staticmethod
     def _leading_placeholder_span(text: str | None) -> tuple[int, int] | None:
-        """
-        Detect a leading Signal mention placeholder when mention metadata is missing.
+        """执行 `_leading_placeholder_span`。
 
-        Some clients/integrations deliver mentions as a leading placeholder character
-        (typically U+FFFC) but omit `mentions` metadata in the payload.
-        """
+        【中文名称】_leading_placeholder_span
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not text:
             return None
 
@@ -1170,21 +1702,25 @@ class SignalChannel(BaseChannel):
         return (start, 1)
 
     def _should_respond_in_group(self, message_text: str, mentions: list[dict[str, Any]]) -> bool:
-        """
-        Determine if the bot should respond to a group message.
+        """执行 `_should_respond_in_group`。
 
-        Args:
-            message_text: The message text content
-            mentions: List of mentions from Signal (format: [{"number": "+1234567890", "start": 0, "length": 10}])
+        【中文名称】_should_respond_in_group
 
-        Returns:
-            True if bot should respond, False otherwise
-        """
-        # Group reply behavior is controlled only by group.require_mention.
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - message_text: 调用方传入的 `message_text` 数据；具体类型以函数签名为准。
+        - mentions: 调用方传入的 `mentions` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+        # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if not self.config.group.require_mention:
             return True
 
-        # If mention is required, check if bot was mentioned.
+        # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         for mention in mentions:
             if not isinstance(mention, dict):
                 continue
@@ -1192,9 +1728,9 @@ class SignalChannel(BaseChannel):
                 if self._id_matches_account(mention_id):
                     return True
 
-        # Some Signal clients emit mention spans without recipient identifiers
-        # (for handle-style mentions). Accept a leading identifier-less mention
-        # as a mention of the bot to avoid false negatives.
+        # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         for mention in mentions:
             if not isinstance(mention, dict):
                 continue
@@ -1208,13 +1744,13 @@ class SignalChannel(BaseChannel):
                 self.logger.debug("Accepting identifier-less leading mention as bot mention")
                 return True
 
-        # Some payloads omit `mentions` but still include the leading mention
-        # placeholder character in the message body.
+        # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if not mentions and self._leading_placeholder_span(message_text):
             self.logger.debug("Accepting leading placeholder mention without mention metadata")
             return True
 
-        # Fallback: check for configured phone number in plain text.
+        # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if message_text and self.config.phone_number:
             for account_id in self._normalize_signal_id(self.config.phone_number):
                 if account_id and account_id in message_text:
@@ -1223,23 +1759,24 @@ class SignalChannel(BaseChannel):
         return False
 
     def _strip_bot_mention(self, text: str, mentions: list[dict[str, Any]]) -> str:
-        """
-        Remove bot mentions from message text.
+        """执行 `_strip_bot_mention`。
 
-        Signal mentions are embedded in the text, so we need to remove them based on
-        the mentions array which provides start position and length.
+        【中文名称】_strip_bot_mention
 
-        Args:
-            text: Original message text
-            mentions: List of mention objects with start/length positions
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
 
-        Returns:
-            Text with bot mentions removed
-        """
+        【参数说明】
+        - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+        - mentions: 调用方传入的 `mentions` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not text:
             return text
 
-        # Build a list of (start, length) tuples for our bot's mentions
+        # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         bot_mentions = []
         for mention in mentions:
             if not isinstance(mention, dict):
@@ -1249,12 +1786,12 @@ class SignalChannel(BaseChannel):
             if not span:
                 continue
 
-            # Strip matched bot mentions by ID.
+            # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if any(self._id_matches_account(mention_id) for mention_id in mention_ids):
                 bot_mentions.append(span)
                 continue
 
-            # Also strip identifier-less leading mention spans (handle mentions).
+            # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if not mention_ids:
                 start, _ = span
                 if not text[:start].strip():
@@ -1265,11 +1802,11 @@ class SignalChannel(BaseChannel):
             if placeholder_span:
                 bot_mentions.append(placeholder_span)
 
-        # Sort mentions by start position (descending) to remove from end to start
-        # This prevents position shifts when removing earlier mentions
+        # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         bot_mentions.sort(reverse=True)
 
-        # Remove each mention
+        # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         for start, length in bot_mentions:
             if start >= len(text):
                 continue
@@ -1280,23 +1817,72 @@ class SignalChannel(BaseChannel):
 
     @staticmethod
     def _is_group_chat_id(chat_id: str) -> bool:
-        """Return True when chat_id appears to be a Signal group ID (base64)."""
+        """执行 `_is_group_chat_id`。
+
+        【中文名称】_is_group_chat_id
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         return "=" in chat_id or (len(chat_id) > 40 and "-" not in chat_id)
 
     def _recipient_params(self, chat_id: str) -> dict[str, Any]:
-        """Build recipient params for signal-cli JSON-RPC methods."""
+        """执行 `_recipient_params`。
+
+        【中文名称】_recipient_params
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if self._is_group_chat_id(chat_id):
             return {"groupId": chat_id}
         return {"recipient": [chat_id]}
 
     async def _start_typing(self, chat_id: str) -> None:
-        """Start periodic typing indicator updates for a chat."""
+        """异步执行 `_start_typing`。
+
+        【中文名称】_start_typing
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         await self._stop_typing(chat_id, send_stop=False)
         await self._send_typing(chat_id)
         self._typing_tasks[chat_id] = asyncio.create_task(self._typing_loop(chat_id))
 
     async def _stop_typing(self, chat_id: str, send_stop: bool = True) -> None:
-        """Stop typing indicator updates for a chat."""
+        """异步执行 `_stop_typing`。
+
+        【中文名称】_stop_typing
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - send_stop: 调用方传入的 `send_stop` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         task = self._typing_tasks.pop(chat_id, None)
         had_task = task is not None
         if task and not task.done():
@@ -1310,7 +1896,19 @@ class SignalChannel(BaseChannel):
             await self._send_typing(chat_id, stop=True)
 
     async def _typing_loop(self, chat_id: str) -> None:
-        """Send typing updates periodically until cancelled."""
+        """异步执行 `_typing_loop`。
+
+        【中文名称】_typing_loop
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         try:
             while self._running:
                 await asyncio.sleep(self._TYPING_REFRESH_SECONDS)
@@ -1323,7 +1921,21 @@ class SignalChannel(BaseChannel):
     async def _send_typing(
         self, chat_id: str, stop: bool = False, quiet_success: bool = False
     ) -> None:
-        """Send a typing START/STOP message via signal-cli."""
+        """异步执行 `_send_typing`。
+
+        【中文名称】_send_typing
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - stop: 调用方传入的 `stop` 数据；具体类型以函数签名为准。
+        - quiet_success: 调用方传入的 `quiet_success` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         action = "stop" if stop else "start"
         if (
             not self._is_group_chat_id(chat_id)
@@ -1363,7 +1975,19 @@ class SignalChannel(BaseChannel):
         )
 
     async def _ensure_typing_indicators_enabled(self) -> None:
-        """Enable typing indicators on the bot account."""
+        """异步执行 `_ensure_typing_indicators_enabled`。
+
+        【中文名称】_ensure_typing_indicators_enabled
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         response = await self._send_request("updateConfiguration", {"typingIndicators": True})
         if "error" in response:
             self.logger.warning(
@@ -1375,12 +1999,25 @@ class SignalChannel(BaseChannel):
     async def _send_request(
         self, method: str, params: dict[str, Any] | None = None
     ) -> dict[str, Any]:
-        """Send a JSON-RPC request via HTTP and wait for response."""
-        # Generate request ID
+        """异步执行 `_send_request`。
+
+        【中文名称】_send_request
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - method: 调用方传入的 `method` 数据；具体类型以函数签名为准。
+        - params: 调用方传入的 `params` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+        # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         self._request_id += 1
         request_id = self._request_id
 
-        # Build JSON-RPC request
+        # 说明：这里处理 Signal 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         request = {"jsonrpc": "2.0", "method": method, "id": request_id}
 
         if params:
@@ -1389,7 +2026,19 @@ class SignalChannel(BaseChannel):
         return await self._send_http_request(request)
 
     async def _send_http_request(self, request: dict[str, Any]) -> dict[str, Any]:
-        """Send JSON-RPC request via HTTP."""
+        """异步执行 `_send_http_request`。
+
+        【中文名称】_send_http_request
+
+        【功能说明】
+        这是 Signal 渠道适配器 中的一个步骤函数，用来支撑：负责驱动 signal-cli JSON-RPC，解析 Signal 消息、附件和群组元数据，并通过 Signal 发送 Agent 回复。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - request: 调用方传入的 `request` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self._http:
             raise RuntimeError("Not connected to signal-cli daemon")
 

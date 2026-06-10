@@ -1,4 +1,18 @@
-"""Git-backed version control for memory files, using dulwich."""
+"""Git 记忆仓库工具。
+
+【中文名称】Git 记忆仓库工具
+
+【功能说明】
+负责用 dulwich 给记忆文件建立轻量 Git 历史，支持自动提交、diff、blame 和时间线展示。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的通用工具代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 from __future__ import annotations
 
@@ -13,12 +27,36 @@ from loguru import logger
 
 @dataclass
 class CommitInfo:
-    sha: str  # Short SHA (8 chars)
+    """CommitInfo 类。
+
+    【中文名称】CommitInfo
+
+    【功能说明】
+    这是 Git 记忆仓库工具 中的核心数据结构或服务类。负责用 dulwich 给记忆文件建立轻量 Git 历史，支持自动提交、diff、blame 和时间线展示。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
+
+    sha: str  # 说明：这里处理 Git 记忆仓库工具 的协议细节或边界情况，避免外部差异影响核心流程。
     message: str
-    timestamp: str  # Formatted datetime
+    timestamp: str  # 说明：这里处理 Git 记忆仓库工具 的协议细节或边界情况，避免外部差异影响核心流程。
 
     def format(self, diff: str = "") -> str:
-        """Format this commit for display, optionally with a diff."""
+        """执行 `format`。
+
+        【中文名称】format
+
+        【功能说明】
+        这是 Git 记忆仓库工具 中的一个步骤函数，用来支撑：负责用 dulwich 给记忆文件建立轻量 Git 历史，支持自动提交、diff、blame 和时间线展示。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - diff: 调用方传入的 `diff` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         header = f"## {self.message.splitlines()[0]}\n`{self.sha}` — {self.timestamp}\n"
         if diff:
             return f"{header}\n```diff\n{diff}\n```"
@@ -27,13 +65,35 @@ class CommitInfo:
 
 @dataclass
 class LineAge:
-    """Age of a single line based on git blame."""
+    """LineAge 类。
 
-    age_days: int  # days since last modification
+    【中文名称】LineAge
+
+    【功能说明】
+    这是 Git 记忆仓库工具 中的核心数据结构或服务类。负责用 dulwich 给记忆文件建立轻量 Git 历史，支持自动提交、diff、blame 和时间线展示。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
+
+    age_days: int  # 说明：这里处理 Git 记忆仓库工具 的协议细节或边界情况，避免外部差异影响核心流程。
 
 
 def _compute_line_ages(annotated) -> list[LineAge]:
-    """Convert annotate results to per-line ages."""
+    """执行 `_compute_line_ages`。
+
+    【中文名称】_compute_line_ages
+
+    【功能说明】
+    这是 Git 记忆仓库工具 中的一个步骤函数，用来支撑：负责用 dulwich 给记忆文件建立轻量 Git 历史，支持自动提交、diff、blame 和时间线展示。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - annotated: 调用方传入的 `annotated` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     now = datetime.now(tz=timezone.utc).date()
     ages: list[LineAge] = []
     for (commit, _tree_entry), _line_bytes in annotated:
@@ -43,24 +103,69 @@ def _compute_line_ages(annotated) -> list[LineAge]:
 
 
 class GitStore:
-    """Git-backed version control for memory files."""
+    """GitStore 类。
+
+    【中文名称】GitStore
+
+    【功能说明】
+    这是 Git 记忆仓库工具 中的核心数据结构或服务类。负责用 dulwich 给记忆文件建立轻量 Git 历史，支持自动提交、diff、blame 和时间线展示。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     def __init__(self, workspace: Path, tracked_files: list[str]):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 Git 记忆仓库工具 中的一个步骤函数，用来支撑：负责用 dulwich 给记忆文件建立轻量 Git 历史，支持自动提交、diff、blame 和时间线展示。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - workspace: 调用方传入的 `workspace` 数据；具体类型以函数签名为准。
+        - tracked_files: 调用方传入的 `tracked_files` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self._workspace = workspace
         self._tracked_files = tracked_files
 
     def is_initialized(self) -> bool:
-        """Check if the git repo has been initialized."""
+        """执行 `is_initialized`。
+
+        【中文名称】is_initialized
+
+        【功能说明】
+        这是 Git 记忆仓库工具 中的一个步骤函数，用来支撑：负责用 dulwich 给记忆文件建立轻量 Git 历史，支持自动提交、diff、blame 和时间线展示。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         return (self._workspace / ".git").is_dir()
 
-    # -- init ------------------------------------------------------------------
+    # 说明：这里处理 Git 记忆仓库工具 的协议细节或边界情况，避免外部差异影响核心流程。
 
     def init(self) -> bool:
-        """Initialize a git repo if not already initialized.
+        """执行 `init`。
 
-        Creates .gitignore and makes an initial commit.
-        Returns True if a new repo was created, False if already exists.
-        """
+        【中文名称】init
+
+        【功能说明】
+        这是 Git 记忆仓库工具 中的一个步骤函数，用来支撑：负责用 dulwich 给记忆文件建立轻量 Git 历史，支持自动提交、diff、blame 和时间线展示。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if self.is_initialized():
             return False
 
@@ -77,7 +182,7 @@ class GitStore:
 
             porcelain.init(str(self._workspace))
 
-            # Write .gitignore (merge with existing if present)
+            # 说明：这里处理 Git 记忆仓库工具 的协议细节或边界情况，避免外部差异影响核心流程。
             gitignore = self._workspace / ".gitignore"
             dream_entries = self._build_gitignore()
             if gitignore.exists():
@@ -94,15 +199,15 @@ class GitStore:
             else:
                 gitignore.write_text(dream_entries, encoding="utf-8")
 
-            # Ensure tracked files exist (touch them if missing) so the initial
-            # commit has something to track.
+            # 说明：这里处理 Git 记忆仓库工具 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 Git 记忆仓库工具 的协议细节或边界情况，避免外部差异影响核心流程。
             for rel in self._tracked_files:
                 p = self._workspace / rel
                 p.parent.mkdir(parents=True, exist_ok=True)
                 if not p.exists():
                     p.write_text("", encoding="utf-8")
 
-            # Initial commit
+            # 说明：这里处理 Git 记忆仓库工具 的协议细节或边界情况，避免外部差异影响核心流程。
             porcelain.add(str(self._workspace), paths=[".gitignore"] + self._tracked_files)
             porcelain.commit(
                 str(self._workspace),
@@ -116,21 +221,30 @@ class GitStore:
             logger.exception("Git store init failed for {}", self._workspace)
             return False
 
-    # -- daily operations ------------------------------------------------------
+    # 说明：这里处理 Git 记忆仓库工具 的协议细节或边界情况，避免外部差异影响核心流程。
 
     def auto_commit(self, message: str) -> str | None:
-        """Stage tracked memory files and commit if there are changes.
+        """执行 `auto_commit`。
 
-        Returns the short commit SHA, or None if nothing to commit.
-        """
+        【中文名称】auto_commit
+
+        【功能说明】
+        这是 Git 记忆仓库工具 中的一个步骤函数，用来支撑：负责用 dulwich 给记忆文件建立轻量 Git 历史，支持自动提交、diff、blame 和时间线展示。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - message: 调用方传入的 `message` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self.is_initialized():
             return None
 
         try:
             from dulwich import porcelain
 
-            # .gitignore excludes everything except tracked files,
-            # so any staged/unstaged change must be in our files.
+            # 说明：这里处理 Git 记忆仓库工具 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 Git 记忆仓库工具 的协议细节或边界情况，避免外部差异影响核心流程。
             st = porcelain.status(str(self._workspace))
             if not st.unstaged and not any(st.staged.values()):
                 return None
@@ -152,10 +266,22 @@ class GitStore:
             logger.exception("Git auto-commit failed: {}", message)
             return None
 
-    # -- internal helpers ------------------------------------------------------
+    # 说明：这里处理 Git 记忆仓库工具 的协议细节或边界情况，避免外部差异影响核心流程。
 
     def _resolve_sha(self, short_sha: str) -> bytes | None:
-        """Resolve a short SHA prefix to the full SHA bytes."""
+        """执行 `_resolve_sha`。
+
+        【中文名称】_resolve_sha
+
+        【功能说明】
+        这是 Git 记忆仓库工具 中的一个步骤函数，用来支撑：负责用 dulwich 给记忆文件建立轻量 Git 历史，支持自动提交、diff、blame 和时间线展示。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - short_sha: 调用方传入的 `short_sha` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         try:
             from dulwich.repo import Repo
 
@@ -177,14 +303,19 @@ class GitStore:
             return None
 
     def _is_inside_git_repo(self) -> bool:
-        """Check if self._workspace is already inside a git repository.
+        """执行 `_is_inside_git_repo`。
 
-        Walks up from self._workspace to the filesystem root, returning True
-        if any parent directory contains a .git entry.
+        【中文名称】_is_inside_git_repo
 
-        Git worktrees and submodules can use a ``.git`` file instead of a
-        directory, so we must treat either form as "already inside a repo".
-        """
+        【功能说明】
+        这是 Git 记忆仓库工具 中的一个步骤函数，用来支撑：负责用 dulwich 给记忆文件建立轻量 Git 历史，支持自动提交、diff、blame 和时间线展示。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         current = self._workspace.resolve()
         while current != current.parent:
             if (current / ".git").exists():
@@ -193,7 +324,19 @@ class GitStore:
         return False
 
     def _build_gitignore(self) -> str:
-        """Generate .gitignore content from tracked files."""
+        """执行 `_build_gitignore`。
+
+        【中文名称】_build_gitignore
+
+        【功能说明】
+        这是 Git 记忆仓库工具 中的一个步骤函数，用来支撑：负责用 dulwich 给记忆文件建立轻量 Git 历史，支持自动提交、diff、blame 和时间线展示。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         dirs: set[str] = set()
         for f in self._tracked_files:
             parent = str(Path(f).parent)
@@ -207,10 +350,22 @@ class GitStore:
         lines.append("!.gitignore")
         return "\n".join(lines) + "\n"
 
-    # -- query -----------------------------------------------------------------
+    # 说明：这里处理 Git 记忆仓库工具 的协议细节或边界情况，避免外部差异影响核心流程。
 
     def log(self, max_entries: int = 20) -> list[CommitInfo]:
-        """Return simplified commit log."""
+        """执行 `log`。
+
+        【中文名称】log
+
+        【功能说明】
+        这是 Git 记忆仓库工具 中的一个步骤函数，用来支撑：负责用 dulwich 给记忆文件建立轻量 Git 历史，支持自动提交、diff、blame 和时间线展示。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - max_entries: 调用方传入的 `max_entries` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self.is_initialized():
             return []
 
@@ -247,12 +402,19 @@ class GitStore:
             return []
 
     def line_ages(self, file_path: str) -> list[LineAge]:
-        """Compute the age of each line in a tracked file via git blame.
+        """执行 `line_ages`。
 
-        Returns one LineAge per line, in order.
-        Returns an empty list if the repo is not initialized, the file is
-        empty, or annotation fails.
-        """
+        【中文名称】line_ages
+
+        【功能说明】
+        这是 Git 记忆仓库工具 中的一个步骤函数，用来支撑：负责用 dulwich 给记忆文件建立轻量 Git 历史，支持自动提交、diff、blame 和时间线展示。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - file_path: 调用方传入的 `file_path` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
 
         if not self.is_initialized():
             return []
@@ -275,7 +437,20 @@ class GitStore:
         return _compute_line_ages(annotated)
 
     def diff_commits(self, sha1: str, sha2: str) -> str:
-        """Show diff between two commits."""
+        """执行 `diff_commits`。
+
+        【中文名称】diff_commits
+
+        【功能说明】
+        这是 Git 记忆仓库工具 中的一个步骤函数，用来支撑：负责用 dulwich 给记忆文件建立轻量 Git 历史，支持自动提交、diff、blame 和时间线展示。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - sha1: 调用方传入的 `sha1` 数据；具体类型以函数签名为准。
+        - sha2: 调用方传入的 `sha2` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self.is_initialized():
             return ""
 
@@ -300,14 +475,40 @@ class GitStore:
             return ""
 
     def find_commit(self, short_sha: str, max_entries: int = 20) -> CommitInfo | None:
-        """Find a commit by short SHA prefix match."""
+        """执行 `find_commit`。
+
+        【中文名称】find_commit
+
+        【功能说明】
+        这是 Git 记忆仓库工具 中的一个步骤函数，用来支撑：负责用 dulwich 给记忆文件建立轻量 Git 历史，支持自动提交、diff、blame 和时间线展示。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - short_sha: 调用方传入的 `short_sha` 数据；具体类型以函数签名为准。
+        - max_entries: 调用方传入的 `max_entries` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         for c in self.log(max_entries=max_entries):
             if c.sha.startswith(short_sha):
                 return c
         return None
 
     def show_commit_diff(self, short_sha: str, max_entries: int = 20) -> tuple[CommitInfo, str] | None:
-        """Find a commit and return it with its diff vs the parent."""
+        """执行 `show_commit_diff`。
+
+        【中文名称】show_commit_diff
+
+        【功能说明】
+        这是 Git 记忆仓库工具 中的一个步骤函数，用来支撑：负责用 dulwich 给记忆文件建立轻量 Git 历史，支持自动提交、diff、blame 和时间线展示。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - short_sha: 调用方传入的 `short_sha` 数据；具体类型以函数签名为准。
+        - max_entries: 调用方传入的 `max_entries` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         commits = self.log(max_entries=max_entries)
         for i, c in enumerate(commits):
             if c.sha.startswith(short_sha):
@@ -318,16 +519,22 @@ class GitStore:
                 return c, diff
         return None
 
-    # -- restore ---------------------------------------------------------------
+    # 说明：这里处理 Git 记忆仓库工具 的协议细节或边界情况，避免外部差异影响核心流程。
 
     def revert(self, commit: str) -> str | None:
-        """Revert (undo) the changes introduced by the given commit.
+        """执行 `revert`。
 
-        Restores all tracked memory files to the state at the commit's parent,
-        then creates a new commit recording the revert.
+        【中文名称】revert
 
-        Returns the new commit SHA, or None on failure.
-        """
+        【功能说明】
+        这是 Git 记忆仓库工具 中的一个步骤函数，用来支撑：负责用 dulwich 给记忆文件建立轻量 Git 历史，支持自动提交、diff、blame 和时间线展示。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - commit: 调用方传入的 `commit` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self.is_initialized():
             return None
 
@@ -348,7 +555,7 @@ class GitStore:
                     logger.warning("Git revert: cannot revert root commit {}", commit)
                     return None
 
-                # Use the parent's tree — this undoes the commit's changes
+                # 说明：这里处理 Git 记忆仓库工具 的协议细节或边界情况，避免外部差异影响核心流程。
                 parent_obj = repo[commit_obj.parents[0]]
                 tree = repo[parent_obj.tree]
 
@@ -363,7 +570,7 @@ class GitStore:
             if not restored:
                 return None
 
-            # Commit the restored state
+            # 说明：这里处理 Git 记忆仓库工具 的协议细节或边界情况，避免外部差异影响核心流程。
             msg = f"revert: undo {commit}"
             return self.auto_commit(msg)
         except Exception:
@@ -372,7 +579,21 @@ class GitStore:
 
     @staticmethod
     def _read_blob_from_tree(repo, tree, filepath: str) -> str | None:
-        """Read a blob's content from a tree object by walking path parts."""
+        """执行 `_read_blob_from_tree`。
+
+        【中文名称】_read_blob_from_tree
+
+        【功能说明】
+        这是 Git 记忆仓库工具 中的一个步骤函数，用来支撑：负责用 dulwich 给记忆文件建立轻量 Git 历史，支持自动提交、diff、blame 和时间线展示。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - repo: 调用方传入的 `repo` 数据；具体类型以函数签名为准。
+        - tree: 调用方传入的 `tree` 数据；具体类型以函数签名为准。
+        - filepath: 调用方传入的 `filepath` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         parts = Path(filepath).parts
         current = tree
         for part in parts:

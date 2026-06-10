@@ -1,4 +1,18 @@
-"""Discord channel implementation using discord.py."""
+"""Discord 渠道适配器。
+
+【中文名称】Discord 渠道适配器
+
+【功能说明】
+负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的渠道适配器代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 from __future__ import annotations
 
@@ -32,14 +46,24 @@ if DISCORD_AVAILABLE:
     from discord import app_commands
     from discord.abc import Messageable
 
-MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024  # 20MB
-MAX_MESSAGE_LEN = 2000  # Discord message character limit
+MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024  # 说明：这里处理 Discord 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+MAX_MESSAGE_LEN = 2000  # 说明：这里处理 Discord 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 TYPING_INTERVAL_S = 8
 
 
 @dataclass
 class _StreamBuf:
-    """Per-chat streaming accumulator for progressive Discord message edits."""
+    """_StreamBuf 类。
+
+    【中文名称】_StreamBuf
+
+    【功能说明】
+    这是 Discord 渠道适配器 中的核心数据结构或服务类。负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     text: str = ""
     message: Any | None = None
@@ -48,12 +72,22 @@ class _StreamBuf:
 
 
 class DiscordConfig(Base):
-    """Discord channel configuration."""
+    """DiscordConfig 类。
+
+    【中文名称】DiscordConfig
+
+    【功能说明】
+    这是 Discord 渠道适配器 中的核心数据结构或服务类。负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     enabled: bool = False
     token: str = ""
     allow_from: list[str] = Field(default_factory=list)
-    allow_channels: list[str] = Field(default_factory=list)  # Allowed channel IDs (empty = all)
+    allow_channels: list[str] = Field(default_factory=list)  # 说明：这里处理 Discord 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     intents: int = 37377
     group_policy: Literal["mention", "open"] = "mention"
     read_receipt_emoji: str = "👀"
@@ -68,7 +102,17 @@ class DiscordConfig(Base):
 if DISCORD_AVAILABLE:
 
     class DiscordBotClient(discord.Client):
-        """discord.py client that forwards events to the channel."""
+        """DiscordBotClient 类。
+
+        【中文名称】DiscordBotClient
+
+        【功能说明】
+        这是 Discord 渠道适配器 中的核心数据结构或服务类。负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+
+        【学习重点】
+        - 类属性/字段通常描述外部平台、模型或工具的配置。
+        - public 方法通常是其他模块会调用的入口。
+        - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
         def __init__(
             self,
@@ -78,12 +122,43 @@ if DISCORD_AVAILABLE:
             proxy: str | None = None,
             proxy_auth: aiohttp.BasicAuth | None = None,
         ) -> None:
+            """执行 `__init__`。
+
+            【中文名称】__init__
+
+            【功能说明】
+            这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - channel: 调用方传入的 `channel` 数据；具体类型以函数签名为准。
+            - intents: 调用方传入的 `intents` 数据；具体类型以函数签名为准。
+            - proxy: 调用方传入的 `proxy` 数据；具体类型以函数签名为准。
+            - proxy_auth: 调用方传入的 `proxy_auth` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             super().__init__(intents=intents, proxy=proxy, proxy_auth=proxy_auth)
             self._channel = channel
             self.tree = app_commands.CommandTree(self)
             self._register_app_commands()
 
         async def on_ready(self) -> None:
+            """异步执行 `on_ready`。
+
+            【中文名称】on_ready
+
+            【功能说明】
+            这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - 无显式业务参数。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             self._channel._bot_user_id = str(self.user.id) if self.user else None
             self._channel.logger.info("bot connected as user {}", self._channel._bot_user_id)
             try:
@@ -93,19 +168,75 @@ if DISCORD_AVAILABLE:
                 self._channel.logger.warning("app command sync failed: {}", e)
 
         async def on_message(self, message: discord.Message) -> None:
+            """异步执行 `on_message`。
+
+            【中文名称】on_message
+
+            【功能说明】
+            这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - message: 调用方传入的 `message` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             await self._channel._handle_discord_message(message)
 
         async def on_thread_delete(self, thread: discord.Thread) -> None:
+            """异步执行 `on_thread_delete`。
+
+            【中文名称】on_thread_delete
+
+            【功能说明】
+            这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - thread: 调用方传入的 `thread` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             self._channel._forget_channel(thread)
 
         async def on_thread_update(self, before: discord.Thread, after: discord.Thread) -> None:
+            """异步执行 `on_thread_update`。
+
+            【中文名称】on_thread_update
+
+            【功能说明】
+            这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - before: 调用方传入的 `before` 数据；具体类型以函数签名为准。
+            - after: 调用方传入的 `after` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             if getattr(after, "archived", False):
                 self._channel._forget_channel(after)
             else:
                 self._channel._remember_channel(after)
 
         async def _reply_ephemeral(self, interaction: discord.Interaction, text: str) -> bool:
-            """Send an ephemeral interaction response and report success."""
+            """异步执行 `_reply_ephemeral`。
+
+            【中文名称】_reply_ephemeral
+
+            【功能说明】
+            这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - interaction: 调用方传入的 `interaction` 数据；具体类型以函数签名为准。
+            - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
             try:
                 await interaction.response.send_message(text, ephemeral=True)
                 return True
@@ -117,6 +248,20 @@ if DISCORD_AVAILABLE:
             self,
             interaction: discord.Interaction,
         ) -> Any | None:
+            """异步执行 `_resolve_interaction_channel`。
+
+            【中文名称】_resolve_interaction_channel
+
+            【功能说明】
+            这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - interaction: 调用方传入的 `interaction` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             channel_id = interaction.channel_id
             if channel_id is None:
                 return None
@@ -135,6 +280,21 @@ if DISCORD_AVAILABLE:
             interaction: discord.Interaction,
             channel: Any | None,
         ) -> bool:
+            """异步执行 `_interaction_channel_allowed`。
+
+            【中文名称】_interaction_channel_allowed
+
+            【功能说明】
+            这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - interaction: 调用方传入的 `interaction` 数据；具体类型以函数签名为准。
+            - channel: 调用方传入的 `channel` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             allow_channels = self._channel.config.allow_channels
             if not allow_channels:
                 return True
@@ -149,6 +309,21 @@ if DISCORD_AVAILABLE:
             interaction: discord.Interaction,
             command_text: str,
         ) -> None:
+            """异步执行 `_forward_slash_command`。
+
+            【中文名称】_forward_slash_command
+
+            【功能说明】
+            这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - interaction: 调用方传入的 `interaction` 数据；具体类型以函数签名为准。
+            - command_text: 调用方传入的 `command_text` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             sender_id = str(interaction.user.id)
             channel_id = interaction.channel_id
 
@@ -190,6 +365,20 @@ if DISCORD_AVAILABLE:
             )
 
         def _register_app_commands(self) -> None:
+            """执行 `_register_app_commands`。
+
+            【中文名称】_register_app_commands
+
+            【功能说明】
+            这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - 无显式业务参数。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             commands = (
                 ("new", "Stop current task and start a new conversation", "/new"),
                 ("stop", "Stop the current task", "/stop"),
@@ -205,6 +394,21 @@ if DISCORD_AVAILABLE:
                     interaction: discord.Interaction,
                     _command_text: str = command_text,
                 ) -> None:
+                    """异步执行 `command_handler`。
+
+                    【中文名称】command_handler
+
+                    【功能说明】
+                    这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+                    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+                    【参数说明】
+                    - interaction: 调用方传入的 `interaction` 数据；具体类型以函数签名为准。
+                    - _command_text: 调用方传入的 `_command_text` 数据；具体类型以函数签名为准。
+
+                    【返回值】
+                    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
                     await self._forward_slash_command(interaction, _command_text)
 
             @self.tree.command(name="model", description="Show or switch runtime model preset")
@@ -213,12 +417,41 @@ if DISCORD_AVAILABLE:
                 interaction: discord.Interaction,
                 preset: str | None = None,
             ) -> None:
+                """异步执行 `model_command`。
+
+                【中文名称】model_command
+
+                【功能说明】
+                这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+                阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+                【参数说明】
+                - interaction: 调用方传入的 `interaction` 数据；具体类型以函数签名为准。
+                - preset: 调用方传入的 `preset` 数据；具体类型以函数签名为准。
+
+                【返回值】
+                - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
                 preset = (preset or "").strip()
                 command_text = f"/model {preset}" if preset else "/model"
                 await self._forward_slash_command(interaction, command_text)
 
             @self.tree.command(name="help", description="Show available commands")
             async def help_command(interaction: discord.Interaction) -> None:
+                """异步执行 `help_command`。
+
+                【中文名称】help_command
+
+                【功能说明】
+                这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+                阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+                【参数说明】
+                - interaction: 调用方传入的 `interaction` 数据；具体类型以函数签名为准。
+
+                【返回值】
+                - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
                 sender_id = str(interaction.user.id)
                 if not self._channel.is_allowed(sender_id):
                     await self._reply_ephemeral(interaction, "You are not allowed to use this bot.")
@@ -234,6 +467,21 @@ if DISCORD_AVAILABLE:
                 interaction: discord.Interaction,
                 error: app_commands.AppCommandError,
             ) -> None:
+                """异步执行 `on_app_command_error`。
+
+                【中文名称】on_app_command_error
+
+                【功能说明】
+                这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+                阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+                【参数说明】
+                - interaction: 调用方传入的 `interaction` 数据；具体类型以函数签名为准。
+                - error: 调用方传入的 `error` 数据；具体类型以函数签名为准。
+
+                【返回值】
+                - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
                 command_name = interaction.command.qualified_name if interaction.command else "?"
                 self._channel.logger.warning(
                     "app command failed user={} channel={} cmd={} error={}",
@@ -244,7 +492,19 @@ if DISCORD_AVAILABLE:
                 )
 
         async def send_outbound(self, msg: OutboundMessage) -> None:
-            """Send a nanobot outbound message using Discord transport rules."""
+            """异步执行 `send_outbound`。
+
+            【中文名称】send_outbound
+
+            【功能说明】
+            这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - msg: 调用方传入的 `msg` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
             channel_id = int(msg.chat_id)
 
             channel = self._channel._known_channels.get(msg.chat_id) or self.get_channel(channel_id)
@@ -287,7 +547,22 @@ if DISCORD_AVAILABLE:
             reference: discord.PartialMessage | None,
             mention_settings: discord.AllowedMentions,
         ) -> bool:
-            """Send a file attachment via discord.py."""
+            """异步执行 `_send_file`。
+
+            【中文名称】_send_file
+
+            【功能说明】
+            这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - channel: 调用方传入的 `channel` 数据；具体类型以函数签名为准。
+            - file_path: 调用方传入的 `file_path` 数据；具体类型以函数签名为准。
+            - reference: 调用方传入的 `reference` 数据；具体类型以函数签名为准。
+            - mention_settings: 调用方传入的 `mention_settings` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
             path = Path(file_path)
             if not path.is_file():
                 self._channel.logger.warning("file not found, skipping: {}", file_path)
@@ -311,7 +586,21 @@ if DISCORD_AVAILABLE:
 
         @staticmethod
         def _build_chunks(content: str, failed_media: list[str], sent_media: bool) -> list[str]:
-            """Build outbound text chunks, including attachment-failure fallback text."""
+            """执行 `_build_chunks`。
+
+            【中文名称】_build_chunks
+
+            【功能说明】
+            这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+            - failed_media: 调用方传入的 `failed_media` 数据；具体类型以函数签名为准。
+            - sent_media: 调用方传入的 `sent_media` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
             chunks = split_message(content, MAX_MESSAGE_LEN)
             if chunks or not failed_media or sent_media:
                 return chunks
@@ -323,7 +612,20 @@ if DISCORD_AVAILABLE:
             channel: Messageable,
             reply_to: str | None,
         ) -> tuple[discord.PartialMessage | None, discord.AllowedMentions]:
-            """Build reply context for outbound messages."""
+            """执行 `_build_reply_context`。
+
+            【中文名称】_build_reply_context
+
+            【功能说明】
+            这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - channel: 调用方传入的 `channel` 数据；具体类型以函数签名为准。
+            - reply_to: 调用方传入的 `reply_to` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
             mention_settings = discord.AllowedMentions(replied_user=False)
             if not reply_to:
                 return None, mention_settings
@@ -337,7 +639,17 @@ if DISCORD_AVAILABLE:
 
 
 class DiscordChannel(BaseChannel):
-    """Discord channel using discord.py."""
+    """DiscordChannel 类。
+
+    【中文名称】DiscordChannel
+
+    【功能说明】
+    这是 Discord 渠道适配器 中的核心数据结构或服务类。负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     name = "discord"
     display_name = "Discord"
@@ -345,17 +657,55 @@ class DiscordChannel(BaseChannel):
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
+        """执行 `default_config`。
+
+        【中文名称】default_config
+
+        【功能说明】
+        这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return DiscordConfig().model_dump(by_alias=True)
 
     @staticmethod
     def _channel_key(channel_or_id: Any) -> str:
-        """Normalize channel-like objects and ids to a stable string key."""
+        """执行 `_channel_key`。
+
+        【中文名称】_channel_key
+
+        【功能说明】
+        这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - channel_or_id: 调用方传入的 `channel_or_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         channel_id = getattr(channel_or_id, "id", channel_or_id)
         return str(channel_id)
 
     @classmethod
     def _channel_allow_keys(cls, channel: Any) -> set[str]:
-        """Return channel IDs that can satisfy allow_channels for this channel."""
+        """执行 `_channel_allow_keys`。
+
+        【中文名称】_channel_allow_keys
+
+        【功能说明】
+        这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - channel: 调用方传入的 `channel` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         keys = {cls._channel_key(channel)}
         if parent_key := cls._channel_parent_key(channel):
             keys.add(parent_key)
@@ -363,7 +713,19 @@ class DiscordChannel(BaseChannel):
 
     @classmethod
     def _channel_parent_key(cls, channel: Any) -> str | None:
-        """Return the parent channel key for a Discord thread-like channel."""
+        """执行 `_channel_parent_key`。
+
+        【中文名称】_channel_parent_key
+
+        【功能说明】
+        这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - channel: 调用方传入的 `channel` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         parent_id = getattr(channel, "parent_id", None)
         if parent_id is not None:
             return cls._channel_key(parent_id)
@@ -373,6 +735,21 @@ class DiscordChannel(BaseChannel):
         return None
 
     def __init__(self, config: Any, bus: MessageBus):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - config: 调用方传入的 `config` 数据；具体类型以函数签名为准。
+        - bus: 调用方传入的 `bus` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if isinstance(config, dict):
             config = DiscordConfig.model_validate(config)
         super().__init__(config, bus)
@@ -380,19 +757,59 @@ class DiscordChannel(BaseChannel):
         self._client: DiscordBotClient | None = None
         self._typing_tasks: dict[str, asyncio.Task[None]] = {}
         self._bot_user_id: str | None = None
-        self._pending_reactions: dict[str, Any] = {}  # chat_id -> message object
+        self._pending_reactions: dict[str, Any] = {}  # 说明：这里处理 Discord 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         self._working_emoji_tasks: dict[str, asyncio.Task[None]] = {}
         self._stream_bufs: dict[str, _StreamBuf] = {}
         self._known_channels: dict[str, Any] = {}
 
     def _remember_channel(self, channel: Any) -> None:
+        """执行 `_remember_channel`。
+
+        【中文名称】_remember_channel
+
+        【功能说明】
+        这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - channel: 调用方传入的 `channel` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self._known_channels[self._channel_key(channel)] = channel
 
     def _forget_channel(self, channel_or_id: Any) -> None:
+        """执行 `_forget_channel`。
+
+        【中文名称】_forget_channel
+
+        【功能说明】
+        这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - channel_or_id: 调用方传入的 `channel_or_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self._known_channels.pop(self._channel_key(channel_or_id), None)
 
     async def start(self) -> None:
-        """Start the Discord client."""
+        """异步执行 `start`。
+
+        【中文名称】start
+
+        【功能说明】
+        这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not DISCORD_AVAILABLE:
             self.logger.error("discord.py not installed. Run: pip install nanobot-ai[discord]")
             return
@@ -447,12 +864,36 @@ class DiscordChannel(BaseChannel):
             await self._reset_runtime_state(close_client=True)
 
     async def stop(self) -> None:
-        """Stop the Discord channel."""
+        """异步执行 `stop`。
+
+        【中文名称】stop
+
+        【功能说明】
+        这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         self._running = False
         await self._reset_runtime_state(close_client=True)
 
     async def send(self, msg: OutboundMessage) -> None:
-        """Send a message through Discord using discord.py."""
+        """异步执行 `send`。
+
+        【中文名称】send
+
+        【功能说明】
+        这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - msg: 调用方传入的 `msg` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         client = self._client
         if client is None or not client.is_ready():
             self.logger.warning("client not ready; dropping outbound message")
@@ -473,7 +914,21 @@ class DiscordChannel(BaseChannel):
     async def send_delta(
         self, chat_id: str, delta: str, metadata: dict[str, Any] | None = None
     ) -> None:
-        """Progressive Discord delivery: send once, then edit until the stream ends."""
+        """异步执行 `send_delta`。
+
+        【中文名称】send_delta
+
+        【功能说明】
+        这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - delta: 调用方传入的 `delta` 数据；具体类型以函数签名为准。
+        - metadata: 调用方传入的 `metadata` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         client = self._client
         if client is None or not client.is_ready():
             self.logger.warning("client not ready; dropping stream delta")
@@ -530,14 +985,19 @@ class DiscordChannel(BaseChannel):
             raise
 
     async def _handle_discord_message(self, message: discord.Message) -> None:
-        """Handle incoming Discord messages from discord.py.
+        """异步执行 `_handle_discord_message`。
 
-        Self-loop guard: only drop messages from this bot's own account. Messages
-        from other bots are allowed through so multi-agent setups (one bot asking
-        another for help, a bot mentioning another by @name, etc.) can work.
-        Bot-from-bot loops are still prevented per-instance because each bot
-        still ignores its own outbound messages. (#3217)
-        """
+        【中文名称】_handle_discord_message
+
+        【功能说明】
+        这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - message: 调用方传入的 `message` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if self._bot_user_id is not None and str(message.author.id) == self._bot_user_id:
             return
         if self._is_system_message(message):
@@ -564,15 +1024,29 @@ class DiscordChannel(BaseChannel):
 
         await self._start_typing(message.channel)
 
-        # Add read receipt reaction immediately, working emoji after delay
+        # 说明：这里处理 Discord 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         try:
             await message.add_reaction(self.config.read_receipt_emoji)
             self._pending_reactions[channel_id] = message
         except Exception as e:
             self.logger.debug("Failed to add read receipt reaction: {}", e)
 
-        # Delayed working indicator (cosmetic — not tied to subagent lifecycle)
+        # 说明：这里处理 Discord 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         async def _delayed_working_emoji() -> None:
+            """异步执行 `_delayed_working_emoji`。
+
+            【中文名称】_delayed_working_emoji
+
+            【功能说明】
+            这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - 无显式业务参数。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             await asyncio.sleep(self.config.working_emoji_delay)
             with suppress(Exception):
                 await message.add_reaction(self.config.working_emoji)
@@ -595,11 +1069,35 @@ class DiscordChannel(BaseChannel):
             raise
 
     async def _on_message(self, message: discord.Message) -> None:
-        """Backward-compatible alias for legacy tests/callers."""
+        """异步执行 `_on_message`。
+
+        【中文名称】_on_message
+
+        【功能说明】
+        这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - message: 调用方传入的 `message` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         await self._handle_discord_message(message)
 
     async def _resolve_channel(self, chat_id: str) -> Any | None:
-        """Resolve a Discord channel from cache first, then network fetch."""
+        """异步执行 `_resolve_channel`。
+
+        【中文名称】_resolve_channel
+
+        【功能说明】
+        这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         client = self._client
         if client is None or not client.is_ready():
             return None
@@ -617,7 +1115,20 @@ class DiscordChannel(BaseChannel):
             return None
 
     async def _finalize_stream(self, chat_id: str, buf: _StreamBuf) -> None:
-        """Commit the final streamed content and flush overflow chunks."""
+        """异步执行 `_finalize_stream`。
+
+        【中文名称】_finalize_stream
+
+        【功能说明】
+        这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - buf: 调用方传入的 `buf` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         chunks = DiscordBotClient._build_chunks(buf.text, [], False)
         if not chunks:
             self._stream_bufs.pop(chat_id, None)
@@ -648,10 +1159,24 @@ class DiscordChannel(BaseChannel):
         sender_id: str,
         content: str,
     ) -> bool:
-        """Check if inbound Discord message should be processed."""
+        """执行 `_should_accept_inbound`。
+
+        【中文名称】_should_accept_inbound
+
+        【功能说明】
+        这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - message: 调用方传入的 `message` 数据；具体类型以函数签名为准。
+        - sender_id: 调用方传入的 `sender_id` 数据；具体类型以函数签名为准。
+        - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self.is_allowed(sender_id):
             return False
-        # Channel-based filtering: only respond in allowed channels
+        # 说明：这里处理 Discord 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         allow_channels = self.config.allow_channels
         if allow_channels:
             channel_ids = self._channel_allow_keys(message.channel)
@@ -665,7 +1190,19 @@ class DiscordChannel(BaseChannel):
         self,
         attachments: list[discord.Attachment],
     ) -> tuple[list[str], list[str]]:
-        """Download supported attachments and return paths + display markers."""
+        """异步执行 `_download_attachments`。
+
+        【中文名称】_download_attachments
+
+        【功能说明】
+        这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - attachments: 调用方传入的 `attachments` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         media_paths: list[str] = []
         markers: list[str] = []
         media_dir = get_media_dir("discord")
@@ -690,20 +1227,57 @@ class DiscordChannel(BaseChannel):
 
     @staticmethod
     def _compose_inbound_content(content: str, attachment_markers: list[str]) -> str:
-        """Combine message text with attachment markers."""
+        """执行 `_compose_inbound_content`。
+
+        【中文名称】_compose_inbound_content
+
+        【功能说明】
+        这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+        - attachment_markers: 调用方传入的 `attachment_markers` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         content_parts = [content] if content else []
         content_parts.extend(attachment_markers)
         return "\n".join(part for part in content_parts if part) or "[empty message]"
 
     @staticmethod
     def _is_system_message(message: discord.Message) -> bool:
-        """Return True for Discord system messages that carry no user prompt."""
+        """执行 `_is_system_message`。
+
+        【中文名称】_is_system_message
+
+        【功能说明】
+        这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - message: 调用方传入的 `message` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         message_type = getattr(message, "type", discord.MessageType.default)
         return message_type not in {discord.MessageType.default, discord.MessageType.reply}
 
     @staticmethod
     def _build_inbound_metadata(message: discord.Message) -> dict[str, str | None]:
-        """Build metadata for inbound Discord messages."""
+        """执行 `_build_inbound_metadata`。
+
+        【中文名称】_build_inbound_metadata
+
+        【功能说明】
+        这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - message: 调用方传入的 `message` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         reply_to = (
             str(message.reference.message_id)
             if message.reference and message.reference.message_id
@@ -716,7 +1290,20 @@ class DiscordChannel(BaseChannel):
         }
 
     def _should_respond_in_group(self, message: discord.Message, content: str) -> bool:
-        """Check if the bot should respond in a guild channel based on policy."""
+        """执行 `_should_respond_in_group`。
+
+        【中文名称】_should_respond_in_group
+
+        【功能说明】
+        这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - message: 调用方传入的 `message` 数据；具体类型以函数签名为准。
+        - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if self.config.group_policy == "open":
             return True
 
@@ -746,7 +1333,20 @@ class DiscordChannel(BaseChannel):
 
     @staticmethod
     def _references_bot_message(message: discord.Message, bot_user_id: str) -> bool:
-        """Return True when a Discord reply targets a message authored by this bot."""
+        """执行 `_references_bot_message`。
+
+        【中文名称】_references_bot_message
+
+        【功能说明】
+        这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - message: 调用方传入的 `message` 数据；具体类型以函数签名为准。
+        - bot_user_id: 调用方传入的 `bot_user_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         reference = getattr(message, "reference", None)
         if reference is None:
             return False
@@ -757,11 +1357,37 @@ class DiscordChannel(BaseChannel):
         return str(getattr(author, "id", "")) == bot_user_id
 
     async def _start_typing(self, channel: Messageable) -> None:
-        """Start periodic typing indicator for a channel."""
+        """异步执行 `_start_typing`。
+
+        【中文名称】_start_typing
+
+        【功能说明】
+        这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - channel: 调用方传入的 `channel` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         channel_id = self._channel_key(channel)
         await self._stop_typing(channel_id)
 
         async def typing_loop() -> None:
+            """异步执行 `typing_loop`。
+
+            【中文名称】typing_loop
+
+            【功能说明】
+            这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - 无显式业务参数。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             while self._running:
                 try:
                     async with channel.typing():
@@ -775,7 +1401,19 @@ class DiscordChannel(BaseChannel):
         self._typing_tasks[channel_id] = asyncio.create_task(typing_loop())
 
     async def _stop_typing(self, channel_id: str) -> None:
-        """Stop typing indicator for a channel."""
+        """异步执行 `_stop_typing`。
+
+        【中文名称】_stop_typing
+
+        【功能说明】
+        这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - channel_id: 调用方传入的 `channel_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         task = self._typing_tasks.pop(self._channel_key(channel_id), None)
         if task is None:
             return
@@ -784,8 +1422,20 @@ class DiscordChannel(BaseChannel):
             await task
 
     async def _clear_reactions(self, chat_id: str) -> None:
-        """Remove all pending reactions after bot replies."""
-        # Cancel delayed working emoji if it hasn't fired yet
+        """异步执行 `_clear_reactions`。
+
+        【中文名称】_clear_reactions
+
+        【功能说明】
+        这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+        # 说明：这里处理 Discord 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         task = self._working_emoji_tasks.pop(chat_id, None)
         if task and not task.done():
             task.cancel()
@@ -799,13 +1449,37 @@ class DiscordChannel(BaseChannel):
                 await msg_obj.remove_reaction(emoji, bot_user)
 
     async def _cancel_all_typing(self) -> None:
-        """Stop all typing tasks."""
+        """异步执行 `_cancel_all_typing`。
+
+        【中文名称】_cancel_all_typing
+
+        【功能说明】
+        这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         channel_ids = list(self._typing_tasks)
         for channel_id in channel_ids:
             await self._stop_typing(channel_id)
 
     async def _reset_runtime_state(self, close_client: bool) -> None:
-        """Reset client and typing state."""
+        """异步执行 `_reset_runtime_state`。
+
+        【中文名称】_reset_runtime_state
+
+        【功能说明】
+        这是 Discord 渠道适配器 中的一个步骤函数，用来支撑：负责连接 Discord Bot，把频道消息、附件和回复上下文接入消息总线，并把 Agent 输出拆分成 Discord 可接受的消息。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - close_client: 调用方传入的 `close_client` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         await self._cancel_all_typing()
         self._stream_bufs.clear()
         self._known_channels.clear()

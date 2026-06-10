@@ -1,4 +1,18 @@
-"""WebSocket server channel: nanobot acts as a WebSocket server and serves connected clients."""
+"""WebSocket 渠道适配器。
+
+【中文名称】WebSocket 渠道适配器
+
+【功能说明】
+负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的渠道适配器代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 from __future__ import annotations
 
@@ -51,24 +65,17 @@ from nanobot.webui.websocket_logging import websockets_server_logger
 
 
 class WebSocketConfig(Base):
-    """WebSocket server channel configuration.
+    """WebSocketConfig 类。
 
-    Clients connect with URLs like ``ws://{host}:{port}{path}?client_id=...&token=...``.
-    - ``client_id``: Used for ``allow_from`` authorization; if omitted, a value is generated and logged.
-    - ``token``: If non-empty, the ``token`` query param may match this static secret; short-lived tokens
-      from ``token_issue_path`` are also accepted.
-    - ``token_issue_path``: If non-empty, **GET** (HTTP/1.1) to this path returns JSON
-      ``{"token": "...", "expires_in": <seconds>}``; use ``?token=...`` when opening the WebSocket.
-      Must differ from ``path`` (the WS upgrade path). If the client runs in the **same process** as
-      nanobot and shares the asyncio loop, use a thread or async HTTP client for GET—do not call
-      blocking ``urllib`` or synchronous ``httpx`` from inside a coroutine.
-    - ``token_issue_secret``: If non-empty, token requests must send ``Authorization: Bearer <secret>`` or
-      ``X-Nanobot-Auth: <secret>``.
-    - ``websocket_requires_token``: If True, the handshake must include a valid token (static or issued and not expired).
-    - Each connection has its own session: a unique ``chat_id`` maps to the agent session internally.
-    - ``media`` field in outbound messages contains local filesystem paths; remote clients need a
-      shared filesystem or an HTTP file server to access these files.
-    """
+    【中文名称】WebSocketConfig
+
+    【功能说明】
+    这是 WebSocket 渠道适配器 中的核心数据结构或服务类。负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     enabled: bool = False
     host: str = "127.0.0.1"
@@ -82,10 +89,10 @@ class WebSocketConfig(Base):
     websocket_requires_token: bool = True
     allow_from: list[str] = Field(default_factory=lambda: ["*"])
     streaming: bool = True
-    # Default 36 MB, upper 40 MB: supports up to 4 images at ~6 MB each after
-    # client-side Worker normalization (see webui Composer). 4 × 6 MB × 1.37
-    # (base64 overhead) + envelope framing stays under 36 MB; the 40 MB ceiling
-    # leaves a small margin for sender slop without opening a DoS avenue.
+    # 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     max_message_bytes: int = Field(default=37_748_736, ge=1024, le=41_943_040)
     ping_interval_s: float = Field(default=20.0, ge=5.0, le=300.0)
     ping_timeout_s: float = Field(default=20.0, ge=5.0, le=300.0)
@@ -95,6 +102,20 @@ class WebSocketConfig(Base):
     @field_validator("unix_socket_path")
     @classmethod
     def unix_socket_path_format(cls, value: str) -> str:
+        """执行 `unix_socket_path_format`。
+
+        【中文名称】unix_socket_path_format
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         value = value.strip()
         if not value:
             return ""
@@ -108,6 +129,20 @@ class WebSocketConfig(Base):
     @field_validator("path")
     @classmethod
     def path_must_start_with_slash(cls, value: str) -> str:
+        """执行 `path_must_start_with_slash`。
+
+        【中文名称】path_must_start_with_slash
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not value.startswith("/"):
             raise ValueError('path must start with "/"')
         return _normalize_config_path(value)
@@ -115,6 +150,20 @@ class WebSocketConfig(Base):
     @field_validator("token_issue_path")
     @classmethod
     def token_issue_path_format(cls, value: str) -> str:
+        """执行 `token_issue_path_format`。
+
+        【中文名称】token_issue_path_format
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         value = value.strip()
         if not value:
             return ""
@@ -124,6 +173,20 @@ class WebSocketConfig(Base):
 
     @model_validator(mode="after")
     def token_issue_path_differs_from_ws_path(self) -> Self:
+        """执行 `token_issue_path_differs_from_ws_path`。
+
+        【中文名称】token_issue_path_differs_from_ws_path
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self.token_issue_path:
             return self
         if _normalize_config_path(self.token_issue_path) == _normalize_config_path(self.path):
@@ -132,6 +195,20 @@ class WebSocketConfig(Base):
 
     @model_validator(mode="after")
     def wildcard_host_requires_auth(self) -> Self:
+        """执行 `wildcard_host_requires_auth`。
+
+        【中文名称】wildcard_host_requires_auth
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if self.host not in ("0.0.0.0", "::"):
             return self
         if self.token.strip() or self.token_issue_secret.strip():
@@ -147,7 +224,21 @@ def publish_runtime_model_update(
     model: str,
     model_preset: str | None,
 ) -> None:
-    """Enqueue a runtime model snapshot for websocket subscribers (fan-out in-channel)."""
+    """执行 `publish_runtime_model_update`。
+
+    【中文名称】publish_runtime_model_update
+
+    【功能说明】
+    这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - bus: 调用方传入的 `bus` 数据；具体类型以函数签名为准。
+    - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+    - model_preset: 调用方传入的 `model_preset` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     bus.outbound.put_nowait(OutboundMessage(
         channel="websocket",
         chat_id="*",
@@ -161,7 +252,19 @@ def publish_runtime_model_update(
 
 
 def _parse_inbound_payload(raw: str) -> str | None:
-    """Parse a client frame into text; return None for empty or unrecognized content."""
+    """执行 `_parse_inbound_payload`。
+
+    【中文名称】_parse_inbound_payload
+
+    【功能说明】
+    这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - raw: 调用方传入的 `raw` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     text = raw.strip()
     if not text:
         return None
@@ -180,22 +283,43 @@ def _parse_inbound_payload(raw: str) -> str | None:
     return text
 
 
-# Accept UUIDs and short scoped keys like "unified:default". Keeps the capability
-# namespace small enough to rule out path traversal / quote injection tricks.
+# 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 _CHAT_ID_RE = re.compile(r"^[A-Za-z0-9_:-]{1,64}$")
 
 
 def _is_valid_chat_id(value: Any) -> bool:
+    """执行 `_is_valid_chat_id`。
+
+    【中文名称】_is_valid_chat_id
+
+    【功能说明】
+    这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     return isinstance(value, str) and _CHAT_ID_RE.match(value) is not None
 
 
 def _parse_envelope(raw: str) -> dict[str, Any] | None:
-    """Return a typed envelope dict if the frame is a new-style JSON envelope, else None.
+    """执行 `_parse_envelope`。
 
-    A frame qualifies when it parses as a JSON object with a string ``type`` field.
-    Legacy frames (plain text, or ``{"content": ...}`` without ``type``) return None;
-    callers should fall back to :func:`_parse_inbound_payload` for those.
-    """
+    【中文名称】_parse_envelope
+
+    【功能说明】
+    这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - raw: 调用方传入的 `raw` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     text = raw.strip()
     if not text.startswith("{"):
         return None
@@ -211,17 +335,17 @@ def _parse_envelope(raw: str) -> dict[str, Any] | None:
     return data
 
 
-# Per-message media limits. The server-side guard is a touch looser than the
-# client's ``Worker`` normalization target (6 MB) — tolerate client slop, but
-# still cap total ingress at ``_MAX_IMAGES_PER_MESSAGE * _MAX_IMAGE_BYTES``
-# which fits comfortably inside ``max_message_bytes``.
+# 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 _MAX_IMAGES_PER_MESSAGE = 4
 _MAX_IMAGE_BYTES = 8 * 1024 * 1024
 _MAX_VIDEOS_PER_MESSAGE = 1
 _MAX_VIDEO_BYTES = 20 * 1024 * 1024
 
-# Image MIME whitelist — matches the Composer's ``accept`` list. SVG is
-# explicitly excluded to avoid the XSS surface inside embedded scripts.
+# 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 _IMAGE_MIME_ALLOWED: frozenset[str] = frozenset({
     "image/png",
     "image/jpeg",
@@ -241,7 +365,19 @@ _DATA_URL_MIME_RE = re.compile(r"^data:([^;,]+)(?:;[^,]*)*;base64,", re.DOTALL)
 
 
 def _extract_data_url_mime(url: str) -> str | None:
-    """Return the MIME type of a ``data:<mime>;base64,...`` URL, else ``None``."""
+    """执行 `_extract_data_url_mime`。
+
+    【中文名称】_extract_data_url_mime
+
+    【功能说明】
+    这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - url: 调用方传入的 `url` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if not isinstance(url, str):
         return None
     m = _DATA_URL_MIME_RE.match(url)
@@ -251,7 +387,19 @@ def _extract_data_url_mime(url: str) -> str | None:
 
 
 def _is_websocket_upgrade(request: WsRequest) -> bool:
-    """Detect an actual WS upgrade; plain HTTP GETs to the same path should fall through."""
+    """执行 `_is_websocket_upgrade`。
+
+    【中文名称】_is_websocket_upgrade
+
+    【功能说明】
+    这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - request: 调用方传入的 `request` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     upgrade = request.headers.get("Upgrade") or request.headers.get("upgrade")
     connection = request.headers.get("Connection") or request.headers.get("connection")
     if not upgrade or "websocket" not in upgrade.lower():
@@ -262,7 +410,17 @@ def _is_websocket_upgrade(request: WsRequest) -> bool:
 
 
 class WebSocketChannel(BaseChannel):
-    """Run a local WebSocket server; forward text/JSON messages to the message bus."""
+    """WebSocketChannel 类。
+
+    【中文名称】WebSocketChannel
+
+    【功能说明】
+    这是 WebSocket 渠道适配器 中的核心数据结构或服务类。负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     name = "websocket"
     display_name = "WebSocket"
@@ -274,15 +432,31 @@ class WebSocketChannel(BaseChannel):
         *,
         gateway: GatewayServices,
     ):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - config: 调用方传入的 `config` 数据；具体类型以函数签名为准。
+        - bus: 调用方传入的 `bus` 数据；具体类型以函数签名为准。
+        - gateway: 调用方传入的 `gateway` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if isinstance(config, dict):
             config = WebSocketConfig.model_validate(config)
         super().__init__(config, bus)
         self.config: WebSocketConfig = config
-        # chat_id -> connections subscribed to it (fan-out target).
+        # 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         self._subs: dict[str, set[Any]] = {}
-        # connection -> chat_ids it is subscribed to (O(1) cleanup on disconnect).
+        # 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         self._conn_chats: dict[Any, set[str]] = {}
-        # connection -> default chat_id for legacy frames that omit routing.
+        # 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         self._conn_default: dict[Any, str] = {}
         self._stop_event: asyncio.Event | None = None
         self._server_task: asyncio.Task[None] | None = None
@@ -296,18 +470,57 @@ class WebSocketChannel(BaseChannel):
 
         self._stream_text_buffers: dict[tuple[str, str], list[str]] = {}
 
-    # -- Subscription bookkeeping -------------------------------------------
+    # 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     def _workspace_controls_available(self, connection: Any) -> bool:
+        """执行 `_workspace_controls_available`。
+
+        【中文名称】_workspace_controls_available
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - connection: 调用方传入的 `connection` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return self._http_router.workspace_controls_available(connection)
 
     def _attach(self, connection: Any, chat_id: str) -> None:
-        """Idempotently subscribe *connection* to *chat_id*."""
+        """执行 `_attach`。
+
+        【中文名称】_attach
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - connection: 调用方传入的 `connection` 数据；具体类型以函数签名为准。
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         self._subs.setdefault(chat_id, set()).add(connection)
         self._conn_chats.setdefault(connection, set()).add(chat_id)
 
     def _cleanup_connection(self, connection: Any) -> None:
-        """Remove *connection* from every subscription set; safe to call multiple times."""
+        """执行 `_cleanup_connection`。
+
+        【中文名称】_cleanup_connection
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - connection: 调用方传入的 `connection` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         chat_ids = self._conn_chats.pop(connection, set())
         for cid in chat_ids:
             subs = self._subs.get(cid)
@@ -319,12 +532,19 @@ class WebSocketChannel(BaseChannel):
         self._conn_default.pop(connection, None)
 
     async def _maybe_push_active_goal_state(self, chat_id: str) -> None:
-        """Replay an active sustained goal from session metadata after *chat_id* is subscribed.
+        """异步执行 `_maybe_push_active_goal_state`。
 
-        Goal metadata lives on the session JSONL and survives gateway restarts, but
-        connected clients normally see it via ``goal_state`` / ``turn_end`` frames.
-        Pushing here makes refresh + reconnect restore the strip without a new model turn.
-        """
+        【中文名称】_maybe_push_active_goal_state
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if self.gateway.session_manager is None:
             return
         row = self.gateway.session_manager.read_session_file(f"websocket:{chat_id}")
@@ -337,19 +557,57 @@ class WebSocketChannel(BaseChannel):
         await self.send_goal_state(chat_id, blob)
 
     async def _maybe_push_turn_run_wall_clock(self, chat_id: str) -> None:
-        """Replay ``goal_status: running`` when a turn is still active (same-process refresh)."""
+        """异步执行 `_maybe_push_turn_run_wall_clock`。
+
+        【中文名称】_maybe_push_turn_run_wall_clock
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         t0 = websocket_turn_wall_started_at(chat_id)
         if t0 is None:
             return
         await self.send_goal_status(chat_id, "running", started_at=t0)
 
     async def _hydrate_after_subscribe(self, chat_id: str) -> None:
-        """Replay goal/run strip state after subscribe (same-process refresh)."""
+        """异步执行 `_hydrate_after_subscribe`。
+
+        【中文名称】_hydrate_after_subscribe
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         await self._maybe_push_active_goal_state(chat_id)
         await self._maybe_push_turn_run_wall_clock(chat_id)
 
     async def _send_event(self, connection: Any, event: str, **fields: Any) -> None:
-        """Send a control event (attached, error, ...) to a single connection."""
+        """异步执行 `_send_event`。
+
+        【中文名称】_send_event
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - connection: 调用方传入的 `connection` 数据；具体类型以函数签名为准。
+        - event: 调用方传入的 `event` 数据；具体类型以函数签名为准。
+        - **fields: 调用方传入的 `fields` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         payload: dict[str, Any] = {"event": event}
         payload.update(fields)
         raw = json.dumps(payload, ensure_ascii=False)
@@ -362,12 +620,54 @@ class WebSocketChannel(BaseChannel):
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
+        """执行 `default_config`。
+
+        【中文名称】default_config
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return WebSocketConfig().model_dump(by_alias=True)
 
     def _expected_path(self) -> str:
+        """执行 `_expected_path`。
+
+        【中文名称】_expected_path
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return _normalize_config_path(self.config.path)
 
     def _build_ssl_context(self) -> ssl.SSLContext | None:
+        """执行 `_build_ssl_context`。
+
+        【中文名称】_build_ssl_context
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         cert = self.config.ssl_certfile.strip()
         key = self.config.ssl_keyfile.strip()
         if not cert and not key:
@@ -381,13 +681,26 @@ class WebSocketChannel(BaseChannel):
         ctx.load_cert_chain(certfile=cert, keyfile=key)
         return ctx
 
-    # -- HTTP dispatch ------------------------------------------------------
+    # 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     async def _dispatch_http(self, connection: Any, request: WsRequest) -> Any:
-        """Route an inbound HTTP request to the HTTP handler or WS upgrade."""
+        """异步执行 `_dispatch_http`。
+
+        【中文名称】_dispatch_http
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - connection: 调用方传入的 `connection` 数据；具体类型以函数签名为准。
+        - request: 调用方传入的 `request` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         got, query = _parse_request_path(request.path)
 
-        # WebSocket upgrade — channel handles this itself
+        # 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         expected_ws = self._expected_path()
         if got == expected_ws and _is_websocket_upgrade(request):
             client_id = _query_first(query, "client_id") or ""
@@ -397,10 +710,25 @@ class WebSocketChannel(BaseChannel):
                 return connection.respond(403, "Forbidden")
             return self._authorize_websocket_handshake(connection, query)
 
-        # Everything else goes to the HTTP handler
+        # 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         return await self._http_router.dispatch(connection, request)
 
     def _authorize_websocket_handshake(self, connection: Any, query: dict[str, list[str]]) -> Any:
+        """执行 `_authorize_websocket_handshake`。
+
+        【中文名称】_authorize_websocket_handshake
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - connection: 调用方传入的 `connection` 数据；具体类型以函数签名为准。
+        - query: 调用方传入的 `query` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         supplied = _query_first(query, "token")
         static_token = self.config.token.strip()
 
@@ -420,9 +748,23 @@ class WebSocketChannel(BaseChannel):
             self._tokens.take_issued_token_if_valid(supplied)
         return None
 
-    # -- Server lifecycle and connection ingress ---------------------------
+    # 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     async def start(self) -> None:
+        """异步执行 `start`。
+
+        【中文名称】start
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         from nanobot.utils.logging_bridge import redirect_lib_logging
 
         redirect_lib_logging("websockets", level="WARNING")
@@ -438,9 +780,38 @@ class WebSocketChannel(BaseChannel):
             connection: ServerConnection,
             request: WsRequest,
         ) -> Any:
+            """异步执行 `process_request`。
+
+            【中文名称】process_request
+
+            【功能说明】
+            这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - connection: 调用方传入的 `connection` 数据；具体类型以函数签名为准。
+            - request: 调用方传入的 `request` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             return await self._dispatch_http(connection, request)
 
         async def handler(connection: ServerConnection) -> None:
+            """异步执行 `handler`。
+
+            【中文名称】handler
+
+            【功能说明】
+            这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - connection: 调用方传入的 `connection` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             await self._connection_loop(connection)
 
         self.logger.info(
@@ -465,6 +836,20 @@ class WebSocketChannel(BaseChannel):
             )
 
         async def runner() -> None:
+            """异步执行 `runner`。
+
+            【中文名称】runner
+
+            【功能说明】
+            这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - 无显式业务参数。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             socket_path = self.config.unix_socket_path
             if socket_path:
                 path_obj = Path(socket_path)
@@ -508,6 +893,20 @@ class WebSocketChannel(BaseChannel):
         await self._server_task
 
     async def _connection_loop(self, connection: Any) -> None:
+        """异步执行 `_connection_loop`。
+
+        【中文名称】_connection_loop
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - connection: 调用方传入的 `connection` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         request = connection.request
         path_part = request.path if request else "/"
         _, query = _parse_request_path(path_part)
@@ -532,7 +931,7 @@ class WebSocketChannel(BaseChannel):
                     ensure_ascii=False,
                 )
             )
-            # Register only after ready is successfully sent to avoid out-of-order sends
+            # 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             self._conn_default[connection] = default_chat_id
             self._attach(connection, default_chat_id)
             await self._hydrate_after_subscribe(default_chat_id)
@@ -553,9 +952,9 @@ class WebSocketChannel(BaseChannel):
                 content = _parse_inbound_payload(raw)
                 if content is None:
                     continue
-                # WebSocket already authenticates at handshake time (token),
-                # so pairing is not applicable. Treat as non-DM to avoid
-                # sending pairing codes to an already-authenticated client.
+                # 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+                # 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+                # 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 await self._handle_message(
                     sender_id=client_id,
                     chat_id=default_chat_id,
@@ -568,23 +967,25 @@ class WebSocketChannel(BaseChannel):
         finally:
             self._cleanup_connection(connection)
 
-    # -- Inbound WebSocket envelopes ---------------------------------------
+    # 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     def _save_envelope_media(
         self,
         media: list[Any],
     ) -> tuple[list[str], str | None]:
-        """Decode and persist ``media`` items from a ``message`` envelope.
+        """执行 `_save_envelope_media`。
 
-        Returns ``(paths, None)`` on success or ``([], reason)`` on the first
-        failure — the caller is expected to surface ``reason`` to the client
-        and skip publishing so no half-formed message ever reaches the agent.
-        On failure, any files already written to disk earlier in the same
-        call are unlinked so partial ingress doesn't leak orphan files.
-        ``reason`` is a short, stable token suitable for UI localization.
+        【中文名称】_save_envelope_media
 
-        Shape: ``list[{"data_url": str, "name"?: str | None}]``.
-        """
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - media: 调用方传入的 `media` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         image_count = 0
         video_count = 0
         for item in media:
@@ -602,6 +1003,20 @@ class WebSocketChannel(BaseChannel):
         paths: list[str] = []
 
         def _abort(reason: str) -> tuple[list[str], str]:
+            """执行 `_abort`。
+
+            【中文名称】_abort
+
+            【功能说明】
+            这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - reason: 调用方传入的 `reason` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             for p in paths:
                 try:
                     Path(p).unlink(missing_ok=True)
@@ -644,7 +1059,21 @@ class WebSocketChannel(BaseChannel):
         client_id: str,
         envelope: dict[str, Any],
     ) -> None:
-        """Route one typed inbound envelope (``new_chat`` / ``attach`` / ``message``)."""
+        """异步执行 `_dispatch_envelope`。
+
+        【中文名称】_dispatch_envelope
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - connection: 调用方传入的 `connection` 数据；具体类型以函数签名为准。
+        - client_id: 调用方传入的 `client_id` 数据；具体类型以函数签名为准。
+        - envelope: 调用方传入的 `envelope` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         t = envelope.get("type")
         if t == "new_chat":
             new_id = str(uuid.uuid4())
@@ -738,7 +1167,7 @@ class WebSocketChannel(BaseChannel):
                     )
                     return
 
-            # Allow image-only turns (content may be empty when media is attached).
+            # 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if not content.strip() and not media_paths:
                 await self._send_event(connection, "error", detail="missing content")
                 return
@@ -755,7 +1184,7 @@ class WebSocketChannel(BaseChannel):
             if scope is None:
                 return
 
-            # Auto-attach on first use so clients can one-shot without a separate attach.
+            # 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             self._attach(connection, cid)
             await self._hydrate_after_subscribe(cid)
             metadata: dict[str, Any] = {"remote": getattr(connection, "remote_address", None)}
@@ -804,6 +1233,22 @@ class WebSocketChannel(BaseChannel):
         *,
         chat_id: str | None = None,
     ) -> Any | None:
+        """异步执行 `_workspace_scope_or_error`。
+
+        【中文名称】_workspace_scope_or_error
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - connection: 调用方传入的 `connection` 数据；具体类型以函数签名为准。
+        - resolver: 调用方传入的 `resolver` 数据；具体类型以函数签名为准。
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         try:
             return resolver()
         except WorkspaceScopeError as exc:
@@ -816,9 +1261,23 @@ class WebSocketChannel(BaseChannel):
             )
             return None
 
-    # -- Outbound WebSocket events -----------------------------------------
+    # 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     async def stop(self) -> None:
+        """异步执行 `stop`。
+
+        【中文名称】stop
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self._running:
             return
         self._running = False
@@ -836,7 +1295,21 @@ class WebSocketChannel(BaseChannel):
         self._tokens.clear()
 
     async def _safe_send_to(self, connection: Any, raw: str, *, label: str = "") -> None:
-        """Send a raw frame to one connection, cleaning up on ConnectionClosed."""
+        """异步执行 `_safe_send_to`。
+
+        【中文名称】_safe_send_to
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - connection: 调用方传入的 `connection` 数据；具体类型以函数签名为准。
+        - raw: 调用方传入的 `raw` 数据；具体类型以函数签名为准。
+        - label: 调用方传入的 `label` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         try:
             await connection.send(raw)
         except ConnectionClosed:
@@ -847,6 +1320,20 @@ class WebSocketChannel(BaseChannel):
             raise
 
     async def send(self, msg: OutboundMessage) -> None:
+        """异步执行 `send`。
+
+        【中文名称】send
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - msg: 调用方传入的 `msg` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if msg.metadata.get("_runtime_model_updated"):
             await self.send_runtime_model_updated(
                 model_name=msg.metadata.get("model"),
@@ -854,7 +1341,7 @@ class WebSocketChannel(BaseChannel):
             )
             return
 
-        # Snapshot the subscriber set so ConnectionClosed cleanups mid-iteration are safe.
+        # 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         conns = list(self._subs.get(msg.chat_id, ()))
         if not conns:
             if (
@@ -884,7 +1371,7 @@ class WebSocketChannel(BaseChannel):
                         started_at=float(started_raw) if isinstance(started_raw, int | float) else None,
                     )
             return
-        # Signal that the agent has fully finished processing the current turn.
+        # 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if msg.metadata.get("_turn_end"):
             lat = msg.metadata.get("latency_ms")
             lat_i = int(lat) if isinstance(lat, (int, float)) else None
@@ -939,9 +1426,9 @@ class WebSocketChannel(BaseChannel):
         agent_ui = msg.metadata.get(OUTBOUND_META_AGENT_UI)
         if agent_ui is not None:
             payload["agent_ui"] = agent_ui
-        # Mark intermediate agent breadcrumbs (tool-call hints, generic
-        # progress strings) so WS clients can render them as subordinate
-        # trace rows rather than conversational replies.
+        # 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 WebSocket 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if msg.metadata.get("_tool_hint"):
             payload["kind"] = "tool_hint"
         elif msg.metadata.get("_progress"):
@@ -967,11 +1454,21 @@ class WebSocketChannel(BaseChannel):
         delta: str,
         metadata: dict[str, Any] | None = None,
     ) -> None:
-        """Push one chunk of model reasoning. Mirrors ``send_delta`` shape so
-        clients receive a stream that opens, updates in place, and closes —
-        rendered above the active assistant bubble with a shimmer header
-        until the matching ``reasoning_end`` arrives.
-        """
+        """异步执行 `send_reasoning_delta`。
+
+        【中文名称】send_reasoning_delta
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - delta: 调用方传入的 `delta` 数据；具体类型以函数签名为准。
+        - metadata: 调用方传入的 `metadata` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         conns = list(self._subs.get(chat_id, ()))
         if not delta:
             return
@@ -1001,7 +1498,20 @@ class WebSocketChannel(BaseChannel):
         chat_id: str,
         metadata: dict[str, Any] | None = None,
     ) -> None:
-        """Close the current reasoning stream segment for in-place renderers."""
+        """异步执行 `send_reasoning_end`。
+
+        【中文名称】send_reasoning_end
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - metadata: 调用方传入的 `metadata` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         conns = list(self._subs.get(chat_id, ()))
         meta = metadata or {}
         body: dict[str, Any] = {
@@ -1029,6 +1539,22 @@ class WebSocketChannel(BaseChannel):
         edits: list[dict[str, Any]],
         metadata: dict[str, Any] | None = None,
     ) -> None:
+        """异步执行 `send_file_edit_events`。
+
+        【中文名称】send_file_edit_events
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - edits: 调用方传入的 `edits` 数据；具体类型以函数签名为准。
+        - metadata: 调用方传入的 `metadata` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         conns = list(self._subs.get(chat_id, ()))
         payload: dict[str, Any] = {
             "event": "file_edit",
@@ -1053,6 +1579,22 @@ class WebSocketChannel(BaseChannel):
         delta: str,
         metadata: dict[str, Any] | None = None,
     ) -> None:
+        """异步执行 `send_delta`。
+
+        【中文名称】send_delta
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - delta: 调用方传入的 `delta` 数据；具体类型以函数签名为准。
+        - metadata: 调用方传入的 `metadata` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         conns = list(self._subs.get(chat_id, ()))
         meta = metadata or {}
         stream_key = (chat_id, str(meta.get("_stream_id") or ""))
@@ -1094,7 +1636,22 @@ class WebSocketChannel(BaseChannel):
         goal_state: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> None:
-        """Signal that the agent has fully finished processing the current turn."""
+        """异步执行 `send_turn_end`。
+
+        【中文名称】send_turn_end
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - latency_ms: 调用方传入的 `latency_ms` 数据；具体类型以函数签名为准。
+        - goal_state: 调用方传入的 `goal_state` 数据；具体类型以函数签名为准。
+        - metadata: 调用方传入的 `metadata` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         conns = list(self._subs.get(chat_id, ()))
         body: dict[str, Any] = {"event": "turn_end", "chat_id": chat_id}
         if latency_ms is not None:
@@ -1114,7 +1671,20 @@ class WebSocketChannel(BaseChannel):
             await self._safe_send_to(connection, raw, label=" turn_end ")
 
     async def send_goal_state(self, chat_id: str, blob: dict[str, Any]) -> None:
-        """Push persisted goal-state snapshot for *chat_id* (multi-chat isolation)."""
+        """异步执行 `send_goal_state`。
+
+        【中文名称】send_goal_state
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - blob: 调用方传入的 `blob` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         conns = list(self._subs.get(chat_id, ()))
         if not conns:
             return
@@ -1130,7 +1700,21 @@ class WebSocketChannel(BaseChannel):
         *,
         started_at: float | None = None,
     ) -> None:
-        """Notify subscribed clients that a turn started or finished (wall-clock hint)."""
+        """异步执行 `send_goal_status`。
+
+        【中文名称】send_goal_status
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - status: 调用方传入的 `status` 数据；具体类型以函数签名为准。
+        - started_at: 调用方传入的 `started_at` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         conns = list(self._subs.get(chat_id, ()))
         if not conns:
             return
@@ -1146,7 +1730,20 @@ class WebSocketChannel(BaseChannel):
             await self._safe_send_to(connection, raw, label=" goal_status ")
 
     async def send_session_updated(self, chat_id: str, *, scope: str | None = None) -> None:
-        """Notify clients that session metadata changed outside the main turn."""
+        """异步执行 `send_session_updated`。
+
+        【中文名称】send_session_updated
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - scope: 调用方传入的 `scope` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         conns = list(self._subs.get(chat_id, ()))
         if not conns:
             return
@@ -1163,7 +1760,20 @@ class WebSocketChannel(BaseChannel):
         model_name: Any,
         model_preset: Any = None,
     ) -> None:
-        """Broadcast runtime model changes to every open websocket connection."""
+        """异步执行 `send_runtime_model_updated`。
+
+        【中文名称】send_runtime_model_updated
+
+        【功能说明】
+        这是 WebSocket 渠道适配器 中的一个步骤函数，用来支撑：负责给 WebUI/外部客户端提供实时双向连接，管理客户端订阅、流式事件和会话状态同步。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - model_name: 调用方传入的 `model_name` 数据；具体类型以函数签名为准。
+        - model_preset: 调用方传入的 `model_preset` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         conns = list(self._conn_chats)
         if not conns or not isinstance(model_name, str) or not model_name.strip():
             return

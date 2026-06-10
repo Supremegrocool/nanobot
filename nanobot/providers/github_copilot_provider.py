@@ -1,4 +1,18 @@
-"""GitHub Copilot OAuth-backed provider."""
+"""GitHub Copilot Provider 实现。
+
+【中文名称】GitHub Copilot Provider 实现
+
+【功能说明】
+负责复用 OpenAI 兼容 Provider，同时自动获取和刷新 Copilot API 所需的临时访问令牌。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的模型 Provider代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 from __future__ import annotations
 
@@ -30,6 +44,20 @@ _LONG_LIVED_TOKEN_SECONDS = 315360000
 
 
 def get_storage() -> FileTokenStorage:
+    """执行 `get_storage`。
+
+    【中文名称】get_storage
+
+    【功能说明】
+    这是 GitHub Copilot Provider 实现 中的一个步骤函数，用来支撑：负责复用 OpenAI 兼容 Provider，同时自动获取和刷新 Copilot API 所需的临时访问令牌。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - 无显式业务参数。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     return FileTokenStorage(
         token_filename=TOKEN_FILENAME,
         app_name=TOKEN_APP_NAME,
@@ -38,6 +66,20 @@ def get_storage() -> FileTokenStorage:
 
 
 def _copilot_headers(token: str) -> dict[str, str]:
+    """执行 `_copilot_headers`。
+
+    【中文名称】_copilot_headers
+
+    【功能说明】
+    这是 GitHub Copilot Provider 实现 中的一个步骤函数，用来支撑：负责复用 OpenAI 兼容 Provider，同时自动获取和刷新 Copilot API 所需的临时访问令牌。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - token: 调用方传入的 `token` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     return {
         "Authorization": f"token {token}",
         "Accept": "application/json",
@@ -48,6 +90,20 @@ def _copilot_headers(token: str) -> dict[str, str]:
 
 
 def _load_github_token() -> OAuthToken | None:
+    """执行 `_load_github_token`。
+
+    【中文名称】_load_github_token
+
+    【功能说明】
+    这是 GitHub Copilot Provider 实现 中的一个步骤函数，用来支撑：负责复用 OpenAI 兼容 Provider，同时自动获取和刷新 Copilot API 所需的临时访问令牌。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - 无显式业务参数。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     token = get_storage().load()
     if not token or not token.access:
         return None
@@ -55,7 +111,19 @@ def _load_github_token() -> OAuthToken | None:
 
 
 def get_github_copilot_login_status() -> OAuthToken | None:
-    """Return the persisted GitHub OAuth token if available."""
+    """执行 `get_github_copilot_login_status`。
+
+    【中文名称】get_github_copilot_login_status
+
+    【功能说明】
+    这是 GitHub Copilot Provider 实现 中的一个步骤函数，用来支撑：负责复用 OpenAI 兼容 Provider，同时自动获取和刷新 Copilot API 所需的临时访问令牌。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - 无显式业务参数。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     return _load_github_token()
 
 
@@ -63,7 +131,20 @@ def login_github_copilot(
     print_fn: Callable[[str], None] | None = None,
     prompt_fn: Callable[[str], str] | None = None,
 ) -> OAuthToken:
-    """Run GitHub device flow and persist the GitHub OAuth token used for Copilot."""
+    """执行 `login_github_copilot`。
+
+    【中文名称】login_github_copilot
+
+    【功能说明】
+    这是 GitHub Copilot Provider 实现 中的一个步骤函数，用来支撑：负责复用 OpenAI 兼容 Provider，同时自动获取和刷新 Copilot API 所需的临时访问令牌。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - print_fn: 调用方传入的 `print_fn` 数据；具体类型以函数签名为准。
+    - prompt_fn: 调用方传入的 `prompt_fn` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     del prompt_fn
     printer = print_fn or print
     timeout = httpx.Timeout(20.0, connect=20.0)
@@ -155,9 +236,33 @@ def login_github_copilot(
 
 
 class GitHubCopilotProvider(OpenAICompatProvider):
-    """Provider that exchanges a stored GitHub OAuth token for Copilot access tokens."""
+    """GitHubCopilotProvider 类。
+
+    【中文名称】GitHubCopilotProvider
+
+    【功能说明】
+    这是 GitHub Copilot Provider 实现 中的核心数据结构或服务类。负责复用 OpenAI 兼容 Provider，同时自动获取和刷新 Copilot API 所需的临时访问令牌。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     def __init__(self, default_model: str = "github-copilot/gpt-4.1"):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 GitHub Copilot Provider 实现 中的一个步骤函数，用来支撑：负责复用 OpenAI 兼容 Provider，同时自动获取和刷新 Copilot API 所需的临时访问令牌。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - default_model: 调用方传入的 `default_model` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         from nanobot.providers.registry import find_by_name
 
         self._copilot_access_token: str | None = None
@@ -175,6 +280,20 @@ class GitHubCopilotProvider(OpenAICompatProvider):
         )
 
     async def _get_copilot_access_token(self) -> str:
+        """异步执行 `_get_copilot_access_token`。
+
+        【中文名称】_get_copilot_access_token
+
+        【功能说明】
+        这是 GitHub Copilot Provider 实现 中的一个步骤函数，用来支撑：负责复用 OpenAI 兼容 Provider，同时自动获取和刷新 Copilot API 所需的临时访问令牌。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         now = time.time()
         if self._copilot_access_token and now < self._copilot_expires_at - _EXPIRY_SKEW_SECONDS:
             return self._copilot_access_token
@@ -206,6 +325,20 @@ class GitHubCopilotProvider(OpenAICompatProvider):
         return self._copilot_access_token
 
     async def _refresh_client_api_key(self) -> str:
+        """异步执行 `_refresh_client_api_key`。
+
+        【中文名称】_refresh_client_api_key
+
+        【功能说明】
+        这是 GitHub Copilot Provider 实现 中的一个步骤函数，用来支撑：负责复用 OpenAI 兼容 Provider，同时自动获取和刷新 Copilot API 所需的临时访问令牌。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         token = await self._get_copilot_access_token()
         client = await self._ensure_client()
         self.api_key = token
@@ -222,6 +355,26 @@ class GitHubCopilotProvider(OpenAICompatProvider):
         reasoning_effort: str | None = None,
         tool_choice: str | dict[str, object] | None = None,
     ):
+        """异步执行 `chat`。
+
+        【中文名称】chat
+
+        【功能说明】
+        这是 GitHub Copilot Provider 实现 中的一个步骤函数，用来支撑：负责复用 OpenAI 兼容 Provider，同时自动获取和刷新 Copilot API 所需的临时访问令牌。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - messages: 调用方传入的 `messages` 数据；具体类型以函数签名为准。
+        - tools: 调用方传入的 `tools` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - max_tokens: 调用方传入的 `max_tokens` 数据；具体类型以函数签名为准。
+        - temperature: 调用方传入的 `temperature` 数据；具体类型以函数签名为准。
+        - reasoning_effort: 调用方传入的 `reasoning_effort` 数据；具体类型以函数签名为准。
+        - tool_choice: 调用方传入的 `tool_choice` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         await self._refresh_client_api_key()
         return await super().chat(
             messages=messages,
@@ -246,6 +399,29 @@ class GitHubCopilotProvider(OpenAICompatProvider):
         on_thinking_delta: Callable[[str], Awaitable[None]] | None = None,
         on_tool_call_delta: Callable[[dict[str, object]], Awaitable[None]] | None = None,
     ):
+        """异步执行 `chat_stream`。
+
+        【中文名称】chat_stream
+
+        【功能说明】
+        这是 GitHub Copilot Provider 实现 中的一个步骤函数，用来支撑：负责复用 OpenAI 兼容 Provider，同时自动获取和刷新 Copilot API 所需的临时访问令牌。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - messages: 调用方传入的 `messages` 数据；具体类型以函数签名为准。
+        - tools: 调用方传入的 `tools` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - max_tokens: 调用方传入的 `max_tokens` 数据；具体类型以函数签名为准。
+        - temperature: 调用方传入的 `temperature` 数据；具体类型以函数签名为准。
+        - reasoning_effort: 调用方传入的 `reasoning_effort` 数据；具体类型以函数签名为准。
+        - tool_choice: 调用方传入的 `tool_choice` 数据；具体类型以函数签名为准。
+        - on_content_delta: 调用方传入的 `on_content_delta` 数据；具体类型以函数签名为准。
+        - on_thinking_delta: 调用方传入的 `on_thinking_delta` 数据；具体类型以函数签名为准。
+        - on_tool_call_delta: 调用方传入的 `on_tool_call_delta` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         await self._refresh_client_api_key()
         return await super().chat_stream(
             messages=messages,

@@ -1,4 +1,18 @@
-"""Slack channel implementation using Socket Mode."""
+"""Slack 渠道适配器。
+
+【中文名称】Slack 渠道适配器
+
+【功能说明】
+负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的渠道适配器代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 import asyncio
 import re
@@ -23,7 +37,17 @@ from nanobot.utils.helpers import safe_filename, split_message
 
 
 class SlackDMConfig(Base):
-    """Slack DM policy configuration."""
+    """SlackDMConfig 类。
+
+    【中文名称】SlackDMConfig
+
+    【功能说明】
+    这是 Slack 渠道适配器 中的核心数据结构或服务类。负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     enabled: bool = True
     policy: str = "open"
@@ -31,7 +55,17 @@ class SlackDMConfig(Base):
 
 
 class SlackConfig(Base):
-    """Slack channel configuration."""
+    """SlackConfig 类。
+
+    【中文名称】SlackConfig
+
+    【功能说明】
+    这是 Slack 渠道适配器 中的核心数据结构或服务类。负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     enabled: bool = False
     mode: str = "socket"
@@ -50,17 +84,27 @@ class SlackConfig(Base):
     dm: SlackDMConfig = Field(default_factory=SlackDMConfig)
 
 
-SLACK_MAX_MESSAGE_LEN = 39_000  # Slack API allows ~40k; leave margin
+SLACK_MAX_MESSAGE_LEN = 39_000  # 说明：这里处理 Slack 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 SLACK_DOWNLOAD_TIMEOUT = 30.0
-# Abort Socket Mode WSS handshake after this many seconds. REST auth_test can still
-# succeed while WSS blocks (firewall / region). slack-sdk does not apply HTTP(S)_PROXY
-# to websockets.connect — see slack_sdk.socket_mode.websockets.SocketModeClient.connect.
+# 说明：这里处理 Slack 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 Slack 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 Slack 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 SLACK_SOCKET_CONNECT_TIMEOUT_S = 45.0
 _HTML_DOWNLOAD_PREFIXES = (b"<!doctype html", b"<html")
 
 
 class SlackChannel(BaseChannel):
-    """Slack channel using Socket Mode."""
+    """SlackChannel 类。
+
+    【中文名称】SlackChannel
+
+    【功能说明】
+    这是 Slack 渠道适配器 中的核心数据结构或服务类。负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     name = "slack"
     display_name = "Slack"
@@ -70,11 +114,40 @@ class SlackChannel(BaseChannel):
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
+        """执行 `default_config`。
+
+        【中文名称】default_config
+
+        【功能说明】
+        这是 Slack 渠道适配器 中的一个步骤函数，用来支撑：负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return SlackConfig().model_dump(by_alias=True)
 
     _THREAD_CONTEXT_CACHE_LIMIT = 10_000
 
     def __init__(self, config: Any, bus: MessageBus):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 Slack 渠道适配器 中的一个步骤函数，用来支撑：负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - config: 调用方传入的 `config` 数据；具体类型以函数签名为准。
+        - bus: 调用方传入的 `bus` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if isinstance(config, dict):
             config = SlackConfig.model_validate(config)
         super().__init__(config, bus)
@@ -86,7 +159,19 @@ class SlackChannel(BaseChannel):
         self._thread_context_attempted: set[str] = set()
 
     async def start(self) -> None:
-        """Start the Slack Socket Mode client."""
+        """异步执行 `start`。
+
+        【中文名称】start
+
+        【功能说明】
+        这是 Slack 渠道适配器 中的一个步骤函数，用来支撑：负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self.config.bot_token or not self.config.app_token:
             self.logger.error("bot/app token not configured")
             return
@@ -104,7 +189,7 @@ class SlackChannel(BaseChannel):
 
         self._socket_client.socket_mode_request_listeners.append(self._on_socket_request)
 
-        # Resolve bot user ID for mention handling
+        # 说明：这里处理 Slack 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         try:
             auth = await self._web_client.auth_test()
             self._bot_user_id = auth.get("user_id")
@@ -135,7 +220,19 @@ class SlackChannel(BaseChannel):
             await asyncio.sleep(1)
 
     async def stop(self) -> None:
-        """Stop the Slack client."""
+        """异步执行 `stop`。
+
+        【中文名称】stop
+
+        【功能说明】
+        这是 Slack 渠道适配器 中的一个步骤函数，用来支撑：负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         self._running = False
         if self._socket_client:
             try:
@@ -145,7 +242,19 @@ class SlackChannel(BaseChannel):
             self._socket_client = None
 
     async def send(self, msg: OutboundMessage) -> None:
-        """Send a message through Slack."""
+        """异步执行 `send`。
+
+        【中文名称】send
+
+        【功能说明】
+        这是 Slack 渠道适配器 中的一个步骤函数，用来支撑：负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - msg: 调用方传入的 `msg` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self._web_client:
             self.logger.warning("client not running")
             return
@@ -154,15 +263,15 @@ class SlackChannel(BaseChannel):
             slack_meta = msg.metadata.get("slack", {}) if msg.metadata else {}
             thread_ts = slack_meta.get("thread_ts")
             origin_chat_id = str((slack_meta.get("event", {}) or {}).get("channel") or msg.chat_id)
-            # Reply in the same thread the inbound message belongs to (works
-            # for both real channel threads and DM threads). When the agent
-            # is forwarding to a different channel, drop thread_ts because it
-            # only makes sense within the originating conversation.
+            # 说明：这里处理 Slack 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 Slack 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 Slack 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 Slack 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             thread_ts_param = thread_ts if thread_ts and target_chat_id == origin_chat_id else None
 
             is_progress = (msg.metadata or {}).get("_progress", False)
             if is_progress and not msg.content:
-                pass  # skip empty progress messages (e.g. tool-event-only updates)
+                pass  # 说明：这里处理 Slack 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             elif msg.content or not (msg.media or []):
                 mrkdwn = self._to_mrkdwn(msg.content) if msg.content else " "
                 buttons = getattr(msg, "buttons", None) or []
@@ -185,7 +294,7 @@ class SlackChannel(BaseChannel):
                 except Exception:
                     self.logger.exception("Failed to upload file {}", media_path)
 
-            # Update reaction emoji when the final (non-progress) response is sent
+            # 说明：这里处理 Slack 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if not (msg.metadata or {}).get("_progress"):
                 event = slack_meta.get("event", {})
                 await self._update_react_emoji(origin_chat_id, event.get("ts"))
@@ -195,7 +304,19 @@ class SlackChannel(BaseChannel):
             raise
 
     async def _resolve_target_chat_id(self, target: str) -> str:
-        """Resolve human-friendly Slack targets to concrete IDs when needed."""
+        """异步执行 `_resolve_target_chat_id`。
+
+        【中文名称】_resolve_target_chat_id
+
+        【功能说明】
+        这是 Slack 渠道适配器 中的一个步骤函数，用来支撑：负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - target: 调用方传入的 `target` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self._web_client:
             return target
 
@@ -223,6 +344,20 @@ class SlackChannel(BaseChannel):
             return await self._resolve_user_handle(target)
 
     async def _resolve_channel_name(self, name: str) -> str:
+        """异步执行 `_resolve_channel_name`。
+
+        【中文名称】_resolve_channel_name
+
+        【功能说明】
+        这是 Slack 渠道适配器 中的一个步骤函数，用来支撑：负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - name: 调用方传入的 `name` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         normalized = self._normalize_target_name(name)
         if not normalized:
             raise ValueError("Slack target channel name is empty")
@@ -255,6 +390,20 @@ class SlackChannel(BaseChannel):
         )
 
     async def _resolve_user_handle(self, handle: str) -> str:
+        """异步执行 `_resolve_user_handle`。
+
+        【中文名称】_resolve_user_handle
+
+        【功能说明】
+        这是 Slack 渠道适配器 中的一个步骤函数，用来支撑：负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - handle: 调用方传入的 `handle` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         normalized = self._normalize_target_name(handle)
         if not normalized:
             raise ValueError("Slack target user handle is empty")
@@ -283,6 +432,20 @@ class SlackChannel(BaseChannel):
         )
 
     async def _open_dm_for_user(self, user_id: str) -> str:
+        """异步执行 `_open_dm_for_user`。
+
+        【中文名称】_open_dm_for_user
+
+        【功能说明】
+        这是 Slack 渠道适配器 中的一个步骤函数，用来支撑：负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - user_id: 调用方传入的 `user_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         response = await self._web_client.conversations_open(users=user_id)
         channel_id = str(((response.get("channel") or {}).get("id")) or "")
         if not channel_id:
@@ -291,10 +454,39 @@ class SlackChannel(BaseChannel):
 
     @staticmethod
     def _normalize_target_name(value: str) -> str:
+        """执行 `_normalize_target_name`。
+
+        【中文名称】_normalize_target_name
+
+        【功能说明】
+        这是 Slack 渠道适配器 中的一个步骤函数，用来支撑：负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return value.strip().lstrip("#@").lower()
 
     @classmethod
     def _member_matches_handle(cls, member: dict[str, Any], normalized: str) -> bool:
+        """执行 `_member_matches_handle`。
+
+        【中文名称】_member_matches_handle
+
+        【功能说明】
+        这是 Slack 渠道适配器 中的一个步骤函数，用来支撑：负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - member: 调用方传入的 `member` 数据；具体类型以函数签名为准。
+        - normalized: 调用方传入的 `normalized` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         profile = member.get("profile") or {}
         candidates = {
             str(member.get("name") or ""),
@@ -310,14 +502,27 @@ class SlackChannel(BaseChannel):
         client: SocketModeClient,
         req: SocketModeRequest,
     ) -> None:
-        """Handle incoming Socket Mode requests."""
+        """异步执行 `_on_socket_request`。
+
+        【中文名称】_on_socket_request
+
+        【功能说明】
+        这是 Slack 渠道适配器 中的一个步骤函数，用来支撑：负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - client: 调用方传入的 `client` 数据；具体类型以函数签名为准。
+        - req: 调用方传入的 `req` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if req.type == "interactive":
             await self._on_block_action(client, req)
             return
         if req.type != "events_api":
             return
 
-        # Acknowledge right away
+        # 说明：这里处理 Slack 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         await client.send_socket_mode_response(
             SocketModeResponse(envelope_id=req.envelope_id)
         )
@@ -326,7 +531,7 @@ class SlackChannel(BaseChannel):
         event = payload.get("event") or {}
         event_type = event.get("type")
 
-        # Handle app mentions or plain messages
+        # 说明：这里处理 Slack 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if event_type not in ("message", "app_mention"):
             return
 
@@ -334,20 +539,20 @@ class SlackChannel(BaseChannel):
         chat_id = event.get("channel")
 
         subtype = event.get("subtype")
-        # Slack uses subtype=file_share for user messages with attachments.
-        # Ignore other subtypes such as bot_message / message_changed / deleted.
+        # 说明：这里处理 Slack 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 Slack 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if subtype and subtype != "file_share":
             return
         if self._bot_user_id and sender_id == self._bot_user_id:
             return
 
-        # Avoid double-processing: Slack sends both `message` and `app_mention`
-        # for mentions in channels. Prefer `app_mention`.
+        # 说明：这里处理 Slack 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 Slack 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         text = event.get("text") or ""
         if event_type == "message" and self._bot_user_id and f"<@{self._bot_user_id}>" in text:
             return
 
-        # Debug: log basic event shape
+        # 说明：这里处理 Slack 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         self.logger.debug(
             "event: type={} subtype={} user={} channel={} channel_type={} text={}",
             event_type,
@@ -380,16 +585,16 @@ class SlackChannel(BaseChannel):
         event_ts = event.get("ts")
         raw_thread_ts = event.get("thread_ts")
         thread_ts = raw_thread_ts
-        # In DMs we don't auto-open a thread on top-level messages (it would
-        # bury replies under "1 reply"). But if the user explicitly opened a
-        # thread inside the DM, raw_thread_ts is set and we honor it.
+        # 说明：这里处理 Slack 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 Slack 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 Slack 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if (
             self.config.reply_in_thread
             and not thread_ts
             and channel_type != "im"
         ):
             thread_ts = event_ts
-        # Add :eyes: reaction to the triggering message (best-effort)
+        # 说明：这里处理 Slack 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         try:
             if self._web_client and event.get("ts"):
                 await self._web_client.reactions_add(
@@ -400,9 +605,9 @@ class SlackChannel(BaseChannel):
         except Exception as e:
             self.logger.debug("reactions_add failed: {}", e)
 
-        # Thread-scoped session key whenever the user is in a real thread
-        # (raw_thread_ts is set). DM threads get their own session, separate
-        # from the DM root, so context doesn't bleed across thread boundaries.
+        # 说明：这里处理 Slack 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 Slack 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 Slack 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         session_key = (
             f"slack:{chat_id}:{thread_ts}" if thread_ts and raw_thread_ts else None
         )
@@ -450,7 +655,19 @@ class SlackChannel(BaseChannel):
             self.logger.exception("Error handling message from {}", sender_id)
 
     async def _download_slack_file(self, file_info: dict[str, Any]) -> tuple[str | None, str]:
-        """Download a Slack private file to the local media directory."""
+        """异步执行 `_download_slack_file`。
+
+        【中文名称】_download_slack_file
+
+        【功能说明】
+        这是 Slack 渠道适配器 中的一个步骤函数，用来支撑：负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - file_info: 调用方传入的 `file_info` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         file_id = str(file_info.get("id") or "file")
         name = str(
             file_info.get("name")
@@ -485,6 +702,22 @@ class SlackChannel(BaseChannel):
 
     @staticmethod
     def _download_failure_marker(marker_type: str, name: str, reason: str) -> str:
+        """执行 `_download_failure_marker`。
+
+        【中文名称】_download_failure_marker
+
+        【功能说明】
+        这是 Slack 渠道适配器 中的一个步骤函数，用来支撑：负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - marker_type: 调用方传入的 `marker_type` 数据；具体类型以函数签名为准。
+        - name: 调用方传入的 `name` 数据；具体类型以函数签名为准。
+        - reason: 调用方传入的 `reason` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return (
             f"[{marker_type}: {name}: {reason}; not available to nanobot. "
             "Check Slack files:read scope, reinstall the Slack app, and ensure the bot can access the file.]"
@@ -492,6 +725,20 @@ class SlackChannel(BaseChannel):
 
     @staticmethod
     def _looks_like_html_download(response: httpx.Response) -> bool:
+        """执行 `_looks_like_html_download`。
+
+        【中文名称】_looks_like_html_download
+
+        【功能说明】
+        这是 Slack 渠道适配器 中的一个步骤函数，用来支撑：负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - response: 调用方传入的 `response` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         content_type = response.headers.get("content-type", "").lower()
         if "text/html" in content_type:
             return True
@@ -499,7 +746,20 @@ class SlackChannel(BaseChannel):
         return preview.startswith(_HTML_DOWNLOAD_PREFIXES)
 
     async def _on_block_action(self, client: SocketModeClient, req: SocketModeRequest) -> None:
-        """Handle button clicks from inline action buttons."""
+        """异步执行 `_on_block_action`。
+
+        【中文名称】_on_block_action
+
+        【功能说明】
+        这是 Slack 渠道适配器 中的一个步骤函数，用来支撑：负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - client: 调用方传入的 `client` 数据；具体类型以函数签名为准。
+        - req: 调用方传入的 `req` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         await client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
         payload = req.payload or {}
         actions = payload.get("actions") or []
@@ -539,8 +799,25 @@ class SlackChannel(BaseChannel):
         raw_thread_ts: str | None,
         current_ts: str | None,
     ) -> str:
-        """Include thread history the first time the bot is pulled into a Slack thread."""
-        del channel_type  # DM and channel threads are both fetched via conversations.replies
+        """异步执行 `_with_thread_context`。
+
+        【中文名称】_with_thread_context
+
+        【功能说明】
+        这是 Slack 渠道适配器 中的一个步骤函数，用来支撑：负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - channel_type: 调用方传入的 `channel_type` 数据；具体类型以函数签名为准。
+        - thread_ts: 调用方传入的 `thread_ts` 数据；具体类型以函数签名为准。
+        - raw_thread_ts: 调用方传入的 `raw_thread_ts` 数据；具体类型以函数签名为准。
+        - current_ts: 调用方传入的 `current_ts` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+        del channel_type  # 说明：这里处理 Slack 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if (
             not self.config.include_thread_context
             or not self._web_client
@@ -576,6 +853,21 @@ class SlackChannel(BaseChannel):
         return "Slack thread context before this mention:\n" + "\n".join(lines) + f"\n\nCurrent message:\n{text}"
 
     def _format_thread_context(self, messages: list[dict[str, Any]], *, current_ts: str | None) -> list[str]:
+        """执行 `_format_thread_context`。
+
+        【中文名称】_format_thread_context
+
+        【功能说明】
+        这是 Slack 渠道适配器 中的一个步骤函数，用来支撑：负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - messages: 调用方传入的 `messages` 数据；具体类型以函数签名为准。
+        - current_ts: 调用方传入的 `current_ts` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         lines: list[str] = []
         for item in messages:
             if item.get("ts") == current_ts:
@@ -596,7 +888,20 @@ class SlackChannel(BaseChannel):
 
     @staticmethod
     def _build_button_blocks(text: str, buttons: list[list[str]]) -> list[dict[str, Any]]:
-        """Build Slack Block Kit blocks with action buttons."""
+        """执行 `_build_button_blocks`。
+
+        【中文名称】_build_button_blocks
+
+        【功能说明】
+        这是 Slack 渠道适配器 中的一个步骤函数，用来支撑：负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+        - buttons: 调用方传入的 `buttons` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         blocks: list[dict[str, Any]] = [
             {"type": "section", "text": {"type": "mrkdwn", "text": text[:3000]}},
         ]
@@ -614,7 +919,20 @@ class SlackChannel(BaseChannel):
         return blocks
 
     async def _update_react_emoji(self, chat_id: str, ts: str | None) -> None:
-        """Remove the in-progress reaction and optionally add a done reaction."""
+        """异步执行 `_update_react_emoji`。
+
+        【中文名称】_update_react_emoji
+
+        【功能说明】
+        这是 Slack 渠道适配器 中的一个步骤函数，用来支撑：负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - ts: 调用方传入的 `ts` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self._web_client or not ts:
             return
         try:
@@ -636,6 +954,22 @@ class SlackChannel(BaseChannel):
                 self.logger.debug("done reaction failed: {}", e)
 
     def _is_allowed(self, sender_id: str, chat_id: str, channel_type: str) -> bool:
+        """执行 `_is_allowed`。
+
+        【中文名称】_is_allowed
+
+        【功能说明】
+        这是 Slack 渠道适配器 中的一个步骤函数，用来支撑：负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - sender_id: 调用方传入的 `sender_id` 数据；具体类型以函数签名为准。
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - channel_type: 调用方传入的 `channel_type` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if channel_type == "im":
             if not self.config.dm.enabled:
                 return False
@@ -643,12 +977,28 @@ class SlackChannel(BaseChannel):
                 return sender_id in self.config.dm.allow_from or is_approved(self.name, sender_id)
             return True
 
-        # Group / channel messages
+        # 说明：这里处理 Slack 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if self.config.group_policy == "allowlist":
             return chat_id in self.config.group_allow_from
         return True
 
     def _should_respond_in_channel(self, event_type: str, text: str, chat_id: str) -> bool:
+        """执行 `_should_respond_in_channel`。
+
+        【中文名称】_should_respond_in_channel
+
+        【功能说明】
+        这是 Slack 渠道适配器 中的一个步骤函数，用来支撑：负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - event_type: 调用方传入的 `event_type` 数据；具体类型以函数签名为准。
+        - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if self.config.group_policy == "open":
             return True
         if self.config.group_policy == "mention":
@@ -660,12 +1010,40 @@ class SlackChannel(BaseChannel):
         return False
 
     def is_allowed(self, sender_id: str) -> bool:
-        # Slack needs channel-aware policy checks, so _on_socket_request and
-        # _on_block_action call _is_allowed before handing off to BaseChannel.
+        # 说明：这里处理 Slack 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 Slack 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        """执行 `is_allowed`。
+
+        【中文名称】is_allowed
+
+        【功能说明】
+        这是 Slack 渠道适配器 中的一个步骤函数，用来支撑：负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - sender_id: 调用方传入的 `sender_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return True
 
     @staticmethod
     def _infer_channel_type(chat_id: str) -> str:
+        """执行 `_infer_channel_type`。
+
+        【中文名称】_infer_channel_type
+
+        【功能说明】
+        这是 Slack 渠道适配器 中的一个步骤函数，用来支撑：负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if chat_id.startswith("D"):
             return "im"
         if chat_id.startswith("G"):
@@ -673,6 +1051,20 @@ class SlackChannel(BaseChannel):
         return "channel"
 
     def _strip_bot_mention(self, text: str) -> str:
+        """执行 `_strip_bot_mention`。
+
+        【中文名称】_strip_bot_mention
+
+        【功能说明】
+        这是 Slack 渠道适配器 中的一个步骤函数，用来支撑：负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not text or not self._bot_user_id:
             return text
         return re.sub(rf"<@{re.escape(self._bot_user_id)}>\s*", "", text).strip()
@@ -686,7 +1078,19 @@ class SlackChannel(BaseChannel):
 
     @classmethod
     def _to_mrkdwn(cls, text: str) -> str:
-        """Convert Markdown to Slack mrkdwn, including tables."""
+        """执行 `_to_mrkdwn`。
+
+        【中文名称】_to_mrkdwn
+
+        【功能说明】
+        这是 Slack 渠道适配器 中的一个步骤函数，用来支撑：负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not text:
             return ""
         text = cls._TABLE_RE.sub(cls._convert_table, text)
@@ -694,10 +1098,36 @@ class SlackChannel(BaseChannel):
 
     @classmethod
     def _fixup_mrkdwn(cls, text: str) -> str:
-        """Fix markdown artifacts that slackify_markdown misses."""
+        """执行 `_fixup_mrkdwn`。
+
+        【中文名称】_fixup_mrkdwn
+
+        【功能说明】
+        这是 Slack 渠道适配器 中的一个步骤函数，用来支撑：负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         code_blocks: list[str] = []
 
         def _save_code(m: re.Match) -> str:
+            """执行 `_save_code`。
+
+            【中文名称】_save_code
+
+            【功能说明】
+            这是 Slack 渠道适配器 中的一个步骤函数，用来支撑：负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - m: 调用方传入的 `m` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             code_blocks.append(m.group(0))
             return f"\x00CB{len(code_blocks) - 1}\x00"
 
@@ -713,7 +1143,19 @@ class SlackChannel(BaseChannel):
 
     @staticmethod
     def _convert_table(match: re.Match) -> str:
-        """Convert a Markdown table to a Slack-readable list."""
+        """执行 `_convert_table`。
+
+        【中文名称】_convert_table
+
+        【功能说明】
+        这是 Slack 渠道适配器 中的一个步骤函数，用来支撑：负责接入 Slack Socket Mode 事件、解析频道/线程消息和文件，并用 Slack Web API 发送文本与流式更新。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - match: 调用方传入的 `match` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         lines = [ln.strip() for ln in match.group(0).strip().splitlines() if ln.strip()]
         if len(lines) < 2:
             return match.group(0)

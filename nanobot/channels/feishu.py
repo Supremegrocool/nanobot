@@ -1,4 +1,18 @@
-"""Feishu/Lark channel implementation using lark-oapi SDK with WebSocket long connection."""
+"""飞书渠道适配器。
+
+【中文名称】飞书渠道适配器
+
+【功能说明】
+负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的渠道适配器代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 from __future__ import annotations
 
@@ -32,11 +46,19 @@ FEISHU_AVAILABLE = importlib.util.find_spec("lark_oapi") is not None
 
 
 def _load_lark_runtime() -> tuple[Any, str, str]:
-    """Import the heavy Feishu SDK lazily.
+    """执行 `_load_lark_runtime`。
 
-    lark_oapi imports a large generated API surface at module import time, so
-    keep it out of channel discovery and constructor paths.
-    """
+    【中文名称】_load_lark_runtime
+
+    【功能说明】
+    这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - 无显式业务参数。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     import sys
 
     ws_client_already_imported = "lark_oapi.ws.client" in sys.modules
@@ -61,7 +83,7 @@ def _load_lark_runtime() -> tuple[Any, str, str]:
 
     return lark, FEISHU_DOMAIN, LARK_DOMAIN
 
-# Message type display mapping
+# 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 MSG_TYPE_MAP = {
     "image": "[image]",
     "audio": "[audio]",
@@ -71,7 +93,20 @@ MSG_TYPE_MAP = {
 
 
 def _extract_share_card_content(content_json: dict, msg_type: str) -> str:
-    """Extract text representation from share cards and interactive messages."""
+    """执行 `_extract_share_card_content`。
+
+    【中文名称】_extract_share_card_content
+
+    【功能说明】
+    这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - content_json: 调用方传入的 `content_json` 数据；具体类型以函数签名为准。
+    - msg_type: 调用方传入的 `msg_type` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     parts = []
 
     if msg_type == "share_chat":
@@ -91,7 +126,19 @@ def _extract_share_card_content(content_json: dict, msg_type: str) -> str:
 
 
 def _extract_interactive_content(content: dict) -> list[str]:
-    """Recursively extract text and links from interactive card content."""
+    """执行 `_extract_interactive_content`。
+
+    【中文名称】_extract_interactive_content
+
+    【功能说明】
+    这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     parts = []
 
     if isinstance(content, str):
@@ -134,7 +181,19 @@ def _extract_interactive_content(content: dict) -> list[str]:
 
 
 def _extract_element_content(element: dict) -> list[str]:
-    """Extract content from a single card element."""
+    """执行 `_extract_element_content`。
+
+    【中文名称】_extract_element_content
+
+    【功能说明】
+    这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - element: 调用方传入的 `element` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     parts = []
 
     if not isinstance(element, dict):
@@ -207,15 +266,35 @@ def _extract_element_content(element: dict) -> list[str]:
 
 
 def _extract_post_content(content_json: dict) -> tuple[str, list[str]]:
-    """Extract text and image keys from Feishu post (rich text) message.
+    """执行 `_extract_post_content`。
 
-    Handles three payload shapes:
-    - Direct:    {"title": "...", "content": [[...]]}
-    - Localized: {"zh_cn": {"title": "...", "content": [...]}}
-    - Wrapped:   {"post": {"zh_cn": {"title": "...", "content": [...]}}}
-    """
+    【中文名称】_extract_post_content
+
+    【功能说明】
+    这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - content_json: 调用方传入的 `content_json` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
 
     def _parse_block(block: dict) -> tuple[str | None, list[str]]:
+        """执行 `_parse_block`。
+
+        【中文名称】_parse_block
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - block: 调用方传入的 `block` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not isinstance(block, dict) or not isinstance(block.get("content"), list):
             return None, []
         texts, images = [], []
@@ -240,20 +319,20 @@ def _extract_post_content(content_json: dict) -> tuple[str, list[str]]:
                     images.append(key)
         return (" ".join(texts).strip() or None), images
 
-    # Unwrap optional {"post": ...} envelope
+    # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     root = content_json
     if isinstance(root, dict) and isinstance(root.get("post"), dict):
         root = root["post"]
     if not isinstance(root, dict):
         return "", []
 
-    # Direct format
+    # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     if "content" in root:
         text, imgs = _parse_block(root)
         if text or imgs:
             return text or "", imgs
 
-    # Localized: prefer known locales, then fall back to any dict child
+    # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     for key in ("zh_cn", "en_us", "ja_jp"):
         if key in root:
             text, imgs = _parse_block(root[key])
@@ -269,16 +348,35 @@ def _extract_post_content(content_json: dict) -> tuple[str, list[str]]:
 
 
 def _extract_post_text(content_json: dict) -> str:
-    """Extract plain text from Feishu post (rich text) message content.
+    """执行 `_extract_post_text`。
 
-    Legacy wrapper for _extract_post_content, returns only text.
-    """
+    【中文名称】_extract_post_text
+
+    【功能说明】
+    这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - content_json: 调用方传入的 `content_json` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     text, _ = _extract_post_content(content_json)
     return text
 
 
 class FeishuConfig(Base):
-    """Feishu/Lark channel configuration using WebSocket long connection."""
+    """FeishuConfig 类。
+
+    【中文名称】FeishuConfig
+
+    【功能说明】
+    这是 飞书渠道适配器 中的核心数据结构或服务类。负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     enabled: bool = False
     app_id: str = ""
@@ -287,13 +385,13 @@ class FeishuConfig(Base):
     verification_token: str = ""
     allow_from: list[str] = Field(default_factory=list)
     react_emoji: str = "THUMBSUP"
-    done_emoji: str | None = None  # Emoji to show when task is completed (e.g., "DONE", "OK")
-    tool_hint_prefix: str = "\U0001f527"  # Prefix for inline tool hints (default: 🔧)
+    done_emoji: str | None = None  # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    tool_hint_prefix: str = "\U0001f527"  # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     group_policy: Literal["open", "mention"] = "mention"
-    reply_to_message: bool = False  # If True, bot replies quote the user's original message
+    reply_to_message: bool = False  # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     streaming: bool = True
-    domain: Literal["feishu", "lark"] = "feishu"  # Set to "lark" for international Lark
-    topic_isolation: bool = True  # If True, each topic in group chat gets its own session (isolation)
+    domain: Literal["feishu", "lark"] = "feishu"  # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    topic_isolation: bool = True  # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
 
 _STREAM_ELEMENT_ID = "streaming_md"
@@ -301,7 +399,17 @@ _STREAM_ELEMENT_ID = "streaming_md"
 
 @dataclass
 class _FeishuStreamBuf:
-    """Per-chat streaming accumulator using CardKit streaming API."""
+    """_FeishuStreamBuf 类。
+
+    【中文名称】_FeishuStreamBuf
+
+    【功能说明】
+    这是 飞书渠道适配器 中的核心数据结构或服务类。负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     text: str = ""
     card_id: str | None = None
@@ -310,27 +418,57 @@ class _FeishuStreamBuf:
 
 
 class FeishuChannel(BaseChannel):
-    """
-    Feishu/Lark channel using WebSocket long connection.
+    """FeishuChannel 类。
 
-    Uses WebSocket to receive events - no public IP or webhook required.
+    【中文名称】FeishuChannel
 
-    Requires:
-    - App ID and App Secret from Feishu Open Platform
-    - Bot capability enabled
-    - Event subscription enabled (im.message.receive_v1)
-    """
+    【功能说明】
+    这是 飞书渠道适配器 中的核心数据结构或服务类。负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     name = "feishu"
     display_name = "Feishu"
 
-    _STREAM_EDIT_INTERVAL = 0.5  # throttle between CardKit streaming updates
+    _STREAM_EDIT_INTERVAL = 0.5  # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
+        """执行 `default_config`。
+
+        【中文名称】default_config
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return FeishuConfig().model_dump(by_alias=True)
 
     def __init__(self, config: Any, bus: MessageBus):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - config: 调用方传入的 `config` 数据；具体类型以函数签名为准。
+        - bus: 调用方传入的 `bus` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if isinstance(config, dict):
             config = FeishuConfig.model_validate(config)
         super().__init__(config, bus)
@@ -338,21 +476,47 @@ class FeishuChannel(BaseChannel):
         self._client: Any = None
         self._ws_client: Any = None
         self._ws_thread: threading.Thread | None = None
-        self._processed_message_ids: OrderedDict[str, None] = OrderedDict()  # Ordered dedup cache
+        self._processed_message_ids: OrderedDict[str, None] = OrderedDict()  # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         self._loop: asyncio.AbstractEventLoop | None = None
         self._stream_bufs: dict[str, _FeishuStreamBuf] = {}
         self._bot_open_id: str | None = None
         self._background_tasks: set[asyncio.Task] = set()
-        self._reaction_ids: dict[str, str] = {}  # message_id → reaction_id
+        self._reaction_ids: dict[str, str] = {}  # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     @staticmethod
     def _register_optional_event(builder: Any, method_name: str, handler: Any) -> Any:
-        """Register an event handler only when the SDK supports it."""
+        """执行 `_register_optional_event`。
+
+        【中文名称】_register_optional_event
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - builder: 调用方传入的 `builder` 数据；具体类型以函数签名为准。
+        - method_name: 调用方传入的 `method_name` 数据；具体类型以函数签名为准。
+        - handler: 调用方传入的 `handler` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         method = getattr(builder, method_name, None)
         return method(handler) if callable(method) else builder
 
     async def start(self) -> None:
-        """Start the Feishu bot with WebSocket long connection."""
+        """异步执行 `start`。
+
+        【中文名称】start
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not FEISHU_AVAILABLE:
             self.logger.error("SDK not installed. Run: pip install lark-oapi")
             return
@@ -368,7 +532,7 @@ class FeishuChannel(BaseChannel):
         self._running = True
         self._loop = asyncio.get_running_loop()
 
-        # Create Lark client for sending messages
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         domain = lark_domain if self.config.domain == "lark" else feishu_domain
         self._client = (
             lark.Client.builder()
@@ -396,8 +560,8 @@ class FeishuChannel(BaseChannel):
             "register_p2_im_chat_access_event_bot_p2p_chat_entered_v1",
             self._on_bot_p2p_chat_entered,
         )
-        # Silence "processor not found" errors when bots are added/removed from groups.
-        # These events carry no actionable data for the agent.
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         builder = self._register_optional_event(
             builder,
             "register_p2_im_chat_member_bot_added_v1",
@@ -410,7 +574,7 @@ class FeishuChannel(BaseChannel):
         )
         event_handler = builder.build()
 
-        # Create WebSocket client for long connection
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         self._ws_client = lark.ws.Client(
             self.config.app_id,
             self.config.app_secret,
@@ -419,12 +583,26 @@ class FeishuChannel(BaseChannel):
             log_level=lark.LogLevel.INFO,
         )
 
-        # Start WebSocket client in a separate thread with reconnect loop.
-        # A dedicated event loop is created for this thread so that lark_oapi's
-        # module-level `loop = asyncio.get_event_loop()` picks up an idle loop
-        # instead of the already-running main asyncio loop, which would cause
-        # "This event loop is already running" errors.
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         def run_ws():
+            """执行 `run_ws`。
+
+            【中文名称】run_ws
+
+            【功能说明】
+            这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - 无显式业务参数。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             import time
 
             import lark_oapi.ws.client as _lark_ws_client
@@ -432,7 +610,7 @@ class FeishuChannel(BaseChannel):
             previous_loop = getattr(_lark_ws_client, "loop", None)
             ws_loop = asyncio.new_event_loop()
             asyncio.set_event_loop(ws_loop)
-            # Patch the module-level loop used by lark's ws Client.start()
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             _lark_ws_client.loop = ws_loop
             try:
                 while self._running:
@@ -452,7 +630,7 @@ class FeishuChannel(BaseChannel):
         self._ws_thread = threading.Thread(target=run_ws, daemon=True)
         self._ws_thread.start()
 
-        # Fetch bot's own open_id for accurate @mention matching
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         self._bot_open_id = await asyncio.get_running_loop().run_in_executor(
             None, self._fetch_bot_open_id
         )
@@ -464,23 +642,41 @@ class FeishuChannel(BaseChannel):
         self.logger.info("bot started with WebSocket long connection")
         self.logger.info("No public IP required - using WebSocket to receive events")
 
-        # Keep running until stopped
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         while self._running:
             await asyncio.sleep(1)
 
     async def stop(self) -> None:
-        """
-        Stop the Feishu bot.
+        """异步执行 `stop`。
 
-        Notice: lark.ws.Client does not expose stop method， simply exiting the program will close the client.
+        【中文名称】stop
 
-        Reference: https://github.com/larksuite/oapi-sdk-python/blob/v2_main/lark_oapi/ws/client.py#L86
-        """
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         self._running = False
         self.logger.info("bot stopped")
 
     def _fetch_bot_open_id(self) -> str | None:
-        """Fetch the bot's own open_id via GET /open-apis/bot/v3/info."""
+        """执行 `_fetch_bot_open_id`。
+
+        【中文名称】_fetch_bot_open_id
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         try:
             import lark_oapi as lark
 
@@ -506,15 +702,20 @@ class FeishuChannel(BaseChannel):
 
     @staticmethod
     def _resolve_mentions(text: str, mentions: list[MentionEvent] | None) -> str:
-        """Replace @_user_n placeholders with actual user info from mentions.
+        """执行 `_resolve_mentions`。
 
-        Args:
-            text: The message text containing @_user_n placeholders
-            mentions: List of mention objects from Feishu message
+        【中文名称】_resolve_mentions
 
-        Returns:
-            Text with placeholders replaced by @姓名 (open_id)
-        """
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+        - mentions: 调用方传入的 `mentions` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not mentions or not text:
             return text
 
@@ -522,8 +723,8 @@ class FeishuChannel(BaseChannel):
             key = mention.key or None
             if not key:
                 continue
-            # Feishu placeholders are numbered keys like @_user_1. Keep
-            # punctuation-adjacent mentions valid without matching @_user_10.
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             pattern = rf"{re.escape(key)}(?![A-Za-z0-9_])"
             if not re.search(pattern, text):
                 continue
@@ -536,7 +737,7 @@ class FeishuChannel(BaseChannel):
             user_id = user_id_obj.user_id
             name = mention.name or key
 
-            # Format: @姓名 (open_id, user_id: xxx)
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if open_id and user_id:
                 replacement = f"@{name} ({open_id}, user id: {user_id})"
             elif open_id:
@@ -549,6 +750,20 @@ class FeishuChannel(BaseChannel):
         return text
 
     def _is_bot_mention_event(self, mention: Any) -> bool:
+        """执行 `_is_bot_mention_event`。
+
+        【中文名称】_is_bot_mention_event
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - mention: 调用方传入的 `mention` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         mid = getattr(mention, "id", None)
         if not mid:
             return False
@@ -558,13 +773,26 @@ class FeishuChannel(BaseChannel):
         if bot_open_id:
             return mention_open_id == bot_open_id
 
-        # Fallback heuristic when bot open_id is unavailable.
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         return not getattr(mid, "user_id", None) and mention_open_id.startswith("ou_")
 
     def _strip_leading_bot_mention(
         self, text: str, mentions: list[MentionEvent] | None
     ) -> str:
-        """Remove a required leading bot mention before slash command routing."""
+        """执行 `_strip_leading_bot_mention`。
+
+        【中文名称】_strip_leading_bot_mention
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+        - mentions: 调用方传入的 `mentions` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not mentions or not text:
             return text
 
@@ -582,7 +810,19 @@ class FeishuChannel(BaseChannel):
         return text
 
     def _is_bot_mentioned(self, message: Any) -> bool:
-        """Check if the bot is @mentioned in the message."""
+        """执行 `_is_bot_mentioned`。
+
+        【中文名称】_is_bot_mentioned
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - message: 调用方传入的 `message` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         raw_content = message.content or ""
         if "@_all" in raw_content:
             return True
@@ -593,13 +833,38 @@ class FeishuChannel(BaseChannel):
         return False
 
     def _is_group_message_for_bot(self, message: Any) -> bool:
-        """Allow group messages when policy is open or bot is @mentioned."""
+        """执行 `_is_group_message_for_bot`。
+
+        【中文名称】_is_group_message_for_bot
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - message: 调用方传入的 `message` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if self.config.group_policy == "open":
             return True
         return self._is_bot_mentioned(message)
 
     def _add_reaction_sync(self, message_id: str, emoji_type: str) -> str | None:
-        """Sync helper for adding reaction (runs in thread pool)."""
+        """执行 `_add_reaction_sync`。
+
+        【中文名称】_add_reaction_sync
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - message_id: 调用方传入的 `message_id` 数据；具体类型以函数签名为准。
+        - emoji_type: 调用方传入的 `emoji_type` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         from lark_oapi.api.im.v1 import (
             CreateMessageReactionRequest,
             CreateMessageReactionRequestBody,
@@ -633,14 +898,20 @@ class FeishuChannel(BaseChannel):
             return None
 
     async def _add_reaction(self, message_id: str, emoji_type: str = "THUMBSUP") -> str | None:
-        """Add a reaction emoji to a message.
+        """异步执行 `_add_reaction`。
 
-        Returns the reaction_id on success, None on failure.
-        When called via a tracked background task, the returned reaction_id
-        is stored in ``_reaction_ids`` for later cleanup by ``send_delta``.
+        【中文名称】_add_reaction
 
-        Common emoji types: THUMBSUP, OK, EYES, DONE, OnIt, HEART
-        """
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - message_id: 调用方传入的 `message_id` 数据；具体类型以函数签名为准。
+        - emoji_type: 调用方传入的 `emoji_type` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self._client:
             return None
 
@@ -648,7 +919,20 @@ class FeishuChannel(BaseChannel):
         return await loop.run_in_executor(None, self._add_reaction_sync, message_id, emoji_type)
 
     def _remove_reaction_sync(self, message_id: str, reaction_id: str) -> None:
-        """Sync helper for removing reaction (runs in thread pool)."""
+        """执行 `_remove_reaction_sync`。
+
+        【中文名称】_remove_reaction_sync
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - message_id: 调用方传入的 `message_id` 数据；具体类型以函数签名为准。
+        - reaction_id: 调用方传入的 `reaction_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         from lark_oapi.api.im.v1 import DeleteMessageReactionRequest
 
         try:
@@ -670,11 +954,20 @@ class FeishuChannel(BaseChannel):
             self.logger.debug("Error removing reaction: {}", e)
 
     async def _remove_reaction(self, message_id: str, reaction_id: str) -> None:
-        """
-        Remove a reaction emoji from a message (non-blocking).
+        """异步执行 `_remove_reaction`。
 
-        Used to clear the "processing" indicator after bot replies.
-        """
+        【中文名称】_remove_reaction
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - message_id: 调用方传入的 `message_id` 数据；具体类型以函数签名为准。
+        - reaction_id: 调用方传入的 `reaction_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self._client or not reaction_id:
             return
 
@@ -682,7 +975,19 @@ class FeishuChannel(BaseChannel):
         await loop.run_in_executor(None, self._remove_reaction_sync, message_id, reaction_id)
 
     def _on_background_task_done(self, task: asyncio.Task) -> None:
-        """Callback: remove from tracking set and log unhandled exceptions."""
+        """执行 `_on_background_task_done`。
+
+        【中文名称】_on_background_task_done
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - task: 调用方传入的 `task` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         self._background_tasks.discard(task)
         if task.cancelled():
             return
@@ -692,25 +997,51 @@ class FeishuChannel(BaseChannel):
             self.logger.warning("Background task failed: {}", exc)
 
     def _on_reaction_added(self, message_id: str, task: asyncio.Task) -> None:
-        """Callback: store reaction_id after background add-reaction completes."""
+        """执行 `_on_reaction_added`。
+
+        【中文名称】_on_reaction_added
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - message_id: 调用方传入的 `message_id` 数据；具体类型以函数签名为准。
+        - task: 调用方传入的 `task` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if task.cancelled():
             return
-        # Failures already logged by _on_background_task_done.
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         with suppress(Exception):
             reaction_id = task.result()
             if reaction_id:
                 self._reaction_ids[message_id] = reaction_id
-        # Trim cache to prevent unbounded growth
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if len(self._reaction_ids) > 500:
             self._reaction_ids.pop(next(iter(self._reaction_ids)))
 
     @staticmethod
     def _stream_key(chat_id: str, metadata: dict[str, Any] | None = None) -> str:
-        """Scope streaming buffers to the inbound message when available."""
+        """执行 `_stream_key`。
+
+        【中文名称】_stream_key
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - metadata: 调用方传入的 `metadata` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         meta = metadata or {}
         return meta.get("message_id") or chat_id
 
-    # Regex to match markdown tables (header + separator + data rows)
+    # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     _TABLE_RE = re.compile(
         r"((?:^[ \t]*\|.+\|[ \t]*\n)(?:^[ \t]*\|[-:\s|]+\|[ \t]*\n)(?:^[ \t]*\|.+\|[ \t]*\n?)+)",
         re.MULTILINE,
@@ -720,8 +1051,8 @@ class FeishuChannel(BaseChannel):
 
     _CODE_BLOCK_RE = re.compile(r"(```[\s\S]*?```)", re.MULTILINE)
 
-    # Markdown formatting patterns that should be stripped from plain-text
-    # surfaces like table cells and heading text.
+    # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     _MD_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
     _MD_BOLD_UNDERSCORE_RE = re.compile(r"__(.+?)__")
     _MD_ITALIC_RE = re.compile(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)")
@@ -729,28 +1060,62 @@ class FeishuChannel(BaseChannel):
 
     @classmethod
     def _strip_md_formatting(cls, text: str) -> str:
-        """Strip markdown formatting markers from text for plain display.
+        """执行 `_strip_md_formatting`。
 
-        Feishu table cells do not support markdown rendering, so we remove
-        the formatting markers to keep the text readable.
-        """
-        # Remove bold markers
+        【中文名称】_strip_md_formatting
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         text = cls._MD_BOLD_RE.sub(r"\1", text)
         text = cls._MD_BOLD_UNDERSCORE_RE.sub(r"\1", text)
-        # Remove italic markers
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         text = cls._MD_ITALIC_RE.sub(r"\1", text)
-        # Remove strikethrough markers
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         text = cls._MD_STRIKE_RE.sub(r"\1", text)
         return text
 
     @classmethod
     def _parse_md_table(cls, table_text: str) -> dict | None:
-        """Parse a markdown table into a Feishu table element."""
+        """执行 `_parse_md_table`。
+
+        【中文名称】_parse_md_table
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - table_text: 调用方传入的 `table_text` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         lines = [_line.strip() for _line in table_text.strip().split("\n") if _line.strip()]
         if len(lines) < 3:
             return None
 
         def split(_line: str) -> list[str]:
+            """执行 `split`。
+
+            【中文名称】split
+
+            【功能说明】
+            这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - _line: 调用方传入的 `_line` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             return [c.strip() for c in _line.strip("|").split("|")]
 
         headers = [cls._strip_md_formatting(h) for h in split(lines[0])]
@@ -769,7 +1134,19 @@ class FeishuChannel(BaseChannel):
         }
 
     def _build_card_elements(self, content: str) -> list[dict]:
-        """Split content into div/markdown + table elements for Feishu card."""
+        """执行 `_build_card_elements`。
+
+        【中文名称】_build_card_elements
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         elements, last_end = [], 0
         for m in self._TABLE_RE.finditer(content):
             before = content[last_end : m.start()]
@@ -788,12 +1165,20 @@ class FeishuChannel(BaseChannel):
     def _split_elements_by_table_limit(
         elements: list[dict], max_tables: int = 1
     ) -> list[list[dict]]:
-        """Split card elements into groups with at most *max_tables* table elements each.
+        """执行 `_split_elements_by_table_limit`。
 
-        Feishu cards have a hard limit of one table per card (API error 11310).
-        When the rendered content contains multiple markdown tables each table is
-        placed in a separate card message so every table reaches the user.
-        """
+        【中文名称】_split_elements_by_table_limit
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - elements: 调用方传入的 `elements` 数据；具体类型以函数签名为准。
+        - max_tables: 调用方传入的 `max_tables` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not elements:
             return [[]]
         groups: list[list[dict]] = []
@@ -815,7 +1200,19 @@ class FeishuChannel(BaseChannel):
         return groups or [[]]
 
     def _split_headings(self, content: str) -> list[dict]:
-        """Split content by headings, converting headings to div elements."""
+        """执行 `_split_headings`。
+
+        【中文名称】_split_headings
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         protected = content
         code_blocks = []
         for m in self._CODE_BLOCK_RE.finditer(content):
@@ -851,84 +1248,98 @@ class FeishuChannel(BaseChannel):
 
         return elements or [{"tag": "markdown", "content": content}]
 
-    # ── Smart format detection ──────────────────────────────────────────
-    # Patterns that indicate "complex" markdown needing card rendering
+    # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     _COMPLEX_MD_RE = re.compile(
-        r"```"  # fenced code block
-        r"|^\|.+\|.*\n\s*\|[-:\s|]+\|"  # markdown table (header + separator)
-        r"|^#{1,6}\s+",  # headings
+        r"```"  # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        r"|^\|.+\|.*\n\s*\|[-:\s|]+\|"  # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        r"|^#{1,6}\s+",  # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         re.MULTILINE,
     )
 
-    # Simple markdown patterns (bold, italic, strikethrough)
+    # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     _SIMPLE_MD_RE = re.compile(
-        r"\*\*.+?\*\*"  # **bold**
-        r"|__.+?__"  # __bold__
-        r"|(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)"  # *italic* (single *)
-        r"|~~.+?~~",  # ~~strikethrough~~
+        r"\*\*.+?\*\*"  # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        r"|__.+?__"  # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        r"|(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)"  # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        r"|~~.+?~~",  # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         re.DOTALL,
     )
 
-    # Markdown link: [text](url)
+    # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     _MD_LINK_RE = re.compile(r"\[([^\]]+)\]\((https?://[^\)]+)\)")
 
-    # Unordered list items
+    # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     _LIST_RE = re.compile(r"^[\s]*[-*+]\s+", re.MULTILINE)
 
-    # Ordered list items
+    # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     _OLIST_RE = re.compile(r"^[\s]*\d+\.\s+", re.MULTILINE)
 
-    # Max length for plain text format
+    # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     _TEXT_MAX_LEN = 200
 
-    # Max length for post (rich text) format; beyond this, use card
+    # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     _POST_MAX_LEN = 2000
 
     @classmethod
     def _detect_msg_format(cls, content: str) -> str:
-        """Determine the optimal Feishu message format for *content*.
+        """执行 `_detect_msg_format`。
 
-        Returns one of:
-        - ``"text"``        – plain text, short and no markdown
-        - ``"post"``        – rich text (links only, moderate length)
-        - ``"interactive"`` – card with full markdown rendering
-        """
+        【中文名称】_detect_msg_format
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         stripped = content.strip()
 
-        # Complex markdown (code blocks, tables, headings) → always card
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if cls._COMPLEX_MD_RE.search(stripped):
             return "interactive"
 
-        # Long content → card (better readability with card layout)
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if len(stripped) > cls._POST_MAX_LEN:
             return "interactive"
 
-        # Has bold/italic/strikethrough → card (post format can't render these)
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if cls._SIMPLE_MD_RE.search(stripped):
             return "interactive"
 
-        # Has list items → card (post format can't render list bullets well)
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if cls._LIST_RE.search(stripped) or cls._OLIST_RE.search(stripped):
             return "interactive"
 
-        # Has links → post format (supports <a> tags)
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if cls._MD_LINK_RE.search(stripped):
             return "post"
 
-        # Short plain text → text format
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if len(stripped) <= cls._TEXT_MAX_LEN:
             return "text"
 
-        # Medium plain text without any formatting → post format
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         return "post"
 
     @classmethod
     def _markdown_to_post(cls, content: str) -> str:
-        """Convert markdown content to Feishu post message JSON.
+        """执行 `_markdown_to_post`。
 
-        Handles links ``[text](url)`` as ``a`` tags; everything else as ``text`` tags.
-        Each line becomes a paragraph (row) in the post body.
-        """
+        【中文名称】_markdown_to_post
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         lines = content.strip().split("\n")
         paragraphs: list[list[dict]] = []
 
@@ -937,7 +1348,7 @@ class FeishuChannel(BaseChannel):
             last_end = 0
 
             for m in cls._MD_LINK_RE.finditer(line):
-                # Text before this link
+                # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 before = line[last_end : m.start()]
                 if before:
                     elements.append({"tag": "text", "text": before})
@@ -950,12 +1361,12 @@ class FeishuChannel(BaseChannel):
                 )
                 last_end = m.end()
 
-            # Remaining text after last link
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             remaining = line[last_end:]
             if remaining:
                 elements.append({"tag": "text", "text": remaining})
 
-            # Empty line → empty paragraph for spacing
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if not elements:
                 elements.append({"tag": "text", "text": ""})
 
@@ -984,7 +1395,19 @@ class FeishuChannel(BaseChannel):
     }
 
     def _upload_image_sync(self, file_path: str) -> str | None:
-        """Upload an image to Feishu and return the image_key."""
+        """执行 `_upload_image_sync`。
+
+        【中文名称】_upload_image_sync
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - file_path: 调用方传入的 `file_path` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         from lark_oapi.api.im.v1 import CreateImageRequest, CreateImageRequestBody
 
         try:
@@ -1011,7 +1434,19 @@ class FeishuChannel(BaseChannel):
             return None
 
     def _upload_file_sync(self, file_path: str) -> str | None:
-        """Upload a file to Feishu and return the file_key."""
+        """执行 `_upload_file_sync`。
+
+        【中文名称】_upload_file_sync
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - file_path: 调用方传入的 `file_path` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         from lark_oapi.api.im.v1 import CreateFileRequest, CreateFileRequestBody
 
         ext = os.path.splitext(file_path)[1].lower()
@@ -1047,7 +1482,20 @@ class FeishuChannel(BaseChannel):
     def _download_image_sync(
         self, message_id: str, image_key: str
     ) -> tuple[bytes | None, str | None]:
-        """Download an image from Feishu message by message_id and image_key."""
+        """执行 `_download_image_sync`。
+
+        【中文名称】_download_image_sync
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - message_id: 调用方传入的 `message_id` 数据；具体类型以函数签名为准。
+        - image_key: 调用方传入的 `image_key` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         from lark_oapi.api.im.v1 import GetMessageResourceRequest
 
         try:
@@ -1061,7 +1509,7 @@ class FeishuChannel(BaseChannel):
             response = self._client.im.v1.message_resource.get(request)
             if response.success():
                 file_data = response.file
-                # GetMessageResourceRequest returns BytesIO, need to read bytes
+                # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 if hasattr(file_data, "read"):
                     file_data = file_data.read()
                 return file_data, response.file_name
@@ -1077,11 +1525,25 @@ class FeishuChannel(BaseChannel):
     def _download_file_sync(
         self, message_id: str, file_key: str, resource_type: str = "file"
     ) -> tuple[bytes | None, str | None]:
-        """Download a file/audio/media from a Feishu message by message_id and file_key."""
+        """执行 `_download_file_sync`。
+
+        【中文名称】_download_file_sync
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - message_id: 调用方传入的 `message_id` 数据；具体类型以函数签名为准。
+        - file_key: 调用方传入的 `file_key` 数据；具体类型以函数签名为准。
+        - resource_type: 调用方传入的 `resource_type` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         from lark_oapi.api.im.v1 import GetMessageResourceRequest
 
-        # Feishu resource download API only accepts 'image' or 'file' as type.
-        # Both 'audio' and 'media' (video) messages use type='file' for download.
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if resource_type in ("audio", "media"):
             resource_type = "file"
 
@@ -1113,11 +1575,24 @@ class FeishuChannel(BaseChannel):
 
     @staticmethod
     def _safe_media_filename(filename: str | None, fallback: str) -> str:
-        """Return a local-only filename for downloaded Feishu media."""
+        """执行 `_safe_media_filename`。
+
+        【中文名称】_safe_media_filename
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - filename: 调用方传入的 `filename` 数据；具体类型以函数签名为准。
+        - fallback: 调用方传入的 `fallback` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         candidate = filename or fallback
-        # Feishu/Lark filenames come from message metadata. Treat both POSIX
-        # and Windows separators as path boundaries before applying the shared
-        # filename sanitizer so downloads cannot escape the channel media dir.
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         candidate = os.path.basename(candidate.replace("\\", "/"))
         candidate = safe_filename(candidate)
         if candidate in ("", ".", ".."):
@@ -1127,12 +1602,21 @@ class FeishuChannel(BaseChannel):
     async def _download_and_save_media(
         self, msg_type: str, content_json: dict, message_id: str | None = None
     ) -> tuple[str | None, str]:
-        """
-        Download media from Feishu and save to local disk.
+        """异步执行 `_download_and_save_media`。
 
-        Returns:
-            (file_path, content_text) - file_path is None if download failed
-        """
+        【中文名称】_download_and_save_media
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - msg_type: 调用方传入的 `msg_type` 数据；具体类型以函数签名为准。
+        - content_json: 调用方传入的 `content_json` 数据；具体类型以函数签名为准。
+        - message_id: 调用方传入的 `message_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         loop = asyncio.get_running_loop()
         media_dir = get_media_dir("feishu")
 
@@ -1170,8 +1654,8 @@ class FeishuChannel(BaseChannel):
             if not filename:
                 filename = fallback_filename
 
-            # Feishu voice messages are opus in OGG container.
-            # Use .ogg extension for better Whisper compatibility.
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if msg_type == "audio":
                 if not any(filename.endswith(ext) for ext in (".opus", ".ogg", ".oga")):
                     filename = f"{filename}.ogg"
@@ -1189,10 +1673,19 @@ class FeishuChannel(BaseChannel):
     _REPLY_CONTEXT_MAX_LEN = 200
 
     def _get_message_content_sync(self, message_id: str) -> str | None:
-        """Fetch the text content of a Feishu message by ID (synchronous).
+        """执行 `_get_message_content_sync`。
 
-        Returns a "[Reply to: ...]" context string, or None on failure.
-        """
+        【中文名称】_get_message_content_sync
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - message_id: 调用方传入的 `message_id` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         from lark_oapi.api.im.v1 import GetMessageRequest
 
         try:
@@ -1236,12 +1729,22 @@ class FeishuChannel(BaseChannel):
             return None
 
     def _reply_message_sync(self, parent_message_id: str, msg_type: str, content: str, *, reply_in_thread: bool = False) -> bool:
-        """Reply to an existing Feishu message using the Reply API (synchronous).
+        """执行 `_reply_message_sync`。
 
-        Args:
-            reply_in_thread: If True, reply as a thread/topic message
-                in the Feishu client.
-        """
+        【中文名称】_reply_message_sync
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - parent_message_id: 调用方传入的 `parent_message_id` 数据；具体类型以函数签名为准。
+        - msg_type: 调用方传入的 `msg_type` 数据；具体类型以函数签名为准。
+        - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+        - reply_in_thread: 调用方传入的 `reply_in_thread` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         from lark_oapi.api.im.v1 import ReplyMessageRequest, ReplyMessageRequestBody
 
         try:
@@ -1271,11 +1774,35 @@ class FeishuChannel(BaseChannel):
             return False
 
     def _should_use_reply_in_thread(self, metadata: dict[str, Any]) -> bool:
-        """Return whether a group reply should create a Feishu thread/topic."""
+        """执行 `_should_use_reply_in_thread`。
+
+        【中文名称】_should_use_reply_in_thread
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - metadata: 调用方传入的 `metadata` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         return metadata.get("chat_type", "group") == "group" and self.config.reply_to_message
 
     def _thread_reply_target(self, metadata: dict[str, Any]) -> str | None:
-        """Return the message_id that should receive a Reply API response."""
+        """执行 `_thread_reply_target`。
+
+        【中文名称】_thread_reply_target
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - metadata: 调用方传入的 `metadata` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if metadata.get("chat_type", "group") != "group":
             return None
         message_id = metadata.get("message_id")
@@ -1288,7 +1815,22 @@ class FeishuChannel(BaseChannel):
     def _send_message_sync(
         self, receive_id_type: str, receive_id: str, msg_type: str, content: str
     ) -> str | None:
-        """Send a single message and return the message_id on success."""
+        """执行 `_send_message_sync`。
+
+        【中文名称】_send_message_sync
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - receive_id_type: 调用方传入的 `receive_id_type` 数据；具体类型以函数签名为准。
+        - receive_id: 调用方传入的 `receive_id` 数据；具体类型以函数签名为准。
+        - msg_type: 调用方传入的 `msg_type` 数据；具体类型以函数签名为准。
+        - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         from lark_oapi.api.im.v1 import CreateMessageRequest, CreateMessageRequestBody
 
         try:
@@ -1329,13 +1871,22 @@ class FeishuChannel(BaseChannel):
         *,
         reply_in_thread: bool = False,
     ) -> str | None:
-        """Create a CardKit streaming card, send it to chat, return card_id.
+        """执行 `_create_streaming_card_sync`。
 
-        When *reply_message_id* is provided the card is delivered via the
-        reply API. *reply_in_thread* controls whether Feishu creates a
-        thread/topic for that reply. Otherwise the plain create-message API is
-        used.
-        """
+        【中文名称】_create_streaming_card_sync
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - receive_id_type: 调用方传入的 `receive_id_type` 数据；具体类型以函数签名为准。
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - reply_message_id: 调用方传入的 `reply_message_id` 数据；具体类型以函数签名为准。
+        - reply_in_thread: 调用方传入的 `reply_in_thread` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         from lark_oapi.api.cardkit.v1 import CreateCardRequest, CreateCardRequestBody
 
         card_json = {
@@ -1387,7 +1938,21 @@ class FeishuChannel(BaseChannel):
             return None
 
     def _stream_update_text_sync(self, card_id: str, content: str, sequence: int) -> bool:
-        """Stream-update the markdown element on a CardKit card (typewriter effect)."""
+        """执行 `_stream_update_text_sync`。
+
+        【中文名称】_stream_update_text_sync
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - card_id: 调用方传入的 `card_id` 数据；具体类型以函数签名为准。
+        - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+        - sequence: 调用方传入的 `sequence` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         from lark_oapi.api.cardkit.v1 import (
             ContentCardElementRequest,
             ContentCardElementRequestBody,
@@ -1421,12 +1986,20 @@ class FeishuChannel(BaseChannel):
             return False
 
     def _close_streaming_mode_sync(self, card_id: str, sequence: int) -> bool:
-        """Turn off CardKit streaming_mode so the chat list preview exits the streaming placeholder.
+        """执行 `_close_streaming_mode_sync`。
 
-        Per Feishu docs, streaming cards keep a generating-style summary in the session list until
-        streaming_mode is set to false via card settings (after final content update).
-        Sequence must strictly exceed the previous card OpenAPI operation on this entity.
-        """
+        【中文名称】_close_streaming_mode_sync
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - card_id: 调用方传入的 `card_id` 数据；具体类型以函数签名为准。
+        - sequence: 调用方传入的 `sequence` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         from lark_oapi.api.cardkit.v1 import SettingsCardRequest, SettingsCardRequestBody
 
         settings_payload = json.dumps({"config": {"streaming_mode": False}}, ensure_ascii=False)
@@ -1460,14 +2033,21 @@ class FeishuChannel(BaseChannel):
     async def send_delta(
         self, chat_id: str, delta: str, metadata: dict[str, Any] | None = None
     ) -> None:
-        """Progressive streaming via CardKit: create card on first delta, stream-update on subsequent.
+        """异步执行 `send_delta`。
 
-        Supported metadata keys:
-            _stream_end: Finalize the streaming card.
-            _tool_hint:  Delta is a formatted tool hint (for display only).
-            message_id:  Original message id (used with _stream_end for reaction cleanup).
-            chat_type:   "group" or "p2p" — controls reply-in-thread for streaming cards.
-        """
+        【中文名称】send_delta
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - delta: 调用方传入的 `delta` 数据；具体类型以函数签名为准。
+        - metadata: 调用方传入的 `metadata` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self._client:
             return
         meta = metadata or {}
@@ -1475,28 +2055,28 @@ class FeishuChannel(BaseChannel):
         loop = asyncio.get_running_loop()
         rid_type = "chat_id" if chat_id.startswith("oc_") else "open_id"
 
-        # --- stream end: final update or fallback ---
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if meta.get("_stream_end"):
             message_id = meta.get("message_id")
-            # Only finalize the OnIt -> DONE reaction transition on the truly
-            # final stream end. _resuming=True means the agent will keep
-            # working (more tool-call rounds), so leave the reaction state
-            # in place — otherwise the OnIt indicator disappears prematurely
-            # and the DONE reaction fires after every tool call.
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if message_id and not meta.get("_resuming"):
                 reaction_id = self._reaction_ids.pop(message_id, None)
                 if reaction_id:
                     await self._remove_reaction(message_id, reaction_id)
-                # Add completion emoji if configured
+                # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 if self.config.done_emoji:
                     await self._add_reaction(message_id, self.config.done_emoji)
 
             buf = self._stream_bufs.pop(stream_key, None)
             if not buf or not buf.text:
                 return
-            # Try to finalize via streaming card; if that fails (e.g.
-            # streaming mode was closed by Feishu due to timeout), fall
-            # back to sending a regular interactive card.
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if buf.card_id:
                 buf.sequence += 1
                 ok = await loop.run_in_executor(
@@ -1526,8 +2106,8 @@ class FeishuChannel(BaseChannel):
                     {"config": {"wide_screen_mode": True}, "elements": chunk},
                     ensure_ascii=False,
                 )
-                # Fallback replies stay in existing topics, but only create a
-                # new topic when reply-to-message is enabled.
+                # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+                # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 fallback_msg_id = self._thread_reply_target(meta)
                 if fallback_msg_id:
                     await loop.run_in_executor(
@@ -1542,7 +2122,7 @@ class FeishuChannel(BaseChannel):
                     )
             return
 
-        # --- accumulate delta ---
+        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         buf = self._stream_bufs.get(stream_key)
         if buf is None:
             buf = _FeishuStreamBuf()
@@ -1553,8 +2133,8 @@ class FeishuChannel(BaseChannel):
 
         now = time.monotonic()
         if buf.card_id is None:
-            # Use the Reply API for existing topics, and only create new topics
-            # when reply-to-message is enabled.
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             use_reply_in_thread = self._should_use_reply_in_thread(meta)
             reply_msg_id = self._thread_reply_target(meta)
             card_id = await loop.run_in_executor(
@@ -1581,7 +2161,19 @@ class FeishuChannel(BaseChannel):
             buf.last_edit = now
 
     async def send(self, msg: OutboundMessage) -> None:
-        """Send a message through Feishu, including media (images/files) if present."""
+        """异步执行 `send`。
+
+        【中文名称】send
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - msg: 调用方传入的 `msg` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self._client:
             self.logger.warning("client not initialized")
             return
@@ -1590,25 +2182,25 @@ class FeishuChannel(BaseChannel):
             receive_id_type = "chat_id" if msg.chat_id.startswith("oc_") else "open_id"
             loop = asyncio.get_running_loop()
 
-            # Handle tool hint messages.  When a streaming card is active for
-            # this chat, inline the hint into the card instead of sending a
-            # separate message so the user experience stays cohesive.
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if msg.metadata.get("_tool_hint"):
                 hint = (msg.content or "").strip()
                 if not hint:
                     return
                 buf = self._stream_bufs.get(self._stream_key(msg.chat_id, msg.metadata))
                 if buf and buf.card_id:
-                    # Delegate to send_delta so tool hints get the same
-                    # throttling (and card creation) as regular text deltas.
+                    # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+                    # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                     await self.send_delta(
                         msg.chat_id,
                         "\n\n" + self._format_tool_hint_delta(hint) + "\n\n",
                     )
                     return
-                # No active streaming card — send as a regular interactive card
-                # with the same 🔧 prefix style. Existing topics stay threaded;
-                # new topics are created only when reply-to-message is enabled.
+                # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+                # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+                # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 card = json.dumps(
                     {"config": {"wide_screen_mode": True}, "elements": [
                         {"tag": "markdown", "content": self._format_tool_hint_delta(hint)},
@@ -1629,32 +2221,40 @@ class FeishuChannel(BaseChannel):
                     )
                 return
 
-            # Determine whether the first message should quote the user's message.
-            # Only the very first send (media or text) in this call uses reply; subsequent
-            # chunks/media fall back to plain create to avoid redundant quote bubbles.
-            # Always target message_id — the Feishu Reply API keeps replies in the
-            # same topic automatically when the target message is inside a topic.
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             reply_message_id: str | None = None
             _msg_id = msg.metadata.get("message_id")
             has_thread_id = msg.metadata.get("thread_id")
             if self.config.reply_to_message and not msg.metadata.get("_progress", False):
                 reply_message_id = _msg_id
-            # For topic group messages, always reply to keep context in thread
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             elif has_thread_id:
                 reply_message_id = _msg_id
 
-            first_send = True  # tracks whether the reply has already been used
+            first_send = True  # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
             def _do_send(m_type: str, content: str) -> None:
-                """Send via reply (first message) or create (subsequent).
+                """执行 `_do_send`。
 
-                Group chats only set reply_in_thread=True when
-                reply_to_message is enabled; otherwise a Reply API call for an
-                existing topic must not create a new topic.
-                """
+                【中文名称】_do_send
+
+                【功能说明】
+                这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+                阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+                【参数说明】
+                - m_type: 调用方传入的 `m_type` 数据；具体类型以函数签名为准。
+                - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+
+                【返回值】
+                - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
                 nonlocal first_send
                 if reply_message_id:
-                    # If we're in a topic, always use reply to stay in the topic
+                    # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                     if has_thread_id:
                         ok = self._reply_message_sync(
                             reply_message_id, m_type, content,
@@ -1663,7 +2263,7 @@ class FeishuChannel(BaseChannel):
                         if ok:
                             return
                     elif first_send:
-                        # If we're not in a topic but replying to message, only first uses reply
+                        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                         first_send = False
                         ok = self._reply_message_sync(
                             reply_message_id, m_type, content,
@@ -1671,7 +2271,7 @@ class FeishuChannel(BaseChannel):
                         )
                         if ok:
                             return
-                    # Fall back to regular send if reply fails
+                    # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 self._send_message_sync(receive_id_type, msg.chat_id, m_type, content)
 
             for file_path in msg.media:
@@ -1691,9 +2291,9 @@ class FeishuChannel(BaseChannel):
                 else:
                     key = await loop.run_in_executor(None, self._upload_file_sync, file_path)
                     if key:
-                        # Feishu's OpenAPI names video messages "media".
-                        # Use "audio" for audio, "media" for video, "file" for documents.
-                        # Feishu requires these specific msg_types for inline playback.
+                        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+                        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+                        # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                         if ext in self._AUDIO_EXTS:
                             media_type = "audio"
                         elif ext in self._VIDEO_EXTS:
@@ -1711,17 +2311,17 @@ class FeishuChannel(BaseChannel):
                 fmt = self._detect_msg_format(msg.content)
 
                 if fmt == "text":
-                    # Short plain text – send as simple text message
+                    # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                     text_body = json.dumps({"text": msg.content.strip()}, ensure_ascii=False)
                     await loop.run_in_executor(None, _do_send, "text", text_body)
 
                 elif fmt == "post":
-                    # Medium content with links – send as rich-text post
+                    # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                     post_body = self._markdown_to_post(msg.content)
                     await loop.run_in_executor(None, _do_send, "post", post_body)
 
                 else:
-                    # Complex / long content – send as interactive card
+                    # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                     elements = self._build_card_elements(msg.content)
                     for chunk in self._split_elements_by_table_limit(elements):
                         card = {"config": {"wide_screen_mode": True}, "elements": chunk}
@@ -1737,15 +2337,36 @@ class FeishuChannel(BaseChannel):
             raise
 
     def _on_message_sync(self, data: Any) -> None:
-        """
-        Sync handler for incoming messages (called from WebSocket thread).
-        Schedules async handling in the main event loop.
-        """
+        """执行 `_on_message_sync`。
+
+        【中文名称】_on_message_sync
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - data: 调用方传入的 `data` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if self._loop and self._loop.is_running():
             asyncio.run_coroutine_threadsafe(self._on_message(data), self._loop)
 
     async def _on_message(self, data: P2ImMessageReceiveV1) -> None:
-        """Handle incoming message from Feishu."""
+        """异步执行 `_on_message`。
+
+        【中文名称】_on_message
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - data: 调用方传入的 `data` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         try:
             event = data.event
             message = event.message
@@ -1756,7 +2377,7 @@ class FeishuChannel(BaseChannel):
 
             message_id = message.message_id
 
-            # Skip bot messages
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if sender.sender_type == "bot":
                 return
 
@@ -1769,21 +2390,21 @@ class FeishuChannel(BaseChannel):
                 self.logger.debug("skipping group message (not mentioned)")
                 return
 
-            # Deduplication check
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if message_id in self._processed_message_ids:
                 return
             self._processed_message_ids[message_id] = None
 
-            # Trim cache
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             while len(self._processed_message_ids) > 1000:
                 self._processed_message_ids.popitem(last=False)
 
-            # Early permission check — avoid side effects for unauthorized users.
-            # Group chats are silently ignored; DMs get a pairing code.
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if not self.is_allowed(sender_id):
                 if chat_type == "p2p":
-                    # content="" because the pairing reply is generated by
-                    # BaseChannel._handle_message, not from the original message.
+                    # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+                    # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                     await self._handle_message(
                         sender_id=sender_id,
                         chat_id=sender_id,
@@ -1792,7 +2413,7 @@ class FeishuChannel(BaseChannel):
                     )
                 return
 
-            # Add reaction (non-blocking — tracked background task)
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             task = asyncio.create_task(
                 self._add_reaction(message_id, self.config.react_emoji)
             )
@@ -1800,7 +2421,7 @@ class FeishuChannel(BaseChannel):
             task.add_done_callback(self._on_background_task_done)
             task.add_done_callback(lambda t: self._on_reaction_added(message_id, t))
 
-            # Parse content
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             content_parts = []
             media_paths = []
 
@@ -1821,7 +2442,7 @@ class FeishuChannel(BaseChannel):
                 text, image_keys = _extract_post_content(content_json)
                 if text:
                     content_parts.append(text)
-                # Download images embedded in post
+                # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 for img_key in image_keys:
                     file_path, content_text = await self._download_and_save_media(
                         "image", {"image_key": img_key}, message_id
@@ -1852,7 +2473,7 @@ class FeishuChannel(BaseChannel):
                 "system",
                 "merge_forward",
             ):
-                # Handle share cards and interactive messages
+                # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 text = _extract_share_card_content(content_json, msg_type)
                 if text:
                     content_parts.append(text)
@@ -1860,12 +2481,12 @@ class FeishuChannel(BaseChannel):
             else:
                 content_parts.append(MSG_TYPE_MAP.get(msg_type, f"[{msg_type}]"))
 
-            # Extract reply context (parent/root message IDs)
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             parent_id = getattr(message, "parent_id", None) or None
             root_id = getattr(message, "root_id", None) or None
             thread_id = getattr(message, "thread_id", None) or None
 
-            # Prepend quoted message text when the user replied to another message
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if parent_id and self._client:
                 loop = asyncio.get_running_loop()
                 reply_ctx = await loop.run_in_executor(
@@ -1879,10 +2500,10 @@ class FeishuChannel(BaseChannel):
             if not content and not media_paths:
                 return
 
-            # Build session key for conversation isolation.
-            # If topic_isolation is True: each topic gets its own session via root_id/message_id.
-            # If topic_isolation is False: all messages in group share the same session.
-            # Private chat: no override — same behavior as Telegram/Slack.
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if chat_type == "group":
                 if self.config.topic_isolation:
                     session_key = f"feishu:{chat_id}:{root_id or message_id}"
@@ -1891,7 +2512,7 @@ class FeishuChannel(BaseChannel):
             else:
                 session_key = None
 
-            # Forward to message bus
+            # 说明：这里处理 飞书渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             reply_to = chat_id if chat_type == "group" else sender_id
             await self._handle_message(
                 sender_id=sender_id,
@@ -1914,25 +2535,85 @@ class FeishuChannel(BaseChannel):
             self.logger.exception("Error processing message")
 
     def _on_reaction_created(self, data: Any) -> None:
-        """Ignore reaction events so they do not generate SDK noise."""
+        """执行 `_on_reaction_created`。
+
+        【中文名称】_on_reaction_created
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - data: 调用方传入的 `data` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         pass
 
     def _on_reaction_deleted(self, data: Any) -> None:
-        """Ignore reaction deleted events so they do not generate SDK noise."""
+        """执行 `_on_reaction_deleted`。
+
+        【中文名称】_on_reaction_deleted
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - data: 调用方传入的 `data` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         pass
 
     def _on_message_read(self, data: Any) -> None:
-        """Ignore read events so they do not generate SDK noise."""
+        """执行 `_on_message_read`。
+
+        【中文名称】_on_message_read
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - data: 调用方传入的 `data` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         pass
 
     def _on_bot_p2p_chat_entered(self, data: Any) -> None:
-        """Ignore p2p-enter events when a user opens a bot chat."""
+        """执行 `_on_bot_p2p_chat_entered`。
+
+        【中文名称】_on_bot_p2p_chat_entered
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - data: 调用方传入的 `data` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         self.logger.debug("Bot entered p2p chat (user opened chat window)")
         pass
 
     @staticmethod
     def _format_tool_hint_lines(tool_hint: str) -> str:
-        """Split tool hints across lines on top-level call separators only."""
+        """执行 `_format_tool_hint_lines`。
+
+        【中文名称】_format_tool_hint_lines
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - tool_hint: 调用方传入的 `tool_hint` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         parts: list[str] = []
         buf: list[str] = []
         depth = 0
@@ -1977,7 +2658,19 @@ class FeishuChannel(BaseChannel):
         return "\n".join(part for part in parts if part)
 
     def _format_tool_hint_delta(self, tool_hint: str) -> str:
-        """Format a tool hint string with the 🔧 prefix for each line."""
+        """执行 `_format_tool_hint_delta`。
+
+        【中文名称】_format_tool_hint_delta
+
+        【功能说明】
+        这是 飞书渠道适配器 中的一个步骤函数，用来支撑：负责接入飞书开放平台事件、下载媒体、处理卡片交互和流式更新，并把飞书消息转换成 nanobot 的统一消息格式。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - tool_hint: 调用方传入的 `tool_hint` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         lines = self.__class__._format_tool_hint_lines(tool_hint).split("\n")
         return "\n".join(
             f"{self.config.tool_hint_prefix} {ln}" for ln in lines if ln.strip()

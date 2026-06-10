@@ -1,13 +1,18 @@
-"""Microsoft Teams channel MVP using a tiny built-in HTTP webhook server.
+"""Microsoft Teams 渠道适配器。
 
-Scope:
-- DM-focused MVP
-- text inbound/outbound
-- conversation reference persistence
-- sender allowlist support
-- optional inbound Bot Framework bearer-token validation
-- no attachments/cards/polls yet
-"""
+【中文名称】Microsoft Teams 渠道适配器
+
+【功能说明】
+负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的渠道适配器代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 from __future__ import annotations
 
@@ -26,9 +31,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
-try:  # pragma: no cover - Windows fallback path
+try:  # pragma: no cover - 这是测试覆盖率工具指令；该分支只在特定可选依赖或平台环境下触发。
     import fcntl
-except ImportError:  # pragma: no cover
+except ImportError:  # pragma: no cover - 这是测试覆盖率工具指令；该分支只在特定可选依赖或平台环境下触发。
     fcntl = None
 
 import httpx
@@ -66,7 +71,17 @@ MSTEAMS_REF_TOUCH_INTERVAL_S = 300
 
 
 class MSTeamsConfig(Base):
-    """Microsoft Teams channel configuration."""
+    """MSTeamsConfig 类。
+
+    【中文名称】MSTeamsConfig
+
+    【功能说明】
+    这是 Microsoft Teams 渠道适配器 中的核心数据结构或服务类。负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     enabled: bool = False
     app_id: str = ""
@@ -90,7 +105,17 @@ class MSTeamsConfig(Base):
 
 @dataclass
 class ConversationRef:
-    """Minimal stored conversation reference for replies."""
+    """ConversationRef 类。
+
+    【中文名称】ConversationRef
+
+    【功能说明】
+    这是 Microsoft Teams 渠道适配器 中的核心数据结构或服务类。负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     service_url: str
     conversation_id: str
@@ -102,16 +127,55 @@ class ConversationRef:
 
 
 class MSTeamsChannel(BaseChannel):
-    """Microsoft Teams channel (DM-first MVP)."""
+    """MSTeamsChannel 类。
+
+    【中文名称】MSTeamsChannel
+
+    【功能说明】
+    这是 Microsoft Teams 渠道适配器 中的核心数据结构或服务类。负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     name = "msteams"
     display_name = "Microsoft Teams"
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
+        """执行 `default_config`。
+
+        【中文名称】default_config
+
+        【功能说明】
+        这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return MSTeamsConfig().model_dump(by_alias=True)
 
     def __init__(self, config: Any, bus: MessageBus):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - config: 调用方传入的 `config` 数据；具体类型以函数签名为准。
+        - bus: 调用方传入的 `bus` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if isinstance(config, dict):
             config = MSTeamsConfig.model_validate(config)
         super().__init__(config, bus)
@@ -140,7 +204,19 @@ class MSTeamsChannel(BaseChannel):
                 self._save_refs_locked(prune=True)
 
     async def start(self) -> None:
-        """Start the Teams webhook listener."""
+        """异步执行 `start`。
+
+        【中文名称】start
+
+        【功能说明】
+        这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not MSTEAMS_AVAILABLE:
             self.logger.error("PyJWT not installed. Run: pip install nanobot-ai[msteams]")
             return
@@ -163,7 +239,33 @@ class MSTeamsChannel(BaseChannel):
         channel = self
 
         class Handler(BaseHTTPRequestHandler):
+            """Handler 类。
+
+            【中文名称】Handler
+
+            【功能说明】
+            这是 Microsoft Teams 渠道适配器 中的核心数据结构或服务类。负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+
+            【学习重点】
+            - 类属性/字段通常描述外部平台、模型或工具的配置。
+            - public 方法通常是其他模块会调用的入口。
+            - private 方法通常负责协议细节、格式转换或异常兜底。"""
+
             def do_POST(self) -> None:
+                """执行 `do_POST`。
+
+                【中文名称】do_POST
+
+                【功能说明】
+                这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+                阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+                【参数说明】
+                - 无显式业务参数。
+
+                【返回值】
+                - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
                 if self.path != channel.config.path:
                     self.send_response(404)
                     self.end_headers()
@@ -209,6 +311,21 @@ class MSTeamsChannel(BaseChannel):
                 self.wfile.write(b"{}")
 
             def log_message(self, format: str, *args: Any) -> None:
+                """执行 `log_message`。
+
+                【中文名称】log_message
+
+                【功能说明】
+                这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+                阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+                【参数说明】
+                - format: 调用方传入的 `format` 数据；具体类型以函数签名为准。
+                - *args: 调用方传入的 `args` 数据；具体类型以函数签名为准。
+
+                【返回值】
+                - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
                 return
 
         self._server = ThreadingHTTPServer((self.config.host, self.config.port), Handler)
@@ -230,7 +347,19 @@ class MSTeamsChannel(BaseChannel):
             await asyncio.sleep(1)
 
     async def stop(self) -> None:
-        """Stop the channel."""
+        """异步执行 `stop`。
+
+        【中文名称】stop
+
+        【功能说明】
+        这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         self._running = False
         if self._server:
             self._server.shutdown()
@@ -244,7 +373,19 @@ class MSTeamsChannel(BaseChannel):
             self._http = None
 
     async def send(self, msg: OutboundMessage) -> None:
-        """Send a plain text reply into an existing Teams conversation."""
+        """异步执行 `send`。
+
+        【中文名称】send
+
+        【功能说明】
+        这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - msg: 调用方传入的 `msg` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self._http:
             raise RuntimeError("MSTeams HTTP client not initialized")
 
@@ -281,7 +422,19 @@ class MSTeamsChannel(BaseChannel):
             raise
 
     async def _handle_activity(self, activity: dict[str, Any]) -> None:
-        """Handle inbound Teams/Bot Framework activity."""
+        """异步执行 `_handle_activity`。
+
+        【中文名称】_handle_activity
+
+        【功能说明】
+        这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - activity: 调用方传入的 `activity` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if activity.get("type") != "message":
             return
 
@@ -309,7 +462,7 @@ class MSTeamsChannel(BaseChannel):
         if recipient.get("id") and from_user.get("id") == recipient.get("id"):
             return
 
-        # DM-only MVP: ignore group/channel traffic for now
+        # 说明：这里处理 Microsoft Teams 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if conversation_type and conversation_type not in ("personal", ""):
             self.logger.debug("Ignoring non-DM conversation {}", conversation_type)
             return
@@ -356,7 +509,19 @@ class MSTeamsChannel(BaseChannel):
         )
 
     def _sanitize_inbound_text(self, activity: dict[str, Any]) -> str:
-        """Extract the user-authored text from a Teams activity."""
+        """执行 `_sanitize_inbound_text`。
+
+        【中文名称】_sanitize_inbound_text
+
+        【功能说明】
+        这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - activity: 调用方传入的 `activity` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         text = str(activity.get("text") or "")
         text = self._strip_possible_bot_mention(text)
         text = self._normalize_html_whitespace(text)
@@ -378,20 +543,56 @@ class MSTeamsChannel(BaseChannel):
         return text.strip()
 
     def _strip_possible_bot_mention(self, text: str) -> str:
-        """Remove simple Teams mention markup from message text."""
+        """执行 `_strip_possible_bot_mention`。
+
+        【中文名称】_strip_possible_bot_mention
+
+        【功能说明】
+        这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         cleaned = re.sub(r"<at\b[^>]*>.*?</at>", " ", text, flags=re.IGNORECASE | re.DOTALL)
         cleaned = re.sub(r"[^\S\r\n]+", " ", cleaned)
         cleaned = re.sub(r"(?:\r?\n){3,}", "\n\n", cleaned)
         return cleaned.strip()
 
     def _normalize_html_whitespace(self, text: str) -> str:
-        """Normalize common HTML whitespace/entities from Teams into plain text spacing."""
+        """执行 `_normalize_html_whitespace`。
+
+        【中文名称】_normalize_html_whitespace
+
+        【功能说明】
+        这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         normalized = html.unescape(text).replace("&rsquo", "’")
         normalized = normalized.replace("\xa0", " ")
         return normalized
 
     def _normalize_teams_reply_quote(self, text: str) -> str:
-        """Normalize Teams quoted replies into a compact structured form."""
+        """执行 `_normalize_teams_reply_quote`。
+
+        【中文名称】_normalize_teams_reply_quote
+
+        【功能说明】
+        这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         cleaned = self._normalize_html_whitespace(text).strip()
         if not cleaned:
             return ""
@@ -401,17 +602,17 @@ class MSTeamsChannel(BaseChannel):
         while lines and not lines[0]:
             lines.pop(0)
 
-        # Observed native Teams reply wrapper:
-        #   Replying to Bob Smith
-        #   actual reply text
+        # 说明：这里处理 Microsoft Teams 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 Microsoft Teams 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 Microsoft Teams 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if len(lines) >= 2 and lines[0].lower().startswith("replying to "):
             quoted = lines[0][len("replying to ") :].strip(" :")
             reply = "\n".join(lines[1:]).strip()
             return self._format_reply_with_quote(quoted, reply)
 
-        # Observed reply wrapper where the quoted content is surfaced after a
-        # synthetic "Reply wrapper" header, sometimes with a blank line separating quote
-        # and reply, and sometimes as a compact line-based fallback shape.
+        # 说明：这里处理 Microsoft Teams 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 Microsoft Teams 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 Microsoft Teams 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if lines and lines[0].strip().startswith("Reply wrapper"):
             body = normalized_newlines.split("\n", 1)[1] if "\n" in normalized_newlines else ""
             body = body.lstrip()
@@ -429,8 +630,8 @@ class MSTeamsChannel(BaseChannel):
                 if quoted and reply:
                     return self._format_reply_with_quote(quoted, reply)
 
-        # Observed compact fallback where the relay flattens quote and reply into
-        # a single line after the synthetic Reply wrapper prefix.
+        # 说明：这里处理 Microsoft Teams 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 Microsoft Teams 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         compact = re.sub(r"\s+", " ", normalized_newlines).strip()
         if compact.startswith("Reply wrapper "):
             compact = compact[len("Reply wrapper ") :].strip()
@@ -446,7 +647,20 @@ class MSTeamsChannel(BaseChannel):
         return cleaned
 
     def _format_reply_with_quote(self, quoted: str, reply: str) -> str:
-        """Format a reply-with-context message for the model without Teams wrapper noise."""
+        """执行 `_format_reply_with_quote`。
+
+        【中文名称】_format_reply_with_quote
+
+        【功能说明】
+        这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - quoted: 调用方传入的 `quoted` 数据；具体类型以函数签名为准。
+        - reply: 调用方传入的 `reply` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         quoted = quoted.strip()
         reply = reply.strip()
         if quoted and reply:
@@ -456,7 +670,20 @@ class MSTeamsChannel(BaseChannel):
         return quoted
 
     async def _validate_inbound_auth(self, auth_header: str, activity: dict[str, Any]) -> None:
-        """Validate inbound Bot Framework bearer token."""
+        """异步执行 `_validate_inbound_auth`。
+
+        【中文名称】_validate_inbound_auth
+
+        【功能说明】
+        这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - auth_header: 调用方传入的 `auth_header` 数据；具体类型以函数签名为准。
+        - activity: 调用方传入的 `activity` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not MSTEAMS_AVAILABLE:
             raise RuntimeError("PyJWT not installed. Run: pip install nanobot-ai[msteams]")
 
@@ -498,7 +725,19 @@ class MSTeamsChannel(BaseChannel):
             raise ValueError("serviceUrl claim mismatch")
 
     async def _get_botframework_openid_config(self) -> dict[str, Any]:
-        """Fetch and cache Bot Framework OpenID configuration."""
+        """异步执行 `_get_botframework_openid_config`。
+
+        【中文名称】_get_botframework_openid_config
+
+        【功能说明】
+        这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
 
         now = time.time()
         if self._botframework_openid_config and now < self._botframework_openid_config_expires_at:
@@ -514,7 +753,19 @@ class MSTeamsChannel(BaseChannel):
         return self._botframework_openid_config
 
     async def _get_botframework_jwks(self) -> dict[str, Any]:
-        """Fetch and cache Bot Framework JWKS."""
+        """异步执行 `_get_botframework_jwks`。
+
+        【中文名称】_get_botframework_jwks
+
+        【功能说明】
+        这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
 
         now = time.time()
         if self._botframework_jwks and now < self._botframework_jwks_expires_at:
@@ -536,6 +787,20 @@ class MSTeamsChannel(BaseChannel):
 
     @staticmethod
     def _safe_float(value: Any) -> float | None:
+        """执行 `_safe_float`。
+
+        【中文名称】_safe_float
+
+        【功能说明】
+        这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         try:
             out = float(value)
             if out > 0:
@@ -545,7 +810,19 @@ class MSTeamsChannel(BaseChannel):
         return None
 
     def _normalize_ref_record(self, value: Any) -> ConversationRef | None:
-        """Normalize a stored ref record from legacy/current schema."""
+        """执行 `_normalize_ref_record`。
+
+        【中文名称】_normalize_ref_record
+
+        【功能说明】
+        这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not isinstance(value, dict):
             return None
         service_url = str(value.get("service_url") or "").strip()
@@ -563,7 +840,19 @@ class MSTeamsChannel(BaseChannel):
         )
 
     def _load_refs_raw(self) -> tuple[dict[str, Any], dict[str, Any], bool]:
-        """Load raw refs/main+meta JSON payloads."""
+        """执行 `_load_refs_raw`。
+
+        【中文名称】_load_refs_raw
+
+        【功能说明】
+        这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         main_data: dict[str, Any] = {}
         meta_data: dict[str, Any] = {}
         meta_exists = self._refs_meta_path.exists()
@@ -587,7 +876,19 @@ class MSTeamsChannel(BaseChannel):
         return main_data, meta_data, meta_exists
 
     def _load_refs_from_disk(self) -> dict[str, ConversationRef]:
-        """Load refs from disk with compatibility fallback for legacy layouts."""
+        """执行 `_load_refs_from_disk`。
+
+        【中文名称】_load_refs_from_disk
+
+        【功能说明】
+        这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         main_data, meta_data, meta_exists = self._load_refs_raw()
         if not main_data:
             return {}
@@ -609,8 +910,8 @@ class MSTeamsChannel(BaseChannel):
             if meta_ts is not None:
                 ref.updated_at = meta_ts
             elif not meta_exists:
-                # First run after introducing meta sidecar: keep legacy refs alive
-                # by initializing timestamps to "now" instead of purging immediately.
+                # 说明：这里处理 Microsoft Teams 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+                # 说明：这里处理 Microsoft Teams 渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 ref.updated_at = now
             elif ref.updated_at is None:
                 ref.updated_at = now
@@ -619,12 +920,36 @@ class MSTeamsChannel(BaseChannel):
         return out
 
     def _load_refs(self) -> dict[str, ConversationRef]:
-        """Load stored conversation references."""
+        """执行 `_load_refs`。
+
+        【中文名称】_load_refs
+
+        【功能说明】
+        这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         return self._load_refs_from_disk()
 
     @contextmanager
     def _refs_file_lock(self):
-        """Cross-process lock while merging and writing refs state."""
+        """执行 `_refs_file_lock`。
+
+        【中文名称】_refs_file_lock
+
+        【功能说明】
+        这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         self._refs_path.parent.mkdir(parents=True, exist_ok=True)
         lock_fp = self._refs_lock_path.open("a+", encoding="utf-8")
         try:
@@ -639,7 +964,19 @@ class MSTeamsChannel(BaseChannel):
                 lock_fp.close()
 
     def _is_webchat_service_url(self, service_url: str) -> bool:
-        """Return True when service URL points to unsupported Bot Framework Web Chat."""
+        """执行 `_is_webchat_service_url`。
+
+        【中文名称】_is_webchat_service_url
+
+        【功能说明】
+        这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - service_url: 调用方传入的 `service_url` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         normalized = service_url.strip()
         if not normalized:
             return False
@@ -649,7 +986,19 @@ class MSTeamsChannel(BaseChannel):
         return MSTEAMS_WEBCHAT_HOST in normalized.lower()
 
     def _is_trusted_service_url(self, service_url: str) -> bool:
-        """Return True for HTTPS Bot Framework service URLs trusted for bearer replies."""
+        """执行 `_is_trusted_service_url`。
+
+        【中文名称】_is_trusted_service_url
+
+        【功能说明】
+        这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - service_url: 调用方传入的 `service_url` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         parsed = urlparse(service_url.strip())
         if parsed.scheme.lower() != "https":
             return False
@@ -672,7 +1021,19 @@ class MSTeamsChannel(BaseChannel):
         return False
 
     def _prune_conversation_refs(self, *, now: float | None = None) -> bool:
-        """Remove stale and unsupported conversation refs from memory."""
+        """执行 `_prune_conversation_refs`。
+
+        【中文名称】_prune_conversation_refs
+
+        【功能说明】
+        这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - now: 调用方传入的 `now` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self._conversation_refs:
             return False
 
@@ -715,7 +1076,19 @@ class MSTeamsChannel(BaseChannel):
         return True
 
     def _merge_refs_from_disk_locked(self) -> None:
-        """Merge disk refs into memory to reduce lost updates across processes."""
+        """执行 `_merge_refs_from_disk_locked`。
+
+        【中文名称】_merge_refs_from_disk_locked
+
+        【功能说明】
+        这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         disk_refs = self._load_refs_from_disk()
         for key, disk_ref in disk_refs.items():
             mem_ref = self._conversation_refs.get(key)
@@ -728,7 +1101,20 @@ class MSTeamsChannel(BaseChannel):
                 self._conversation_refs[key] = disk_ref
 
     def _touch_conversation_ref(self, chat_id: str, *, persist: bool = False) -> None:
-        """Refresh updated_at for an active ref to keep it from expiring while used."""
+        """执行 `_touch_conversation_ref`。
+
+        【中文名称】_touch_conversation_ref
+
+        【功能说明】
+        这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - persist: 调用方传入的 `persist` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         with self._refs_guard:
             ref = self._conversation_refs.get(str(chat_id))
             if not ref:
@@ -743,7 +1129,20 @@ class MSTeamsChannel(BaseChannel):
                 self._save_refs_locked()
 
     def _write_json_atomically(self, path, data: dict[str, Any]) -> None:
-        """Write refs JSON atomically to reduce corruption risk during crashes."""
+        """执行 `_write_json_atomically`。
+
+        【中文名称】_write_json_atomically
+
+        【功能说明】
+        这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+        - data: 调用方传入的 `data` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         payload = json.dumps(data, indent=2)
         tmp_path: str | None = None
         try:
@@ -763,7 +1162,19 @@ class MSTeamsChannel(BaseChannel):
                     os.unlink(tmp_path)
 
     def _save_refs_locked(self, *, prune: bool = True) -> None:
-        """Persist conversation references (caller must hold _refs_guard)."""
+        """执行 `_save_refs_locked`。
+
+        【中文名称】_save_refs_locked
+
+        【功能说明】
+        这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - prune: 调用方传入的 `prune` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         try:
             with self._refs_file_lock():
                 self._merge_refs_from_disk_locked()
@@ -792,12 +1203,36 @@ class MSTeamsChannel(BaseChannel):
             self.logger.warning("Failed to save conversation refs: {}", e)
 
     def _save_refs(self, *, prune: bool = True) -> None:
-        """Persist conversation references."""
+        """执行 `_save_refs`。
+
+        【中文名称】_save_refs
+
+        【功能说明】
+        这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - prune: 调用方传入的 `prune` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         with self._refs_guard:
             self._save_refs_locked(prune=prune)
 
     async def _get_access_token(self) -> str:
-        """Fetch an access token for Bot Framework / Azure Bot auth."""
+        """异步执行 `_get_access_token`。
+
+        【中文名称】_get_access_token
+
+        【功能说明】
+        这是 Microsoft Teams 渠道适配器 中的一个步骤函数，用来支撑：负责接收 Teams Bot Framework 活动、校验身份、解析消息和附件，并把 Agent 输出回传给 Teams 会话。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
 
         now = time.time()
         if self._token and now < self._token_expires_at - 60:

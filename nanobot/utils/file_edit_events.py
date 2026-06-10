@@ -1,4 +1,18 @@
-"""File-edit activity helpers for WebUI progress events."""
+"""文件编辑事件工具。
+
+【中文名称】文件编辑事件工具
+
+【功能说明】
+负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的通用工具代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 from __future__ import annotations
 
@@ -17,6 +31,18 @@ _LIVE_EMIT_LINE_STEP = 24
 
 @dataclass(slots=True)
 class FileSnapshot:
+    """FileSnapshot 类。
+
+    【中文名称】FileSnapshot
+
+    【功能说明】
+    这是 文件编辑事件工具 中的核心数据结构或服务类。负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
+
     path: Path
     exists: bool
     text: str | None
@@ -26,6 +52,20 @@ class FileSnapshot:
 
     @property
     def countable(self) -> bool:
+        """执行 `countable`。
+
+        【中文名称】countable
+
+        【功能说明】
+        这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return (
             self.text is not None
             and not self.binary
@@ -36,6 +76,18 @@ class FileSnapshot:
 
 @dataclass(slots=True)
 class FileEditTracker:
+    """FileEditTracker 类。
+
+    【中文名称】FileEditTracker
+
+    【功能说明】
+    这是 文件编辑事件工具 中的核心数据结构或服务类。负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
+
     call_id: str
     tool: str
     path: Path
@@ -44,6 +96,20 @@ class FileEditTracker:
 
 
 def is_file_edit_tool(tool_name: str | None) -> bool:
+    """执行 `is_file_edit_tool`。
+
+    【中文名称】is_file_edit_tool
+
+    【功能说明】
+    这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - tool_name: 调用方传入的 `tool_name` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     return bool(tool_name) and tool_name in TRACKED_FILE_EDIT_TOOLS
 
 
@@ -52,7 +118,21 @@ def resolve_file_edit_path(
     workspace: Path | None,
     params: dict[str, Any] | None,
 ) -> Path | None:
-    """Resolve the target file path after tool argument preparation."""
+    """执行 `resolve_file_edit_path`。
+
+    【中文名称】resolve_file_edit_path
+
+    【功能说明】
+    这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - tool: 调用方传入的 `tool` 数据；具体类型以函数签名为准。
+    - workspace: 调用方传入的 `workspace` 数据；具体类型以函数签名为准。
+    - params: 调用方传入的 `params` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if not isinstance(params, dict):
         return None
     raw_path = params.get("path")
@@ -74,6 +154,21 @@ def resolve_file_edit_path(
 
 
 def display_file_edit_path(path: Path, workspace: Path | None) -> str:
+    """执行 `display_file_edit_path`。
+
+    【中文名称】display_file_edit_path
+
+    【功能说明】
+    这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+    - workspace: 调用方传入的 `workspace` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     if workspace is not None:
         try:
             return path.resolve().relative_to(workspace.resolve()).as_posix()
@@ -83,6 +178,21 @@ def display_file_edit_path(path: Path, workspace: Path | None) -> str:
 
 
 def read_file_snapshot(path: Path, *, max_bytes: int = _MAX_SNAPSHOT_BYTES) -> FileSnapshot:
+    """执行 `read_file_snapshot`。
+
+    【中文名称】read_file_snapshot
+
+    【功能说明】
+    这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+    - max_bytes: 调用方传入的 `max_bytes` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     try:
         if not path.exists() or not path.is_file():
             return FileSnapshot(path=path, exists=False, text="")
@@ -102,7 +212,20 @@ def read_file_snapshot(path: Path, *, max_bytes: int = _MAX_SNAPSHOT_BYTES) -> F
 
 
 def line_diff_stats(before: str | None, after: str | None) -> tuple[int, int]:
-    """Return ``(added, deleted)`` for a UTF-8 text line-level diff."""
+    """执行 `line_diff_stats`。
+
+    【中文名称】line_diff_stats
+
+    【功能说明】
+    这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - before: 调用方传入的 `before` 数据；具体类型以函数签名为准。
+    - after: 调用方传入的 `after` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if before is None or after is None:
         return 0, 0
     if before == "":
@@ -123,6 +246,20 @@ def line_diff_stats(before: str | None, after: str | None) -> tuple[int, int]:
 
 
 def _text_line_count(text: str) -> int:
+    """执行 `_text_line_count`。
+
+    【中文名称】_text_line_count
+
+    【功能说明】
+    这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     if not text:
         return 0
     line_count = 0
@@ -152,6 +289,24 @@ def prepare_file_edit_tracker(
     workspace: Path | None,
     params: dict[str, Any] | None,
 ) -> FileEditTracker | None:
+    """执行 `prepare_file_edit_tracker`。
+
+    【中文名称】prepare_file_edit_tracker
+
+    【功能说明】
+    这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - call_id: 调用方传入的 `call_id` 数据；具体类型以函数签名为准。
+    - tool_name: 调用方传入的 `tool_name` 数据；具体类型以函数签名为准。
+    - tool: 调用方传入的 `tool` 数据；具体类型以函数签名为准。
+    - workspace: 调用方传入的 `workspace` 数据；具体类型以函数签名为准。
+    - params: 调用方传入的 `params` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     trackers = prepare_file_edit_trackers(
         call_id=call_id,
         tool_name=tool_name,
@@ -170,6 +325,24 @@ def prepare_file_edit_trackers(
     workspace: Path | None,
     params: dict[str, Any] | None,
 ) -> list[FileEditTracker]:
+    """执行 `prepare_file_edit_trackers`。
+
+    【中文名称】prepare_file_edit_trackers
+
+    【功能说明】
+    这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - call_id: 调用方传入的 `call_id` 数据；具体类型以函数签名为准。
+    - tool_name: 调用方传入的 `tool_name` 数据；具体类型以函数签名为准。
+    - tool: 调用方传入的 `tool` 数据；具体类型以函数签名为准。
+    - workspace: 调用方传入的 `workspace` 数据；具体类型以函数签名为准。
+    - params: 调用方传入的 `params` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     if not is_file_edit_tool(tool_name):
         return []
     paths = resolve_file_edit_paths(tool_name, tool, workspace, params)
@@ -200,6 +373,23 @@ def resolve_file_edit_paths(
     workspace: Path | None,
     params: dict[str, Any] | None,
 ) -> list[Path]:
+    """执行 `resolve_file_edit_paths`。
+
+    【中文名称】resolve_file_edit_paths
+
+    【功能说明】
+    这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - tool_name: 调用方传入的 `tool_name` 数据；具体类型以函数签名为准。
+    - tool: 调用方传入的 `tool` 数据；具体类型以函数签名为准。
+    - workspace: 调用方传入的 `workspace` 数据；具体类型以函数签名为准。
+    - params: 调用方传入的 `params` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     if tool_name == "apply_patch":
         return _resolve_apply_patch_paths(tool, workspace, params)
     path = resolve_file_edit_path(tool, workspace, params)
@@ -213,6 +403,22 @@ def _resolve_apply_patch_paths(
     workspace: Path | None,
     params: dict[str, Any] | None,
 ) -> list[Path]:
+    """执行 `_resolve_apply_patch_paths`。
+
+    【中文名称】_resolve_apply_patch_paths
+
+    【功能说明】
+    这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - tool: 调用方传入的 `tool` 数据；具体类型以函数签名为准。
+    - workspace: 调用方传入的 `workspace` 数据；具体类型以函数签名为准。
+    - params: 调用方传入的 `params` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     if not isinstance(params, dict):
         return []
     edits = params.get("edits")
@@ -241,6 +447,22 @@ def _resolve_raw_file_edit_path(
     workspace: Path | None,
     raw_path: str,
 ) -> Path | None:
+    """执行 `_resolve_raw_file_edit_path`。
+
+    【中文名称】_resolve_raw_file_edit_path
+
+    【功能说明】
+    这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - tool: 调用方传入的 `tool` 数据；具体类型以函数签名为准。
+    - workspace: 调用方传入的 `workspace` 数据；具体类型以函数签名为准。
+    - raw_path: 调用方传入的 `raw_path` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     resolver = getattr(tool, "_resolve", None)
     if callable(resolver):
         try:
@@ -260,6 +482,21 @@ def build_file_edit_start_event(
     tracker: FileEditTracker,
     params: dict[str, Any] | None,
 ) -> dict[str, Any]:
+    """执行 `build_file_edit_start_event`。
+
+    【中文名称】build_file_edit_start_event
+
+    【功能说明】
+    这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - tracker: 调用方传入的 `tracker` 数据；具体类型以函数签名为准。
+    - params: 调用方传入的 `params` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     predicted_after = _predict_after_text(tracker.tool, params or {}, tracker.before)
     if tracker.before.countable and predicted_after is not None:
         added, deleted = line_diff_stats(tracker.before.text, predicted_after)
@@ -279,6 +516,21 @@ def build_file_edit_end_event(
     tracker: FileEditTracker,
     params: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """执行 `build_file_edit_end_event`。
+
+    【中文名称】build_file_edit_end_event
+
+    【功能说明】
+    这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - tracker: 调用方传入的 `tracker` 数据；具体类型以函数签名为准。
+    - params: 调用方传入的 `params` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     after = read_file_snapshot(tracker.path)
     counted = False
     if tracker.before.countable and after.countable:
@@ -307,6 +559,21 @@ def build_file_edit_error_event(
     tracker: FileEditTracker,
     error: str | None = None,
 ) -> dict[str, Any]:
+    """执行 `build_file_edit_error_event`。
+
+    【中文名称】build_file_edit_error_event
+
+    【功能说明】
+    这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - tracker: 调用方传入的 `tracker` 数据；具体类型以函数签名为准。
+    - error: 调用方传入的 `error` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     payload = _event_payload(
         tracker,
         phase="error",
@@ -327,7 +594,22 @@ def build_file_edit_live_event(
     deleted: int = 0,
     operation: str | None = None,
 ) -> dict[str, Any]:
-    """Build an approximate in-progress event while tool-call arguments stream."""
+    """执行 `build_file_edit_live_event`。
+
+    【中文名称】build_file_edit_live_event
+
+    【功能说明】
+    这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - tracker: 调用方传入的 `tracker` 数据；具体类型以函数签名为准。
+    - added: 调用方传入的 `added` 数据；具体类型以函数签名为准。
+    - deleted: 调用方传入的 `deleted` 数据；具体类型以函数签名为准。
+    - operation: 调用方传入的 `operation` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     return _event_payload(
         tracker,
         phase="start",
@@ -346,7 +628,22 @@ def build_file_edit_pending_event(
     added: int = 0,
     deleted: int = 0,
 ) -> dict[str, Any]:
-    """Build an early placeholder before the streamed JSON path is available."""
+    """执行 `build_file_edit_pending_event`。
+
+    【中文名称】build_file_edit_pending_event
+
+    【功能说明】
+    这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - call_id: 调用方传入的 `call_id` 数据；具体类型以函数签名为准。
+    - tool_name: 调用方传入的 `tool_name` 数据；具体类型以函数签名为准。
+    - added: 调用方传入的 `added` 数据；具体类型以函数签名为准。
+    - deleted: 调用方传入的 `deleted` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     return {
         "version": 1,
         "call_id": str(call_id or ""),
@@ -362,15 +659,17 @@ def build_file_edit_pending_event(
 
 
 class StreamingFileEditTracker:
-    """Track file-edit tool arguments while the model is still streaming them.
+    """StreamingFileEditTracker 类。
 
-    Tool execution events only begin after the provider has completed the full
-    function call.  For large ``write_file`` calls, the long wait is usually the
-    model producing the JSON ``content`` argument.  Large ``edit_file`` calls
-    can have the same wait while ``old_text`` / ``new_text`` stream in.  This
-    tracker converts those argument deltas into approximate WebUI file-edit
-    events before the final exact diff is available.
-    """
+    【中文名称】StreamingFileEditTracker
+
+    【功能说明】
+    这是 文件编辑事件工具 中的核心数据结构或服务类。负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     def __init__(
         self,
@@ -379,12 +678,42 @@ class StreamingFileEditTracker:
         tools: Any,
         emit: Callable[[list[dict[str, Any]]], Awaitable[None]],
     ) -> None:
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - workspace: 调用方传入的 `workspace` 数据；具体类型以函数签名为准。
+        - tools: 调用方传入的 `tools` 数据；具体类型以函数签名为准。
+        - emit: 调用方传入的 `emit` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self._workspace = workspace
         self._tools = tools
         self._emit = emit
         self._states: dict[str, _StreamingFileEditState] = {}
 
     async def update(self, payload: dict[str, Any]) -> None:
+        """异步执行 `update`。
+
+        【中文名称】update
+
+        【功能说明】
+        这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - payload: 调用方传入的 `payload` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         key = _stream_key(payload)
         if not key:
             return
@@ -437,6 +766,20 @@ class StreamingFileEditTracker:
         )])
 
     async def _update_apply_patch(self, state: _StreamingFileEditState) -> None:
+        """异步执行 `_update_apply_patch`。
+
+        【中文名称】_update_apply_patch
+
+        【功能说明】
+        这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - state: 调用方传入的 `state` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if _json_bool_true(state.arguments, "dry_run"):
             return
         tool = self._tools.get("apply_patch") if hasattr(self._tools, "get") else None
@@ -489,6 +832,20 @@ class StreamingFileEditTracker:
             await self._emit(events)
 
     async def flush(self) -> None:
+        """异步执行 `flush`。
+
+        【中文名称】flush
+
+        【功能说明】
+        这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         events: list[dict[str, Any]] = []
         now = time.monotonic()
         for state in self._states.values():
@@ -526,7 +883,19 @@ class StreamingFileEditTracker:
             await self._emit(events)
 
     def apply_final_call_ids(self, final_tool_calls: list[Any]) -> None:
-        """Keep final start/end events keyed to any earlier streamed placeholder."""
+        """执行 `apply_final_call_ids`。
+
+        【中文名称】apply_final_call_ids
+
+        【功能说明】
+        这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - final_tool_calls: 调用方传入的 `final_tool_calls` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         used_canonicals: set[str] = set()
         for tool_call in final_tool_calls:
             canonical = self.canonical_call_id_for(tool_call)
@@ -538,6 +907,20 @@ class StreamingFileEditTracker:
                     pass
 
     def canonical_call_id_for(self, tool_call: Any) -> str | None:
+        """执行 `canonical_call_id_for`。
+
+        【中文名称】canonical_call_id_for
+
+        【功能说明】
+        这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - tool_call: 调用方传入的 `tool_call` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         for state in self._states.values():
             if state.matches_final_tool_call(tool_call):
                 return state.call_id or (state.tracker.call_id if state.tracker else None) or state.key
@@ -548,7 +931,20 @@ class StreamingFileEditTracker:
         final_tool_calls: list[Any],
         error: str,
     ) -> None:
-        """Mark streamed edits as failed when no final tool call will run."""
+        """异步执行 `error_unmatched`。
+
+        【中文名称】error_unmatched
+
+        【功能说明】
+        这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - final_tool_calls: 调用方传入的 `final_tool_calls` 数据；具体类型以函数签名为准。
+        - error: 调用方传入的 `error` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         events: list[dict[str, Any]] = []
         for state in self._states.values():
             for file_state in state.patch_files.values():
@@ -566,6 +962,18 @@ class StreamingFileEditTracker:
 
 @dataclass(slots=True)
 class _StreamingJsonStringField:
+    """_StreamingJsonStringField 类。
+
+    【中文名称】_StreamingJsonStringField
+
+    【功能说明】
+    这是 文件编辑事件工具 中的核心数据结构或服务类。负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
+
     key: str
     scan_pos: int | None = None
     closed: bool = False
@@ -579,11 +987,39 @@ class _StreamingJsonStringField:
 
     @property
     def line_count(self) -> int:
+        """执行 `line_count`。
+
+        【中文名称】line_count
+
+        【功能说明】
+        这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self.has_chars:
             return 0
         return self.newline_count + (0 if self.last_char_newline else 1)
 
     def reset(self) -> None:
+        """执行 `reset`。
+
+        【中文名称】reset
+
+        【功能说明】
+        这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self.scan_pos = None
         self.closed = False
         self.escape = False
@@ -595,6 +1031,20 @@ class _StreamingJsonStringField:
         self.last_char_cr = False
 
     def scan(self, source: str) -> None:
+        """执行 `scan`。
+
+        【中文名称】scan
+
+        【功能说明】
+        这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - source: 调用方传入的 `source` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if self.closed:
             return
         if self.scan_pos is None:
@@ -643,6 +1093,20 @@ class _StreamingJsonStringField:
         self.scan_pos = i
 
     def _mark_char(self, ch: str) -> None:
+        """执行 `_mark_char`。
+
+        【中文名称】_mark_char
+
+        【功能说明】
+        这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - ch: 调用方传入的 `ch` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self.has_chars = True
         if ch == "\r":
             self.newline_count += 1
@@ -660,6 +1124,18 @@ class _StreamingJsonStringField:
 
 @dataclass(slots=True)
 class _StreamingPatchFileState:
+    """_StreamingPatchFileState 类。
+
+    【中文名称】_StreamingPatchFileState
+
+    【功能说明】
+    这是 文件编辑事件工具 中的核心数据结构或服务类。负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
+
     tracker: FileEditTracker
     emitted_once: bool = False
     last_emitted_added: int = -1
@@ -669,6 +1145,22 @@ class _StreamingPatchFileState:
     last_deleted: int = 0
 
     def should_emit(self, added: int, deleted: int, now: float) -> bool:
+        """执行 `should_emit`。
+
+        【中文名称】should_emit
+
+        【功能说明】
+        这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - added: 调用方传入的 `added` 数据；具体类型以函数签名为准。
+        - deleted: 调用方传入的 `deleted` 数据；具体类型以函数签名为准。
+        - now: 调用方传入的 `now` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self.last_added = added
         self.last_deleted = deleted
         if not self.emitted_once:
@@ -683,6 +1175,22 @@ class _StreamingPatchFileState:
         return now - self.last_emit_at >= _LIVE_EMIT_INTERVAL_S
 
     def mark_emitted(self, added: int, deleted: int, now: float) -> None:
+        """执行 `mark_emitted`。
+
+        【中文名称】mark_emitted
+
+        【功能说明】
+        这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - added: 调用方传入的 `added` 数据；具体类型以函数签名为准。
+        - deleted: 调用方传入的 `deleted` 数据；具体类型以函数签名为准。
+        - now: 调用方传入的 `now` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self.emitted_once = True
         self.last_added = added
         self.last_deleted = deleted
@@ -693,6 +1201,18 @@ class _StreamingPatchFileState:
 
 @dataclass(slots=True)
 class _StreamingFileEditState:
+    """_StreamingFileEditState 类。
+
+    【中文名称】_StreamingFileEditState
+
+    【功能说明】
+    这是 文件编辑事件工具 中的核心数据结构或服务类。负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
+
     key: str
     call_id: str = ""
     name: str = ""
@@ -719,6 +1239,20 @@ class _StreamingFileEditState:
     last_pending_at: float = 0.0
 
     def apply_delta(self, payload: dict[str, Any]) -> None:
+        """执行 `apply_delta`。
+
+        【中文名称】apply_delta
+
+        【功能说明】
+        这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - payload: 调用方传入的 `payload` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         call_id = payload.get("call_id")
         if isinstance(call_id, str) and call_id:
             self.call_id = call_id
@@ -738,6 +1272,20 @@ class _StreamingFileEditState:
             self.arguments += delta
 
     def live_diff_counts(self) -> tuple[int, int]:
+        """执行 `live_diff_counts`。
+
+        【中文名称】live_diff_counts
+
+        【功能说明】
+        这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if self.name == "write_file":
             self.content.scan(self.arguments)
             return self.content.line_count, 0
@@ -748,6 +1296,22 @@ class _StreamingFileEditState:
         return 0, 0
 
     def should_emit(self, added: int, deleted: int, now: float) -> bool:
+        """执行 `should_emit`。
+
+        【中文名称】should_emit
+
+        【功能说明】
+        这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - added: 调用方传入的 `added` 数据；具体类型以函数签名为准。
+        - deleted: 调用方传入的 `deleted` 数据；具体类型以函数签名为准。
+        - now: 调用方传入的 `now` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self.emitted_once:
             return True
         if added == self.last_emitted_added and deleted == self.last_emitted_deleted:
@@ -760,12 +1324,44 @@ class _StreamingFileEditState:
         return now - self.last_emit_at >= _LIVE_EMIT_INTERVAL_S
 
     def mark_emitted(self, added: int, deleted: int, now: float) -> None:
+        """执行 `mark_emitted`。
+
+        【中文名称】mark_emitted
+
+        【功能说明】
+        这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - added: 调用方传入的 `added` 数据；具体类型以函数签名为准。
+        - deleted: 调用方传入的 `deleted` 数据；具体类型以函数签名为准。
+        - now: 调用方传入的 `now` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self.emitted_once = True
         self.last_emitted_added = added
         self.last_emitted_deleted = deleted
         self.last_emit_at = now
 
     def should_emit_pending(self, added: int, deleted: int, now: float) -> bool:
+        """执行 `should_emit_pending`。
+
+        【中文名称】should_emit_pending
+
+        【功能说明】
+        这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - added: 调用方传入的 `added` 数据；具体类型以函数签名为准。
+        - deleted: 调用方传入的 `deleted` 数据；具体类型以函数签名为准。
+        - now: 调用方传入的 `now` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self.pending_emitted:
             return True
         if added == self.last_pending_added and deleted == self.last_pending_deleted:
@@ -778,12 +1374,42 @@ class _StreamingFileEditState:
         return now - self.last_pending_at >= _LIVE_EMIT_INTERVAL_S
 
     def mark_pending_emitted(self, added: int, deleted: int, now: float) -> None:
+        """执行 `mark_pending_emitted`。
+
+        【中文名称】mark_pending_emitted
+
+        【功能说明】
+        这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - added: 调用方传入的 `added` 数据；具体类型以函数签名为准。
+        - deleted: 调用方传入的 `deleted` 数据；具体类型以函数签名为准。
+        - now: 调用方传入的 `now` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self.pending_emitted = True
         self.last_pending_added = added
         self.last_pending_deleted = deleted
         self.last_pending_at = now
 
     def matches_final_tool_call(self, tool_call: Any) -> bool:
+        """执行 `matches_final_tool_call`。
+
+        【中文名称】matches_final_tool_call
+
+        【功能说明】
+        这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - tool_call: 调用方传入的 `tool_call` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         call_id = getattr(tool_call, "id", None)
         canonical = self.call_id or (self.tracker.call_id if self.tracker else "")
         if isinstance(call_id, str) and call_id and canonical and call_id == canonical:
@@ -810,6 +1436,20 @@ class _StreamingFileEditState:
 
 
 def _stream_key(payload: dict[str, Any]) -> str:
+    """执行 `_stream_key`。
+
+    【中文名称】_stream_key
+
+    【功能说明】
+    这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - payload: 调用方传入的 `payload` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     index = payload.get("index")
     if isinstance(index, int):
         return f"idx:{index}"
@@ -822,10 +1462,40 @@ def _stream_key(payload: dict[str, Any]) -> str:
 
 
 def _json_bool_true(source: str, key: str) -> bool:
+    """执行 `_json_bool_true`。
+
+    【中文名称】_json_bool_true
+
+    【功能说明】
+    这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - source: 调用方传入的 `source` 数据；具体类型以函数签名为准。
+    - key: 调用方传入的 `key` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     return re.search(rf'"{re.escape(key)}"\s*:\s*true\b', source) is not None
 
 
 def _extract_json_string_prefix(source: str, key: str) -> str | None:
+    """执行 `_extract_json_string_prefix`。
+
+    【中文名称】_extract_json_string_prefix
+
+    【功能说明】
+    这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - source: 调用方传入的 `source` 数据；具体类型以函数签名为准。
+    - key: 调用方传入的 `key` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     match = re.search(rf'"{re.escape(key)}"\s*:\s*"', source)
     if match is None:
         return None
@@ -867,6 +1537,21 @@ def _extract_json_string_prefix(source: str, key: str) -> str | None:
 
 
 def _extract_complete_json_string(source: str, key: str) -> str | None:
+    """执行 `_extract_complete_json_string`。
+
+    【中文名称】_extract_complete_json_string
+
+    【功能说明】
+    这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - source: 调用方传入的 `source` 数据；具体类型以函数签名为准。
+    - key: 调用方传入的 `key` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     match = re.search(rf'"{re.escape(key)}"\s*:\s*"', source)
     if match is None:
         return None
@@ -918,6 +1603,27 @@ def _event_payload(
     binary: bool = False,
     operation: str | None = None,
 ) -> dict[str, Any]:
+    """执行 `_event_payload`。
+
+    【中文名称】_event_payload
+
+    【功能说明】
+    这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - tracker: 调用方传入的 `tracker` 数据；具体类型以函数签名为准。
+    - phase: 调用方传入的 `phase` 数据；具体类型以函数签名为准。
+    - status: 调用方传入的 `status` 数据；具体类型以函数签名为准。
+    - added: 调用方传入的 `added` 数据；具体类型以函数签名为准。
+    - deleted: 调用方传入的 `deleted` 数据；具体类型以函数签名为准。
+    - approximate: 调用方传入的 `approximate` 数据；具体类型以函数签名为准。
+    - binary: 调用方传入的 `binary` 数据；具体类型以函数签名为准。
+    - operation: 调用方传入的 `operation` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     payload: dict[str, Any] = {
         "version": 1,
         "call_id": tracker.call_id,
@@ -942,6 +1648,22 @@ def _predict_after_text(
     params: dict[str, Any],
     before: FileSnapshot,
 ) -> str | None:
+    """执行 `_predict_after_text`。
+
+    【中文名称】_predict_after_text
+
+    【功能说明】
+    这是 文件编辑事件工具 中的一个步骤函数，用来支撑：负责跟踪工具调用前后的文件快照，计算 diff/行数变化，并向前端推送文件编辑活动。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - tool_name: 调用方传入的 `tool_name` 数据；具体类型以函数签名为准。
+    - params: 调用方传入的 `params` 数据；具体类型以函数签名为准。
+    - before: 调用方传入的 `before` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     if not before.countable:
         return None
     before_text = before.text or ""

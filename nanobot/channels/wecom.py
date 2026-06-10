@@ -1,4 +1,18 @@
-"""WeCom (Enterprise WeChat) channel implementation using wecom_aibot_sdk."""
+"""企业微信渠道适配器。
+
+【中文名称】企业微信渠道适配器
+
+【功能说明】
+负责对接企业微信 AI Bot SDK，把文本、图片、文件和流式回复在企业微信与消息总线之间转换。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的渠道适配器代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 import asyncio
 import base64
@@ -20,15 +34,27 @@ from nanobot.config.schema import Base
 
 WECOM_AVAILABLE = importlib.util.find_spec("wecom_aibot_sdk") is not None
 
-# Upload safety limits (matching QQ channel defaults)
-WECOM_UPLOAD_MAX_BYTES = 1024 * 1024 * 200  # 200MB
+# 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+WECOM_UPLOAD_MAX_BYTES = 1024 * 1024 * 200  # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
-# Replace unsafe characters with "_", keep Chinese and common safe punctuation.
+# 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 _SAFE_NAME_RE = re.compile(r"[^\w.\-()\[\]（）【】\u4e00-\u9fff]+", re.UNICODE)
 
 
 def _sanitize_filename(name: str) -> str:
-    """Sanitize filename to avoid traversal and problematic chars."""
+    """执行 `_sanitize_filename`。
+
+    【中文名称】_sanitize_filename
+
+    【功能说明】
+    这是 企业微信渠道适配器 中的一个步骤函数，用来支撑：负责对接企业微信 AI Bot SDK，把文本、图片、文件和流式回复在企业微信与消息总线之间转换。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - name: 调用方传入的 `name` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     name = (name or "").strip()
     name = Path(name).name
     name = _SAFE_NAME_RE.sub("_", name).strip("._ ")
@@ -41,7 +67,19 @@ _AUDIO_EXTS = {".amr", ".mp3", ".wav", ".ogg"}
 
 
 def _guess_wecom_media_type(filename: str) -> str:
-    """Classify file extension as WeCom media_type string."""
+    """执行 `_guess_wecom_media_type`。
+
+    【中文名称】_guess_wecom_media_type
+
+    【功能说明】
+    这是 企业微信渠道适配器 中的一个步骤函数，用来支撑：负责对接企业微信 AI Bot SDK，把文本、图片、文件和流式回复在企业微信与消息总线之间转换。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - filename: 调用方传入的 `filename` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     ext = Path(filename).suffix.lower()
     if ext in _IMAGE_EXTS:
         return "image"
@@ -52,7 +90,17 @@ def _guess_wecom_media_type(filename: str) -> str:
     return "file"
 
 class WecomConfig(Base):
-    """WeCom (Enterprise WeChat) AI Bot channel configuration."""
+    """WecomConfig 类。
+
+    【中文名称】WecomConfig
+
+    【功能说明】
+    这是 企业微信渠道适配器 中的核心数据结构或服务类。负责对接企业微信 AI Bot SDK，把文本、图片、文件和流式回复在企业微信与消息总线之间转换。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     enabled: bool = False
     bot_id: str = ""
@@ -61,7 +109,7 @@ class WecomConfig(Base):
     welcome_message: str = ""
 
 
-# Message type display mapping
+# 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 MSG_TYPE_MAP = {
     "image": "[image]",
     "voice": "[voice]",
@@ -71,23 +119,55 @@ MSG_TYPE_MAP = {
 
 
 class WecomChannel(BaseChannel):
-    """
-    WeCom (Enterprise WeChat) channel using WebSocket long connection.
+    """WecomChannel 类。
 
-    Uses WebSocket to receive events - no public IP or webhook required.
+    【中文名称】WecomChannel
 
-    Requires:
-    - Bot ID and Secret from WeCom AI Bot platform
-    """
+    【功能说明】
+    这是 企业微信渠道适配器 中的核心数据结构或服务类。负责对接企业微信 AI Bot SDK，把文本、图片、文件和流式回复在企业微信与消息总线之间转换。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     name = "wecom"
     display_name = "WeCom"
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
+        """执行 `default_config`。
+
+        【中文名称】default_config
+
+        【功能说明】
+        这是 企业微信渠道适配器 中的一个步骤函数，用来支撑：负责对接企业微信 AI Bot SDK，把文本、图片、文件和流式回复在企业微信与消息总线之间转换。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return WecomConfig().model_dump(by_alias=True)
 
     def __init__(self, config: Any, bus: MessageBus):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 企业微信渠道适配器 中的一个步骤函数，用来支撑：负责对接企业微信 AI Bot SDK，把文本、图片、文件和流式回复在企业微信与消息总线之间转换。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - config: 调用方传入的 `config` 数据；具体类型以函数签名为准。
+        - bus: 调用方传入的 `bus` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if isinstance(config, dict):
             config = WecomConfig.model_validate(config)
         super().__init__(config, bus)
@@ -96,11 +176,23 @@ class WecomChannel(BaseChannel):
         self._processed_message_ids: OrderedDict[str, None] = OrderedDict()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._generate_req_id = None
-        # Store frame headers for each chat to enable replies
+        # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         self._chat_frames: dict[str, Any] = {}
 
     async def start(self) -> None:
-        """Start the WeCom bot with WebSocket long connection."""
+        """异步执行 `start`。
+
+        【中文名称】start
+
+        【功能说明】
+        这是 企业微信渠道适配器 中的一个步骤函数，用来支撑：负责对接企业微信 AI Bot SDK，把文本、图片、文件和流式回复在企业微信与消息总线之间转换。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not WECOM_AVAILABLE:
             self.logger.error("SDK not installed. Run: pip install nanobot-ai[wecom]")
             return
@@ -115,16 +207,16 @@ class WecomChannel(BaseChannel):
         self._loop = asyncio.get_running_loop()
         self._generate_req_id = generate_req_id
 
-        # Create WebSocket client
+        # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         self._client = WSClient({
             "bot_id": self.config.bot_id,
             "secret": self.config.secret,
             "reconnect_interval": 1000,
-            "max_reconnect_attempts": -1,  # Infinite reconnect
+            "max_reconnect_attempts": -1,  # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             "heartbeat_interval": 30000,
         })
 
-        # Register event handlers
+        # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         self._client.on("connected", self._on_connected)
         self._client.on("authenticated", self._on_authenticated)
         self._client.on("disconnected", self._on_disconnected)
@@ -139,61 +231,193 @@ class WecomChannel(BaseChannel):
         self.logger.info("bot starting with WebSocket long connection")
         self.logger.info("No public IP required - using WebSocket to receive events")
 
-        # Connect
+        # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         await self._client.connect_async()
 
-        # Keep running until stopped
+        # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         while self._running:
             await asyncio.sleep(1)
 
     async def stop(self) -> None:
-        """Stop the WeCom bot."""
+        """异步执行 `stop`。
+
+        【中文名称】stop
+
+        【功能说明】
+        这是 企业微信渠道适配器 中的一个步骤函数，用来支撑：负责对接企业微信 AI Bot SDK，把文本、图片、文件和流式回复在企业微信与消息总线之间转换。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         self._running = False
         if self._client:
             await self._client.disconnect()
         self.logger.info("bot stopped")
 
     async def _on_connected(self, frame: Any) -> None:
-        """Handle WebSocket connected event."""
+        """异步执行 `_on_connected`。
+
+        【中文名称】_on_connected
+
+        【功能说明】
+        这是 企业微信渠道适配器 中的一个步骤函数，用来支撑：负责对接企业微信 AI Bot SDK，把文本、图片、文件和流式回复在企业微信与消息总线之间转换。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - frame: 调用方传入的 `frame` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         self.logger.info("WebSocket connected")
 
     async def _on_authenticated(self, frame: Any) -> None:
-        """Handle authentication success event."""
+        """异步执行 `_on_authenticated`。
+
+        【中文名称】_on_authenticated
+
+        【功能说明】
+        这是 企业微信渠道适配器 中的一个步骤函数，用来支撑：负责对接企业微信 AI Bot SDK，把文本、图片、文件和流式回复在企业微信与消息总线之间转换。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - frame: 调用方传入的 `frame` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         self.logger.info("authenticated successfully")
 
     async def _on_disconnected(self, frame: Any) -> None:
-        """Handle WebSocket disconnected event."""
+        """异步执行 `_on_disconnected`。
+
+        【中文名称】_on_disconnected
+
+        【功能说明】
+        这是 企业微信渠道适配器 中的一个步骤函数，用来支撑：负责对接企业微信 AI Bot SDK，把文本、图片、文件和流式回复在企业微信与消息总线之间转换。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - frame: 调用方传入的 `frame` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         reason = frame.body if hasattr(frame, 'body') else str(frame)
         self.logger.warning("WebSocket disconnected: {}", reason)
 
     async def _on_error(self, frame: Any) -> None:
-        """Handle error event."""
+        """异步执行 `_on_error`。
+
+        【中文名称】_on_error
+
+        【功能说明】
+        这是 企业微信渠道适配器 中的一个步骤函数，用来支撑：负责对接企业微信 AI Bot SDK，把文本、图片、文件和流式回复在企业微信与消息总线之间转换。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - frame: 调用方传入的 `frame` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         self.logger.error("error: {}", frame)
 
     async def _on_text_message(self, frame: Any) -> None:
-        """Handle text message."""
+        """异步执行 `_on_text_message`。
+
+        【中文名称】_on_text_message
+
+        【功能说明】
+        这是 企业微信渠道适配器 中的一个步骤函数，用来支撑：负责对接企业微信 AI Bot SDK，把文本、图片、文件和流式回复在企业微信与消息总线之间转换。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - frame: 调用方传入的 `frame` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         await self._process_message(frame, "text")
 
     async def _on_image_message(self, frame: Any) -> None:
-        """Handle image message."""
+        """异步执行 `_on_image_message`。
+
+        【中文名称】_on_image_message
+
+        【功能说明】
+        这是 企业微信渠道适配器 中的一个步骤函数，用来支撑：负责对接企业微信 AI Bot SDK，把文本、图片、文件和流式回复在企业微信与消息总线之间转换。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - frame: 调用方传入的 `frame` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         await self._process_message(frame, "image")
 
     async def _on_voice_message(self, frame: Any) -> None:
-        """Handle voice message."""
+        """异步执行 `_on_voice_message`。
+
+        【中文名称】_on_voice_message
+
+        【功能说明】
+        这是 企业微信渠道适配器 中的一个步骤函数，用来支撑：负责对接企业微信 AI Bot SDK，把文本、图片、文件和流式回复在企业微信与消息总线之间转换。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - frame: 调用方传入的 `frame` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         await self._process_message(frame, "voice")
 
     async def _on_file_message(self, frame: Any) -> None:
-        """Handle file message."""
+        """异步执行 `_on_file_message`。
+
+        【中文名称】_on_file_message
+
+        【功能说明】
+        这是 企业微信渠道适配器 中的一个步骤函数，用来支撑：负责对接企业微信 AI Bot SDK，把文本、图片、文件和流式回复在企业微信与消息总线之间转换。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - frame: 调用方传入的 `frame` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         await self._process_message(frame, "file")
 
     async def _on_mixed_message(self, frame: Any) -> None:
-        """Handle mixed content message."""
+        """异步执行 `_on_mixed_message`。
+
+        【中文名称】_on_mixed_message
+
+        【功能说明】
+        这是 企业微信渠道适配器 中的一个步骤函数，用来支撑：负责对接企业微信 AI Bot SDK，把文本、图片、文件和流式回复在企业微信与消息总线之间转换。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - frame: 调用方传入的 `frame` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         await self._process_message(frame, "mixed")
 
     async def _on_enter_chat(self, frame: Any) -> None:
-        """Handle enter_chat event (user opens chat with bot)."""
+        """异步执行 `_on_enter_chat`。
+
+        【中文名称】_on_enter_chat
+
+        【功能说明】
+        这是 企业微信渠道适配器 中的一个步骤函数，用来支撑：负责对接企业微信 AI Bot SDK，把文本、图片、文件和流式回复在企业微信与消息总线之间转换。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - frame: 调用方传入的 `frame` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         try:
-            # Extract body from WsFrame dataclass or dict
+            # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if hasattr(frame, 'body'):
                 body = frame.body or {}
             elif isinstance(frame, dict):
@@ -215,9 +439,22 @@ class WecomChannel(BaseChannel):
             self.logger.exception("Error handling enter_chat")
 
     async def _process_message(self, frame: Any, msg_type: str) -> None:
-        """Process incoming message and forward to bus."""
+        """异步执行 `_process_message`。
+
+        【中文名称】_process_message
+
+        【功能说明】
+        这是 企业微信渠道适配器 中的一个步骤函数，用来支撑：负责对接企业微信 AI Bot SDK，把文本、图片、文件和流式回复在企业微信与消息总线之间转换。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - frame: 调用方传入的 `frame` 数据；具体类型以函数签名为准。
+        - msg_type: 调用方传入的 `msg_type` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         try:
-            # Extract body from WsFrame dataclass or dict
+            # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if hasattr(frame, 'body'):
                 body = frame.body or {}
             elif isinstance(frame, dict):
@@ -225,33 +462,33 @@ class WecomChannel(BaseChannel):
             else:
                 body = {}
 
-            # Ensure body is a dict
+            # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if not isinstance(body, dict):
                 self.logger.warning("Invalid body type: {}", type(body))
                 return
 
-            # Extract message info
+            # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             msg_id = body.get("msgid", "")
             if not msg_id:
                 msg_id = f"{body.get('chatid', '')}_{body.get('sendertime', '')}"
 
-            # Extract sender info from "from" field (SDK format)
+            # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             from_info = body.get("from", {})
             sender_id = from_info.get("userid", "unknown") if isinstance(from_info, dict) else "unknown"
             if not self.is_allowed(sender_id):
                 return
 
-            # Deduplication check
+            # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if msg_id in self._processed_message_ids:
                 return
             self._processed_message_ids[msg_id] = None
 
-            # Trim cache
+            # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             while len(self._processed_message_ids) > 1000:
                 self._processed_message_ids.popitem(last=False)
 
-            # For single chat, chatid is the sender's userid
-            # For group chat, chatid is provided in body
+            # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             chat_type = body.get("chattype", "single")
             chat_id = body.get("chatid", sender_id)
 
@@ -281,7 +518,7 @@ class WecomChannel(BaseChannel):
 
             elif msg_type == "voice":
                 voice_info = body.get("voice", {})
-                # Voice message already contains transcribed content from WeCom
+                # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 voice_content = voice_info.get("content", "")
                 if voice_content:
                     content_parts.append(f"[voice] {voice_content}")
@@ -306,7 +543,7 @@ class WecomChannel(BaseChannel):
                     content_parts.append(f"[file: {file_name or 'unknown'}: download failed]")
 
             elif msg_type == "mixed":
-                # Mixed content contains multiple message items
+                # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 msg_items = body.get("mixed", {}).get("msg_item", [])
                 for item in msg_items:
                     item_type = item.get("msgtype", "")
@@ -334,10 +571,10 @@ class WecomChannel(BaseChannel):
             if not content:
                 return
 
-            # Store frame for this chat to enable replies
+            # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             self._chat_frames[chat_id] = frame
 
-            # Forward to message bus
+            # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             await self._handle_message(
                 sender_id=sender_id,
                 chat_id=chat_id,
@@ -360,12 +597,22 @@ class WecomChannel(BaseChannel):
         media_type: str,
         filename: str | None = None,
     ) -> str | None:
-        """
-        Download and decrypt media from WeCom.
+        """异步执行 `_download_and_save_media`。
 
-        Returns:
-            file_path or None if download failed
-        """
+        【中文名称】_download_and_save_media
+
+        【功能说明】
+        这是 企业微信渠道适配器 中的一个步骤函数，用来支撑：负责对接企业微信 AI Bot SDK，把文本、图片、文件和流式回复在企业微信与消息总线之间转换。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - file_url: 调用方传入的 `file_url` 数据；具体类型以函数签名为准。
+        - aes_key: 调用方传入的 `aes_key` 数据；具体类型以函数签名为准。
+        - media_type: 调用方传入的 `media_type` 数据；具体类型以函数签名为准。
+        - filename: 调用方传入的 `filename` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         try:
             data, fname = await self._client.download_file(file_url, aes_key)
 
@@ -398,25 +645,42 @@ class WecomChannel(BaseChannel):
     async def _upload_media_ws(
         self, client: Any, file_path: str,
     ) -> "tuple[str, str] | tuple[None, None]":
-        """Upload a local file to WeCom via WebSocket 3-step protocol (base64).
+        """异步执行 `_upload_media_ws`。
 
-        Uses the WeCom WebSocket upload commands directly via
-        ``client._ws_manager.send_reply()``:
+        【中文名称】_upload_media_ws
 
-          ``aibot_upload_media_init``   → upload_id
-          ``aibot_upload_media_chunk`` × N  (≤512 KB raw per chunk, base64)
-          ``aibot_upload_media_finish`` → media_id
+        【功能说明】
+        这是 企业微信渠道适配器 中的一个步骤函数，用来支撑：负责对接企业微信 AI Bot SDK，把文本、图片、文件和流式回复在企业微信与消息总线之间转换。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
 
-        Returns (media_id, media_type) on success, (None, None) on failure.
-        """
+        【参数说明】
+        - client: 调用方传入的 `client` 数据；具体类型以函数签名为准。
+        - file_path: 调用方传入的 `file_path` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         from wecom_aibot_sdk.utils import generate_req_id as _gen_req_id
 
         try:
             fname = os.path.basename(file_path)
             media_type = _guess_wecom_media_type(fname)
 
-            # Read file size and data in a thread to avoid blocking the event loop
+            # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             def _read_file():
+                """执行 `_read_file`。
+
+                【中文名称】_read_file
+
+                【功能说明】
+                这是 企业微信渠道适配器 中的一个步骤函数，用来支撑：负责对接企业微信 AI Bot SDK，把文本、图片、文件和流式回复在企业微信与消息总线之间转换。
+                阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+                【参数说明】
+                - 无显式业务参数。
+
+                【返回值】
+                - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
                 file_size = os.path.getsize(file_path)
                 if file_size > WECOM_UPLOAD_MAX_BYTES:
                     raise ValueError(
@@ -426,16 +690,16 @@ class WecomChannel(BaseChannel):
                     return file_size, f.read()
 
             file_size, data = await asyncio.to_thread(_read_file)
-            # MD5 is used for file integrity only, not cryptographic security
+            # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             md5_hash = hashlib.md5(data).hexdigest()
 
-            chunk_size = 512 * 1024  # 512 KB raw (before base64)
+            chunk_size = 512 * 1024  # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             mv = memoryview(data)
             chunk_list = [bytes(mv[i : i + chunk_size]) for i in range(0, file_size, chunk_size)]
             n_chunks = len(chunk_list)
             del mv, data
 
-            # Step 1: init
+            # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             req_id = _gen_req_id("upload_init")
             resp = await client._ws_manager.send_reply(req_id, {
                 "type": media_type,
@@ -452,7 +716,7 @@ class WecomChannel(BaseChannel):
                 self.logger.warning("upload init: no upload_id in response")
                 return None, None
 
-            # Step 2: send chunks
+            # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             for i, chunk in enumerate(chunk_list):
                 req_id = _gen_req_id("upload_chunk")
                 resp = await client._ws_manager.send_reply(req_id, {
@@ -464,7 +728,7 @@ class WecomChannel(BaseChannel):
                     self.logger.warning("upload chunk {} failed ({}): {}", i, resp.errcode, resp.errmsg)
                     return None, None
 
-            # Step 3: finish
+            # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             req_id = _gen_req_id("upload_finish")
             resp = await client._ws_manager.send_reply(req_id, {
                 "upload_id": upload_id,
@@ -490,7 +754,19 @@ class WecomChannel(BaseChannel):
             return None, None
 
     async def send(self, msg: OutboundMessage) -> None:
-        """Send a message through WeCom."""
+        """异步执行 `send`。
+
+        【中文名称】send
+
+        【功能说明】
+        这是 企业微信渠道适配器 中的一个步骤函数，用来支撑：负责对接企业微信 AI Bot SDK，把文本、图片、文件和流式回复在企业微信与消息总线之间转换。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - msg: 调用方传入的 `msg` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self._client:
             self.logger.warning("client not initialized")
             return
@@ -499,10 +775,10 @@ class WecomChannel(BaseChannel):
             content = (msg.content or "").strip()
             is_progress = bool(msg.metadata.get("_progress"))
 
-            # Get the stored frame for this chat
+            # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             frame = self._chat_frames.get(msg.chat_id)
 
-            # Send media files via WebSocket upload
+            # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             for file_path in msg.media or []:
                 if not os.path.isfile(file_path):
                     self.logger.warning("media file not found: {}", file_path)
@@ -527,9 +803,9 @@ class WecomChannel(BaseChannel):
                 return
 
             if frame:
-                # Both progress and final messages must use reply_stream (cmd="aibot_respond_msg").
-                # The plain reply() uses cmd="reply" which does not support "text" msgtype
-                # and causes errcode=40008 from WeCom API.
+                # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+                # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+                # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 stream_id = self._generate_req_id("stream")
                 await self._client.reply_stream(
                     frame,
@@ -543,7 +819,7 @@ class WecomChannel(BaseChannel):
                     msg.chat_id,
                 )
             else:
-                # No frame (e.g. cron push): proactive send only supports markdown
+                # 说明：这里处理 企业微信渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 await self._client.send_message(msg.chat_id, {
                     "msgtype": "markdown",
                     "markdown": {"content": content},

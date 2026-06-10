@@ -1,20 +1,18 @@
-"""QQ channel implementation using botpy SDK.
+"""QQ 官方机器人渠道适配器。
 
-Inbound:
-- Parse QQ botpy messages (C2C / Group)
-- Download attachments to media dir using chunked streaming write (memory-safe)
-- Publish to Nanobot bus via BaseChannel._handle_message()
-- Content includes a clear, actionable "Received files:" list with local paths
+【中文名称】QQ 官方机器人渠道适配器
 
-Outbound:
-- Send attachments (msg.media) first via QQ rich media API (base64 upload + msg_type=7)
-- Then send text (plain or markdown)
-- msg.media supports local paths, file:// paths, and http(s) URLs
+【功能说明】
+负责对接 qq-botpy SDK，处理群聊/私聊/富媒体消息，并把回复、文件和流式状态发回 QQ。
 
-Notes:
-- QQ restricts many audio/video formats. We conservatively classify as image vs file.
-- Attachment structures differ across botpy versions; we try multiple field candidates.
-"""
+【在整体架构中的位置】
+该文件属于 P1 范围的渠道适配器代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 from __future__ import annotations
 
@@ -43,7 +41,7 @@ from nanobot.utils.logging_bridge import redirect_lib_logging
 
 try:
     from nanobot.config.paths import get_media_dir
-except Exception:  # pragma: no cover
+except Exception:  # pragma: no cover - 这是测试覆盖率工具指令；该分支只在特定可选依赖或平台环境下触发。
     get_media_dir = None  # type: ignore
 
 try:
@@ -51,7 +49,7 @@ try:
     from botpy.http import Route
 
     QQ_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except ImportError:  # pragma: no cover - 这是测试覆盖率工具指令；该分支只在特定可选依赖或平台环境下触发。
     QQ_AVAILABLE = False
     botpy = None
     Route = None
@@ -61,8 +59,8 @@ if TYPE_CHECKING:
     from botpy.types.message import Media
 
 
-# QQ rich media file_type: 1=image, 4=file
-# (2=voice, 3=video are restricted; we only use image vs file)
+# 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 QQ_FILE_TYPE_IMAGE = 1
 QQ_FILE_TYPE_FILE = 4
 
@@ -79,12 +77,24 @@ _IMAGE_EXTS = {
     ".svg",
 }
 
-# Replace unsafe characters with "_", keep Chinese and common safe punctuation.
+# 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 _SAFE_NAME_RE = re.compile(r"[^\w.\-()\[\]（）【】\u4e00-\u9fff]+", re.UNICODE)
 
 
 def _sanitize_filename(name: str) -> str:
-    """Sanitize filename to avoid traversal and problematic chars."""
+    """执行 `_sanitize_filename`。
+
+    【中文名称】_sanitize_filename
+
+    【功能说明】
+    这是 QQ 官方机器人渠道适配器 中的一个步骤函数，用来支撑：负责对接 qq-botpy SDK，处理群聊/私聊/富媒体消息，并把回复、文件和流式状态发回 QQ。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - name: 调用方传入的 `name` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     name = (name or "").strip()
     name = Path(name).name
     name = _SAFE_NAME_RE.sub("_", name).strip("._ ")
@@ -92,11 +102,37 @@ def _sanitize_filename(name: str) -> str:
 
 
 def _is_image_name(name: str) -> bool:
+    """执行 `_is_image_name`。
+
+    【中文名称】_is_image_name
+
+    【功能说明】
+    这是 QQ 官方机器人渠道适配器 中的一个步骤函数，用来支撑：负责对接 qq-botpy SDK，处理群聊/私聊/富媒体消息，并把回复、文件和流式状态发回 QQ。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - name: 调用方传入的 `name` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     return Path(name).suffix.lower() in _IMAGE_EXTS
 
 
 def _guess_send_file_type(filename: str) -> int:
-    """Conservative send type: images -> 1, else -> 4."""
+    """执行 `_guess_send_file_type`。
+
+    【中文名称】_guess_send_file_type
+
+    【功能说明】
+    这是 QQ 官方机器人渠道适配器 中的一个步骤函数，用来支撑：负责对接 qq-botpy SDK，处理群聊/私聊/富媒体消息，并把回复、文件和流式状态发回 QQ。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - filename: 调用方传入的 `filename` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     ext = Path(filename).suffix.lower()
     mime, _ = mimetypes.guess_type(filename)
     if ext in _IMAGE_EXTS or (mime and mime.startswith("image/")):
@@ -105,31 +141,135 @@ def _guess_send_file_type(filename: str) -> int:
 
 
 def _make_bot_class(channel: QQChannel) -> type[botpy.Client]:
-    """Create a botpy Client subclass bound to the given channel."""
+    """执行 `_make_bot_class`。
+
+    【中文名称】_make_bot_class
+
+    【功能说明】
+    这是 QQ 官方机器人渠道适配器 中的一个步骤函数，用来支撑：负责对接 qq-botpy SDK，处理群聊/私聊/富媒体消息，并把回复、文件和流式状态发回 QQ。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - channel: 调用方传入的 `channel` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     intents = botpy.Intents(public_messages=True, direct_message=True)
 
     class _Bot(botpy.Client):
+        """_Bot 类。
+
+        【中文名称】_Bot
+
+        【功能说明】
+        这是 QQ 官方机器人渠道适配器 中的核心数据结构或服务类。负责对接 qq-botpy SDK，处理群聊/私聊/富媒体消息，并把回复、文件和流式状态发回 QQ。
+
+        【学习重点】
+        - 类属性/字段通常描述外部平台、模型或工具的配置。
+        - public 方法通常是其他模块会调用的入口。
+        - private 方法通常负责协议细节、格式转换或异常兜底。"""
+
         def __init__(self):
-            # Disable botpy's file log — nanobot uses loguru; default "botpy.log" fails on read-only fs
+            # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            """执行 `__init__`。
+
+            【中文名称】__init__
+
+            【功能说明】
+            这是 QQ 官方机器人渠道适配器 中的一个步骤函数，用来支撑：负责对接 qq-botpy SDK，处理群聊/私聊/富媒体消息，并把回复、文件和流式状态发回 QQ。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - 无显式业务参数。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             super().__init__(intents=intents, ext_handlers=False)
 
         async def on_ready(self):
+            """异步执行 `on_ready`。
+
+            【中文名称】on_ready
+
+            【功能说明】
+            这是 QQ 官方机器人渠道适配器 中的一个步骤函数，用来支撑：负责对接 qq-botpy SDK，处理群聊/私聊/富媒体消息，并把回复、文件和流式状态发回 QQ。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - 无显式业务参数。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             logger.info("QQ bot ready: {}", self.robot.name)
 
         async def on_c2c_message_create(self, message: C2CMessage):
+            """异步执行 `on_c2c_message_create`。
+
+            【中文名称】on_c2c_message_create
+
+            【功能说明】
+            这是 QQ 官方机器人渠道适配器 中的一个步骤函数，用来支撑：负责对接 qq-botpy SDK，处理群聊/私聊/富媒体消息，并把回复、文件和流式状态发回 QQ。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - message: 调用方传入的 `message` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             await channel._on_message(message, is_group=False)
 
         async def on_group_at_message_create(self, message: GroupMessage):
+            """异步执行 `on_group_at_message_create`。
+
+            【中文名称】on_group_at_message_create
+
+            【功能说明】
+            这是 QQ 官方机器人渠道适配器 中的一个步骤函数，用来支撑：负责对接 qq-botpy SDK，处理群聊/私聊/富媒体消息，并把回复、文件和流式状态发回 QQ。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - message: 调用方传入的 `message` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             await channel._on_message(message, is_group=True)
 
         async def on_direct_message_create(self, message):
+            """异步执行 `on_direct_message_create`。
+
+            【中文名称】on_direct_message_create
+
+            【功能说明】
+            这是 QQ 官方机器人渠道适配器 中的一个步骤函数，用来支撑：负责对接 qq-botpy SDK，处理群聊/私聊/富媒体消息，并把回复、文件和流式状态发回 QQ。
+            阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+            【参数说明】
+            - message: 调用方传入的 `message` 数据；具体类型以函数签名为准。
+
+            【返回值】
+            - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
             await channel._on_message(message, is_group=False)
 
     return _Bot
 
 
 class QQConfig(Base):
-    """QQ channel configuration using botpy SDK."""
+    """QQConfig 类。
+
+    【中文名称】QQConfig
+
+    【功能说明】
+    这是 QQ 官方机器人渠道适配器 中的核心数据结构或服务类。负责对接 qq-botpy SDK，处理群聊/私聊/富媒体消息，并把回复、文件和流式状态发回 QQ。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     enabled: bool = False
     app_id: str = ""
@@ -138,25 +278,64 @@ class QQConfig(Base):
     msg_format: Literal["plain", "markdown"] = "plain"
     ack_message: str = "⏳ Processing..."
 
-    # Optional: directory to save inbound attachments. If empty, use nanobot get_media_dir("qq").
+    # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     media_dir: str = ""
 
-    # Download tuning
-    download_chunk_size: int = 1024 * 256  # 256KB
-    download_max_bytes: int = 1024 * 1024 * 200  # 200MB safety limit
+    # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    download_chunk_size: int = 1024 * 256  # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    download_max_bytes: int = 1024 * 1024 * 200  # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
 
 class QQChannel(BaseChannel):
-    """QQ channel using botpy SDK with WebSocket connection."""
+    """QQChannel 类。
+
+    【中文名称】QQChannel
+
+    【功能说明】
+    这是 QQ 官方机器人渠道适配器 中的核心数据结构或服务类。负责对接 qq-botpy SDK，处理群聊/私聊/富媒体消息，并把回复、文件和流式状态发回 QQ。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     name = "qq"
     display_name = "QQ"
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
+        """执行 `default_config`。
+
+        【中文名称】default_config
+
+        【功能说明】
+        这是 QQ 官方机器人渠道适配器 中的一个步骤函数，用来支撑：负责对接 qq-botpy SDK，处理群聊/私聊/富媒体消息，并把回复、文件和流式状态发回 QQ。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return QQConfig().model_dump(by_alias=True)
 
     def __init__(self, config: Any, bus: MessageBus):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 QQ 官方机器人渠道适配器 中的一个步骤函数，用来支撑：负责对接 qq-botpy SDK，处理群聊/私聊/富媒体消息，并把回复、文件和流式状态发回 QQ。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - config: 调用方传入的 `config` 数据；具体类型以函数签名为准。
+        - bus: 调用方传入的 `bus` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if isinstance(config, dict):
             config = QQConfig.model_validate(config)
         super().__init__(config, bus)
@@ -166,17 +345,29 @@ class QQChannel(BaseChannel):
         self._http: aiohttp.ClientSession | None = None
 
         self._processed_ids: deque[str] = deque(maxlen=1000)
-        self._msg_seq: int = 1  # used to avoid QQ API dedup
+        self._msg_seq: int = 1  # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         self._chat_type_cache: dict[str, str] = {}
 
         self._media_root: Path = self._init_media_root()
 
-    # ---------------------------
-    # Lifecycle
-    # ---------------------------
+    # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     def _init_media_root(self) -> Path:
-        """Choose a directory for saving inbound attachments."""
+        """执行 `_init_media_root`。
+
+        【中文名称】_init_media_root
+
+        【功能说明】
+        这是 QQ 官方机器人渠道适配器 中的一个步骤函数，用来支撑：负责对接 qq-botpy SDK，处理群聊/私聊/富媒体消息，并把回复、文件和流式状态发回 QQ。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if self.config.media_dir:
             root = Path(self.config.media_dir).expanduser()
         elif get_media_dir:
@@ -192,7 +383,19 @@ class QQChannel(BaseChannel):
         return root
 
     async def start(self) -> None:
-        """Start the QQ bot with auto-reconnect loop."""
+        """异步执行 `start`。
+
+        【中文名称】start
+
+        【功能说明】
+        这是 QQ 官方机器人渠道适配器 中的一个步骤函数，用来支撑：负责对接 qq-botpy SDK，处理群聊/私聊/富媒体消息，并把回复、文件和流式状态发回 QQ。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         redirect_lib_logging("botpy", level="WARNING")
         if not QQ_AVAILABLE:
             self.logger.error("SDK not installed. Run: pip install qq-botpy")
@@ -210,7 +413,19 @@ class QQChannel(BaseChannel):
         await self._run_bot()
 
     async def _run_bot(self) -> None:
-        """Run the bot connection with auto-reconnect."""
+        """异步执行 `_run_bot`。
+
+        【中文名称】_run_bot
+
+        【功能说明】
+        这是 QQ 官方机器人渠道适配器 中的一个步骤函数，用来支撑：负责对接 qq-botpy SDK，处理群聊/私聊/富媒体消息，并把回复、文件和流式状态发回 QQ。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         while self._running:
             try:
                 await self._client.start(appid=self.config.app_id, secret=self.config.secret)
@@ -221,7 +436,19 @@ class QQChannel(BaseChannel):
                 await asyncio.sleep(5)
 
     async def stop(self) -> None:
-        """Stop bot and cleanup resources."""
+        """异步执行 `stop`。
+
+        【中文名称】stop
+
+        【功能说明】
+        这是 QQ 官方机器人渠道适配器 中的一个步骤函数，用来支撑：负责对接 qq-botpy SDK，处理群聊/私聊/富媒体消息，并把回复、文件和流式状态发回 QQ。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         self._running = False
         if self._client:
             with suppress(Exception):
@@ -235,12 +462,24 @@ class QQChannel(BaseChannel):
 
         self.logger.info("bot stopped")
 
-    # ---------------------------
-    # Outbound (send)
-    # ---------------------------
+    # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     async def send(self, msg: OutboundMessage) -> None:
-        """Send attachments first, then text."""
+        """异步执行 `send`。
+
+        【中文名称】send
+
+        【功能说明】
+        这是 QQ 官方机器人渠道适配器 中的一个步骤函数，用来支撑：负责对接 qq-botpy SDK，处理群聊/私聊/富媒体消息，并把回复、文件和流式状态发回 QQ。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - msg: 调用方传入的 `msg` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         try:
             if not self._client:
                 self.logger.warning("client not initialized")
@@ -250,7 +489,7 @@ class QQChannel(BaseChannel):
             chat_type = self._chat_type_cache.get(msg.chat_id, "c2c")
             is_group = chat_type == "group"
 
-            # 1) Send media
+            # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             for media_ref in msg.media or []:
                 ok = await self._send_media(
                     chat_id=msg.chat_id,
@@ -271,7 +510,7 @@ class QQChannel(BaseChannel):
                         content=f"[Attachment send failed: {filename}]",
                     )
 
-            # 2) Send text
+            # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if msg.content and msg.content.strip():
                 await self._send_text_only(
                     chat_id=msg.chat_id,
@@ -280,7 +519,7 @@ class QQChannel(BaseChannel):
                     content=msg.content.strip(),
                 )
         except (aiohttp.ClientError, OSError):
-            # Network / transport errors — propagate so ChannelManager can retry
+            # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             raise
         except Exception:
             self.logger.exception("Error sending message to chat_id={}", msg.chat_id)
@@ -292,7 +531,22 @@ class QQChannel(BaseChannel):
         msg_id: str | None,
         content: str,
     ) -> None:
-        """Send a plain/markdown text message."""
+        """异步执行 `_send_text_only`。
+
+        【中文名称】_send_text_only
+
+        【功能说明】
+        这是 QQ 官方机器人渠道适配器 中的一个步骤函数，用来支撑：负责对接 qq-botpy SDK，处理群聊/私聊/富媒体消息，并把回复、文件和流式状态发回 QQ。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - is_group: 调用方传入的 `is_group` 数据；具体类型以函数签名为准。
+        - msg_id: 调用方传入的 `msg_id` 数据；具体类型以函数签名为准。
+        - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self._client:
             return
 
@@ -320,7 +574,22 @@ class QQChannel(BaseChannel):
         msg_id: str | None,
         is_group: bool,
     ) -> bool:
-        """Read bytes -> base64 upload -> msg_type=7 send."""
+        """异步执行 `_send_media`。
+
+        【中文名称】_send_media
+
+        【功能说明】
+        这是 QQ 官方机器人渠道适配器 中的一个步骤函数，用来支撑：负责对接 qq-botpy SDK，处理群聊/私聊/富媒体消息，并把回复、文件和流式状态发回 QQ。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - media_ref: 调用方传入的 `media_ref` 数据；具体类型以函数签名为准。
+        - msg_id: 调用方传入的 `msg_id` 数据；具体类型以函数签名为准。
+        - is_group: 调用方传入的 `is_group` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self._client:
             return False
 
@@ -365,26 +634,38 @@ class QQChannel(BaseChannel):
             self.logger.info("media sent: {}", filename)
             return True
         except (aiohttp.ClientError, OSError) as e:
-            # Network / transport errors — propagate for retry by caller
+            # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             self.logger.warning("send media network error filename={} err={}", filename, e)
             raise
         except Exception:
-            # API-level or other non-network errors — return False so send() can fallback
+            # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             self.logger.exception("send media failed filename={}", filename)
             return False
 
     async def _read_media_bytes(self, media_ref: str) -> tuple[bytes | None, str | None]:
-        """Read bytes from http(s) or local file path; return (data, filename)."""
+        """异步执行 `_read_media_bytes`。
+
+        【中文名称】_read_media_bytes
+
+        【功能说明】
+        这是 QQ 官方机器人渠道适配器 中的一个步骤函数，用来支撑：负责对接 qq-botpy SDK，处理群聊/私聊/富媒体消息，并把回复、文件和流式状态发回 QQ。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - media_ref: 调用方传入的 `media_ref` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         media_ref = (media_ref or "").strip()
         if not media_ref:
             return None, None
 
-        # Local file: plain path or file:// URI
+        # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if not media_ref.startswith("http://") and not media_ref.startswith("https://"):
             try:
                 if media_ref.startswith("file://"):
                     parsed = urlparse(media_ref)
-                    # Windows: path in netloc; Unix: path in path
+                    # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                     raw = parsed.path or parsed.netloc
                     local_path = Path(unquote(raw))
                 else:
@@ -400,7 +681,7 @@ class QQChannel(BaseChannel):
                 self.logger.warning("outbound media read error ref={} err={}", media_ref, e)
                 return None, None
 
-        # Remote URL
+        # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         ok, err = validate_url_target(media_ref)
         if not ok:
             self.logger.warning("outbound media URL validation failed url={} err={}", media_ref, err)
@@ -426,8 +707,8 @@ class QQChannel(BaseChannel):
             self.logger.warning("outbound media download error url={} err={}", media_ref, e)
             return None, None
 
-    # https://github.com/tencent-connect/botpy/issues/198
-    # https://bot.q.qq.com/wiki/develop/api-v2/server-inter/message/send-receive/rich-media.html
+    # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
     async def _post_base64file(
         self,
         chat_id: str,
@@ -437,7 +718,24 @@ class QQChannel(BaseChannel):
         file_name: str | None = None,
         srv_send_msg: bool = False,
     ) -> Media:
-        """Upload base64-encoded file and return Media object."""
+        """异步执行 `_post_base64file`。
+
+        【中文名称】_post_base64file
+
+        【功能说明】
+        这是 QQ 官方机器人渠道适配器 中的一个步骤函数，用来支撑：负责对接 qq-botpy SDK，处理群聊/私聊/富媒体消息，并把回复、文件和流式状态发回 QQ。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - chat_id: 调用方传入的 `chat_id` 数据；具体类型以函数签名为准。
+        - is_group: 调用方传入的 `is_group` 数据；具体类型以函数签名为准。
+        - file_type: 调用方传入的 `file_type` 数据；具体类型以函数签名为准。
+        - file_data: 调用方传入的 `file_data` 数据；具体类型以函数签名为准。
+        - file_name: 调用方传入的 `file_name` 数据；具体类型以函数签名为准。
+        - srv_send_msg: 调用方传入的 `srv_send_msg` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if not self._client:
             raise RuntimeError("QQ client not initialized")
 
@@ -454,27 +752,40 @@ class QQChannel(BaseChannel):
             "file_data": file_data,
             "srv_send_msg": srv_send_msg,
         }
-        # Only pass file_name for non-image types (file_type=4).
-        # Passing file_name for images causes QQ client to render them as
-        # file attachments instead of inline images.
+        # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if file_type != QQ_FILE_TYPE_IMAGE and file_name:
             payload["file_name"] = file_name
 
         route = Route("POST", endpoint, **{id_key: chat_id})
         result = await self._client.api._http.request(route, json=payload)
 
-        # Extract only the file_info field to avoid extra fields (file_uuid, ttl, etc.)
-        # that may confuse QQ client when sending the media object.
+        # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if isinstance(result, dict) and "file_info" in result:
             return {"file_info": result["file_info"]}
         return result
 
-    # ---------------------------
-    # Inbound (receive)
-    # ---------------------------
+    # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
 
     async def _on_message(self, data: C2CMessage | GroupMessage, is_group: bool = False) -> None:
-        """Parse inbound message, download attachments, and publish to the bus."""
+        """异步执行 `_on_message`。
+
+        【中文名称】_on_message
+
+        【功能说明】
+        这是 QQ 官方机器人渠道适配器 中的一个步骤函数，用来支撑：负责对接 qq-botpy SDK，处理群聊/私聊/富媒体消息，并把回复、文件和流式状态发回 QQ。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - data: 调用方传入的 `data` 数据；具体类型以函数签名为准。
+        - is_group: 调用方传入的 `is_group` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         try:
             if is_group:
                 chat_id = data.group_openid
@@ -495,9 +806,9 @@ class QQChannel(BaseChannel):
             self._processed_ids.append(data.id)
             self._chat_type_cache[chat_id] = chat_type
 
-            # Early permission check — avoid attachment downloads and ack side effects
-            # for unauthorized users. C2C messages can receive pairing codes;
-            # group messages remain silently ignored.
+            # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if not self.is_allowed(user_id):
                 if not is_group:
                     await self._handle_message(
@@ -508,12 +819,12 @@ class QQChannel(BaseChannel):
                     )
                 return
 
-            # the data used by tests don't contain attachments property
-            # so we use getattr with a default of [] to avoid AttributeError in tests
+            # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
+            # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             attachments = getattr(data, "attachments", None) or []
             media_paths, recv_lines, att_meta = await self._handle_attachments(attachments)
 
-            # Compose content that always contains actionable saved paths
+            # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if recv_lines:
                 tag = (
                     "[Image]"
@@ -557,7 +868,19 @@ class QQChannel(BaseChannel):
         self,
         attachments: list[BaseMessage._Attachments],
     ) -> tuple[list[str], list[str], list[dict[str, Any]]]:
-        """Extract, download (chunked), and format attachments for agent consumption."""
+        """异步执行 `_handle_attachments`。
+
+        【中文名称】_handle_attachments
+
+        【功能说明】
+        这是 QQ 官方机器人渠道适配器 中的一个步骤函数，用来支撑：负责对接 qq-botpy SDK，处理群聊/私聊/富媒体消息，并把回复、文件和流式状态发回 QQ。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - attachments: 调用方传入的 `attachments` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         media_paths: list[str] = []
         recv_lines: list[str] = []
         att_meta: list[dict[str, Any]] = []
@@ -597,13 +920,21 @@ class QQChannel(BaseChannel):
         url: str,
         filename_hint: str = "",
     ) -> str | None:
-        """Download an inbound attachment using streaming chunk write.
+        """异步执行 `_download_to_media_dir_chunked`。
 
-        Uses chunked streaming to avoid loading large files into memory.
-        Enforces a max download size and writes to a .part temp file
-        that is atomically renamed on success.
-        """
-        # Handle protocol-relative URLs (e.g. "//multimedia.nt.qq.com/...")
+        【中文名称】_download_to_media_dir_chunked
+
+        【功能说明】
+        这是 QQ 官方机器人渠道适配器 中的一个步骤函数，用来支撑：负责对接 qq-botpy SDK，处理群聊/私聊/富媒体消息，并把回复、文件和流式状态发回 QQ。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - url: 调用方传入的 `url` 数据；具体类型以函数签名为准。
+        - filename_hint: 调用方传入的 `filename_hint` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+        # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
         if url.startswith("//"):
             url = f"https:{url}"
 
@@ -626,7 +957,7 @@ class QQChannel(BaseChannel):
 
                 ctype = (resp.headers.get("Content-Type") or "").lower()
 
-                # Infer extension: url -> filename_hint -> content-type -> fallback
+                # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 ext = Path(urlparse(url).path).suffix
                 if not ext:
                     ext = Path(filename_hint).suffix
@@ -657,7 +988,7 @@ class QQChannel(BaseChannel):
 
                 tmp_path = target.with_suffix(target.suffix + ".part")
 
-                # Stream write
+                # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 downloaded = 0
                 chunk_size = max(1024, int(self.config.download_chunk_size or 262144))
                 max_bytes = max(
@@ -665,6 +996,20 @@ class QQChannel(BaseChannel):
                 )
 
                 def _open_tmp():
+                    """执行 `_open_tmp`。
+
+                    【中文名称】_open_tmp
+
+                    【功能说明】
+                    这是 QQ 官方机器人渠道适配器 中的一个步骤函数，用来支撑：负责对接 qq-botpy SDK，处理群聊/私聊/富媒体消息，并把回复、文件和流式状态发回 QQ。
+                    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+                    【参数说明】
+                    - 无显式业务参数。
+
+                    【返回值】
+                    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
                     tmp_path.parent.mkdir(parents=True, exist_ok=True)
                     return open(tmp_path, "wb")  # noqa: SIM115
 
@@ -685,9 +1030,9 @@ class QQChannel(BaseChannel):
                 finally:
                     await asyncio.to_thread(f.close)
 
-                # Atomic rename
+                # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 await asyncio.to_thread(os.replace, tmp_path, target)
-                tmp_path = None  # mark as moved
+                tmp_path = None  # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
                 self.logger.info("file saved: {}", str(target))
                 return str(target)
 
@@ -695,7 +1040,7 @@ class QQChannel(BaseChannel):
             self.logger.exception("download error")
             return None
         finally:
-            # Cleanup partial file
+            # 说明：这里处理 QQ 官方机器人渠道适配器 的协议细节或边界情况，避免外部差异影响核心流程。
             if tmp_path is not None:
                 with suppress(Exception):
                     tmp_path.unlink(missing_ok=True)

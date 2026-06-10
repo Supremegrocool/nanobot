@@ -1,4 +1,18 @@
-"""Image generation provider helpers."""
+"""图像生成 Provider 实现。
+
+【中文名称】图像生成 Provider 实现
+
+【功能说明】
+负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的模型 Provider代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 from __future__ import annotations
 
@@ -44,12 +58,32 @@ _OLLAMA_ASPECT_RATIO_RE = re.compile(r"^\s*(\d+)\s*:\s*(\d+)\s*$")
 
 
 class ImageGenerationError(RuntimeError):
-    """Raised when the image generation provider cannot return images."""
+    """ImageGenerationError 类。
+
+    【中文名称】ImageGenerationError
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的核心数据结构或服务类。负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
 
 @dataclass(frozen=True)
 class GeneratedImageResponse:
-    """Images and optional text returned by the provider."""
+    """GeneratedImageResponse 类。
+
+    【中文名称】GeneratedImageResponse
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的核心数据结构或服务类。负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     images: list[str]
     content: str
@@ -57,7 +91,19 @@ class GeneratedImageResponse:
 
 
 def _read_image_b64(path: str | Path) -> tuple[str, str]:
-    """Return ``(mime, base64)`` for the image at ``path``."""
+    """执行 `_read_image_b64`。
+
+    【中文名称】_read_image_b64
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     p = Path(path).expanduser()
     raw = p.read_bytes()
     mime = detect_image_mime(raw)
@@ -67,18 +113,56 @@ def _read_image_b64(path: str | Path) -> tuple[str, str]:
 
 
 def image_path_to_data_url(path: str | Path) -> str:
-    """Convert a local image path to an image data URL."""
+    """执行 `image_path_to_data_url`。
+
+    【中文名称】image_path_to_data_url
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     mime, encoded = _read_image_b64(path)
     return f"data:{mime};base64,{encoded}"
 
 
 def image_path_to_inline_data(path: str | Path) -> dict[str, str]:
-    """Convert a local image path to a Gemini ``inlineData`` payload dict."""
+    """执行 `image_path_to_inline_data`。
+
+    【中文名称】image_path_to_inline_data
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     mime, encoded = _read_image_b64(path)
     return {"mimeType": mime, "data": encoded}
 
 
 def _b64_image_data_url(value: str) -> str:
+    """执行 `_b64_image_data_url`。
+
+    【中文名称】_b64_image_data_url
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     encoded = "".join(value.split())
     try:
         raw = base64.b64decode(encoded, validate=True)
@@ -91,13 +175,20 @@ def _b64_image_data_url(value: str) -> str:
 
 
 def _aihubmix_size(aspect_ratio: str | None, image_size: str | None) -> str:
-    """Return an OpenAI Images API size string for AIHubMix.
+    """执行 `_aihubmix_size`。
 
-    The WebUI emits compact size hints like ``1K`` for OpenRouter. AIHubMix's
-    Images API expects OpenAI-style dimensions or ``auto``, so only pass
-    through explicit dimension strings and otherwise derive the closest
-    supported orientation from aspect ratio.
-    """
+    【中文名称】_aihubmix_size
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - aspect_ratio: 调用方传入的 `aspect_ratio` 数据；具体类型以函数签名为准。
+    - image_size: 调用方传入的 `image_size` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if image_size and "x" in image_size.lower():
         return image_size
     if aspect_ratio in _AIHUBMIX_ASPECT_RATIO_SIZES:
@@ -106,6 +197,20 @@ def _aihubmix_size(aspect_ratio: str | None, image_size: str | None) -> str:
 
 
 def _aihubmix_model_path(model: str) -> str:
+    """执行 `_aihubmix_model_path`。
+
+    【中文名称】_aihubmix_model_path
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     if "/" in model:
         return model
     if model.startswith(("gpt-image-", "dall-e-")):
@@ -117,6 +222,21 @@ async def _download_image_data_url(
     client: httpx.AsyncClient,
     url: str,
 ) -> str:
+    """异步执行 `_download_image_data_url`。
+
+    【中文名称】_download_image_data_url
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - client: 调用方传入的 `client` 数据；具体类型以函数签名为准。
+    - url: 调用方传入的 `url` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     response = await client.get(url)
     try:
         response.raise_for_status()
@@ -131,19 +251,27 @@ async def _download_image_data_url(
     return f"data:{mime};base64,{encoded}"
 
 
-# ---------------------------------------------------------------------------
-# Registry
-# ---------------------------------------------------------------------------
+# 说明：这里处理 图像生成 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 图像生成 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 图像生成 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
 
 _IMAGE_GEN_PROVIDERS: dict[str, type[ImageGenerationProvider]] = {}
 
 
 def register_image_gen_provider(cls: type[ImageGenerationProvider]) -> None:
-    """Register an image provider at import time only.
+    """执行 `register_image_gen_provider`。
 
-    The registry is populated by module side effects so provider discovery
-    stays lazy and consistent across the process.
-    """
+    【中文名称】register_image_gen_provider
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - 无显式业务参数。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     name = cls.provider_name
     if not name:
         raise ValueError(f"{cls.__name__} must set provider_name")
@@ -151,15 +279,55 @@ def register_image_gen_provider(cls: type[ImageGenerationProvider]) -> None:
 
 
 def get_image_gen_provider(name: str) -> type[ImageGenerationProvider] | None:
+    """执行 `get_image_gen_provider`。
+
+    【中文名称】get_image_gen_provider
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - name: 调用方传入的 `name` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     return _IMAGE_GEN_PROVIDERS.get(name)
 
 
 def image_gen_provider_names() -> tuple[str, ...]:
-    """Return registered image generation provider names in registry order."""
+    """执行 `image_gen_provider_names`。
+
+    【中文名称】image_gen_provider_names
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - 无显式业务参数。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     return tuple(_IMAGE_GEN_PROVIDERS)
 
 
 def image_gen_provider_configs(config: Any) -> dict[str, Any]:
+    """执行 `image_gen_provider_configs`。
+
+    【中文名称】image_gen_provider_configs
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - config: 调用方传入的 `config` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     providers_cfg = config.providers
     return {
         name: pc
@@ -168,13 +336,23 @@ def image_gen_provider_configs(config: Any) -> dict[str, Any]:
     }
 
 
-# ---------------------------------------------------------------------------
-# Base class
-# ---------------------------------------------------------------------------
+# 说明：这里处理 图像生成 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 图像生成 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 图像生成 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
 
 
 class ImageGenerationProvider(ABC):
-    """Base class for image generation provider clients."""
+    """ImageGenerationProvider 类。
+
+    【中文名称】ImageGenerationProvider
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的核心数据结构或服务类。负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     provider_name: str = ""
     missing_key_message: str = ""
@@ -190,6 +368,25 @@ class ImageGenerationProvider(ABC):
         timeout: float | None = None,
         client: httpx.AsyncClient | None = None,
     ) -> None:
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - api_key: 调用方传入的 `api_key` 数据；具体类型以函数签名为准。
+        - api_base: 调用方传入的 `api_base` 数据；具体类型以函数签名为准。
+        - extra_headers: 调用方传入的 `extra_headers` 数据；具体类型以函数签名为准。
+        - extra_body: 调用方传入的 `extra_body` 数据；具体类型以函数签名为准。
+        - timeout: 调用方传入的 `timeout` 数据；具体类型以函数签名为准。
+        - client: 调用方传入的 `client` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self.api_key = api_key
         self.api_base = self._resolve_base_url(api_base)
         self.extra_headers = extra_headers or {}
@@ -198,6 +395,20 @@ class ImageGenerationProvider(ABC):
         self._client = client
 
     def _resolve_base_url(self, api_base: str | None) -> str:
+        """执行 `_resolve_base_url`。
+
+        【中文名称】_resolve_base_url
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - api_base: 调用方传入的 `api_base` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if api_base:
             return api_base.rstrip("/")
         spec = find_by_name(self.provider_name)
@@ -206,6 +417,20 @@ class ImageGenerationProvider(ABC):
         return self._default_base_url()
 
     def _default_base_url(self) -> str:
+        """执行 `_default_base_url`。
+
+        【中文名称】_default_base_url
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return ""
 
     @abstractmethod
@@ -217,9 +442,42 @@ class ImageGenerationProvider(ABC):
         reference_images: list[str] | None = None,
         aspect_ratio: str | None = None,
         image_size: str | None = None,
-    ) -> GeneratedImageResponse: ...
+    ) -> GeneratedImageResponse:
+        """异步执行 `generate`。
+
+        【中文名称】generate
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - prompt: 调用方传入的 `prompt` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - reference_images: 调用方传入的 `reference_images` 数据；具体类型以函数签名为准。
+        - aspect_ratio: 调用方传入的 `aspect_ratio` 数据；具体类型以函数签名为准。
+        - image_size: 调用方传入的 `image_size` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+        ...
 
     def _require_images(self, images: list[str], data: dict[str, Any]) -> None:
+        """执行 `_require_images`。
+
+        【中文名称】_require_images
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - images: 调用方传入的 `images` 数据；具体类型以函数签名为准。
+        - data: 调用方传入的 `data` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if images:
             return
         provider_error = data.get("error") if isinstance(data, dict) else None
@@ -236,6 +494,23 @@ class ImageGenerationProvider(ABC):
         body: dict[str, Any],
         client: httpx.AsyncClient | None = None,
     ) -> httpx.Response:
+        """异步执行 `_http_post`。
+
+        【中文名称】_http_post
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - url: 调用方传入的 `url` 数据；具体类型以函数签名为准。
+        - headers: 调用方传入的 `headers` 数据；具体类型以函数签名为准。
+        - body: 调用方传入的 `body` 数据；具体类型以函数签名为准。
+        - client: 调用方传入的 `client` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if client is not None:
             return await client.post(url, headers=headers, json=body)
         if self._client is not None:
@@ -245,7 +520,17 @@ class ImageGenerationProvider(ABC):
 
 
 class OpenRouterImageGenerationClient(ImageGenerationProvider):
-    """Small async client for OpenRouter Chat Completions image generation."""
+    """OpenRouterImageGenerationClient 类。
+
+    【中文名称】OpenRouterImageGenerationClient
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的核心数据结构或服务类。负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     provider_name = "openrouter"
     missing_key_message = (
@@ -253,6 +538,20 @@ class OpenRouterImageGenerationClient(ImageGenerationProvider):
     )
 
     def _default_base_url(self) -> str:
+        """执行 `_default_base_url`。
+
+        【中文名称】_default_base_url
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return "https://openrouter.ai/api/v1"
 
     async def generate(
@@ -264,6 +563,24 @@ class OpenRouterImageGenerationClient(ImageGenerationProvider):
         aspect_ratio: str | None = None,
         image_size: str | None = None,
     ) -> GeneratedImageResponse:
+        """异步执行 `generate`。
+
+        【中文名称】generate
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - prompt: 调用方传入的 `prompt` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - reference_images: 调用方传入的 `reference_images` 数据；具体类型以函数签名为准。
+        - aspect_ratio: 调用方传入的 `aspect_ratio` 数据；具体类型以函数签名为准。
+        - image_size: 调用方传入的 `image_size` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self.api_key:
             raise ImageGenerationError(self.missing_key_message)
 
@@ -336,7 +653,17 @@ class OpenRouterImageGenerationClient(ImageGenerationProvider):
 
 
 class AIHubMixImageGenerationClient(ImageGenerationProvider):
-    """Small async client for AIHubMix unified image generation."""
+    """AIHubMixImageGenerationClient 类。
+
+    【中文名称】AIHubMixImageGenerationClient
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的核心数据结构或服务类。负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     provider_name = "aihubmix"
     missing_key_message = (
@@ -345,6 +672,20 @@ class AIHubMixImageGenerationClient(ImageGenerationProvider):
     default_timeout = _AIHUBMIX_TIMEOUT_S
 
     def _default_base_url(self) -> str:
+        """执行 `_default_base_url`。
+
+        【中文名称】_default_base_url
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return "https://aihubmix.com/v1"
 
     async def generate(
@@ -356,6 +697,24 @@ class AIHubMixImageGenerationClient(ImageGenerationProvider):
         aspect_ratio: str | None = None,
         image_size: str | None = None,
     ) -> GeneratedImageResponse:
+        """异步执行 `generate`。
+
+        【中文名称】generate
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - prompt: 调用方传入的 `prompt` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - reference_images: 调用方传入的 `reference_images` 数据；具体类型以函数签名为准。
+        - aspect_ratio: 调用方传入的 `aspect_ratio` 数据；具体类型以函数签名为准。
+        - image_size: 调用方传入的 `image_size` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self.api_key:
             raise ImageGenerationError(self.missing_key_message)
 
@@ -390,6 +749,25 @@ class AIHubMixImageGenerationClient(ImageGenerationProvider):
         size: str,
         headers: dict[str, str],
     ) -> GeneratedImageResponse:
+        """异步执行 `_generate_with_client`。
+
+        【中文名称】_generate_with_client
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - client: 调用方传入的 `client` 数据；具体类型以函数签名为准。
+        - prompt: 调用方传入的 `prompt` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - reference_images: 调用方传入的 `reference_images` 数据；具体类型以函数签名为准。
+        - size: 调用方传入的 `size` 数据；具体类型以函数签名为准。
+        - headers: 调用方传入的 `headers` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         image_input: str | list[str] | None = None
         if reference_images:
             image_refs = [image_path_to_data_url(path) for path in reference_images]
@@ -434,7 +812,19 @@ class AIHubMixImageGenerationClient(ImageGenerationProvider):
 
 
 def _http_error_detail(response: httpx.Response) -> str:
-    """Extract a readable error message from an HTTP error response."""
+    """执行 `_http_error_detail`。
+
+    【中文名称】_http_error_detail
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - response: 调用方传入的 `response` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     try:
         data = response.json()
         if isinstance(data, dict):
@@ -449,11 +839,41 @@ def _http_error_detail(response: httpx.Response) -> str:
 
 
 def _round_to_multiple(value: float, multiple: int = 8) -> int:
+    """执行 `_round_to_multiple`。
+
+    【中文名称】_round_to_multiple
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+    - multiple: 调用方传入的 `multiple` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     rounded = int(round(value / multiple) * multiple)
     return max(multiple, rounded)
 
 
 def _ollama_dimensions(aspect_ratio: str | None, image_size: str | None) -> tuple[int, int]:
+    """执行 `_ollama_dimensions`。
+
+    【中文名称】_ollama_dimensions
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - aspect_ratio: 调用方传入的 `aspect_ratio` 数据；具体类型以函数签名为准。
+    - image_size: 调用方传入的 `image_size` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     if image_size:
         size = image_size.strip()
         explicit = _OLLAMA_EXPLICIT_SIZE_RE.fullmatch(size)
@@ -485,15 +905,57 @@ def _ollama_dimensions(aspect_ratio: str | None, image_size: str | None) -> tupl
 
 
 def _ollama_image_data_url(value: str) -> str:
+    """执行 `_ollama_image_data_url`。
+
+    【中文名称】_ollama_image_data_url
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     if value.startswith("data:image/"):
         return value
     return _b64_image_data_url(value)
 
 
 def _ollama_images_from_payload(payload: dict[str, Any]) -> list[str]:
+    """执行 `_ollama_images_from_payload`。
+
+    【中文名称】_ollama_images_from_payload
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - payload: 调用方传入的 `payload` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     images: list[str] = []
 
     def collect(value: Any) -> None:
+        """执行 `collect`。
+
+        【中文名称】collect
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if isinstance(value, str) and value:
             images.append(_ollama_image_data_url(value))
         elif isinstance(value, list):
@@ -506,15 +968,53 @@ def _ollama_images_from_payload(payload: dict[str, Any]) -> list[str]:
 
 
 class OllamaImageGenerationClient(ImageGenerationProvider):
-    """Async client for Ollama native image generation models."""
+    """OllamaImageGenerationClient 类。
+
+    【中文名称】OllamaImageGenerationClient
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的核心数据结构或服务类。负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     provider_name = "ollama"
     default_timeout = 300.0
 
     def _default_base_url(self) -> str:
+        """执行 `_default_base_url`。
+
+        【中文名称】_default_base_url
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return "http://localhost:11434/api"
 
     def _resolve_base_url(self, api_base: str | None) -> str:
+        """执行 `_resolve_base_url`。
+
+        【中文名称】_resolve_base_url
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - api_base: 调用方传入的 `api_base` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if api_base:
             base = api_base.rstrip("/")
             if base.endswith("/v1"):
@@ -531,6 +1031,24 @@ class OllamaImageGenerationClient(ImageGenerationProvider):
         aspect_ratio: str | None = None,
         image_size: str | None = None,
     ) -> GeneratedImageResponse:
+        """异步执行 `generate`。
+
+        【中文名称】generate
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - prompt: 调用方传入的 `prompt` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - reference_images: 调用方传入的 `reference_images` 数据；具体类型以函数签名为准。
+        - aspect_ratio: 调用方传入的 `aspect_ratio` 数据；具体类型以函数签名为准。
+        - image_size: 调用方传入的 `image_size` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if reference_images:
             raise ImageGenerationError(
                 "Ollama image generation does not support reference images"
@@ -582,7 +1100,17 @@ class OllamaImageGenerationClient(ImageGenerationProvider):
 
 
 class GeminiImageGenerationClient(ImageGenerationProvider):
-    """Async client for Gemini/Imagen image generation via the Generative Language API."""
+    """GeminiImageGenerationClient 类。
+
+    【中文名称】GeminiImageGenerationClient
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的核心数据结构或服务类。负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     provider_name = "gemini"
     missing_key_message = (
@@ -591,12 +1119,40 @@ class GeminiImageGenerationClient(ImageGenerationProvider):
     default_timeout = _GEMINI_DEFAULT_TIMEOUT_S
 
     def _default_base_url(self) -> str:
+        """执行 `_default_base_url`。
+
+        【中文名称】_default_base_url
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return "https://generativelanguage.googleapis.com/v1beta"
 
     def _resolve_base_url(self, api_base: str | None) -> str:
-        # Gemini chat completions use the registry's OpenAI-compatible shim.
-        # Image generation must hit the native Generative Language API, so we
-        # intentionally bypass the shared registry lookup here.
+        # 说明：这里处理 图像生成 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 图像生成 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+        # 说明：这里处理 图像生成 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+        """执行 `_resolve_base_url`。
+
+        【中文名称】_resolve_base_url
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - api_base: 调用方传入的 `api_base` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if api_base:
             return api_base.rstrip("/")
         return self._default_base_url()
@@ -610,6 +1166,24 @@ class GeminiImageGenerationClient(ImageGenerationProvider):
         aspect_ratio: str | None = None,
         image_size: str | None = None,
     ) -> GeneratedImageResponse:
+        """异步执行 `generate`。
+
+        【中文名称】generate
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - prompt: 调用方传入的 `prompt` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - reference_images: 调用方传入的 `reference_images` 数据；具体类型以函数签名为准。
+        - aspect_ratio: 调用方传入的 `aspect_ratio` 数据；具体类型以函数签名为准。
+        - image_size: 调用方传入的 `image_size` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self.api_key:
             raise ImageGenerationError(self.missing_key_message)
         if "imagen" in model.lower():
@@ -634,6 +1208,22 @@ class GeminiImageGenerationClient(ImageGenerationProvider):
         model: str,
         aspect_ratio: str | None,
     ) -> GeneratedImageResponse:
+        """异步执行 `_generate_imagen`。
+
+        【中文名称】_generate_imagen
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - prompt: 调用方传入的 `prompt` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - aspect_ratio: 调用方传入的 `aspect_ratio` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         parameters: dict[str, Any] = {"sampleCount": 1}
         if aspect_ratio in _GEMINI_IMAGEN_ASPECT_RATIOS:
             parameters["aspectRatio"] = aspect_ratio
@@ -681,6 +1271,22 @@ class GeminiImageGenerationClient(ImageGenerationProvider):
         model: str,
         reference_images: list[str],
     ) -> GeneratedImageResponse:
+        """异步执行 `_generate_gemini_flash`。
+
+        【中文名称】_generate_gemini_flash
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - prompt: 调用方传入的 `prompt` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - reference_images: 调用方传入的 `reference_images` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         parts: list[dict[str, Any]] = [
             {"inlineData": image_path_to_inline_data(path)} for path in reference_images
         ]
@@ -741,6 +1347,21 @@ async def _aihubmix_images_from_payload(
     client: httpx.AsyncClient,
     payload: dict[str, Any],
 ) -> list[str]:
+    """异步执行 `_aihubmix_images_from_payload`。
+
+    【中文名称】_aihubmix_images_from_payload
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - client: 调用方传入的 `client` 数据；具体类型以函数签名为准。
+    - payload: 调用方传入的 `payload` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     images: list[str] = []
     candidates: list[Any] = []
     if "data" in payload:
@@ -749,6 +1370,20 @@ async def _aihubmix_images_from_payload(
         candidates.append(payload["output"])
 
     async def collect(value: Any) -> None:
+        """异步执行 `collect`。
+
+        【中文名称】collect
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - value: 调用方传入的 `value` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if isinstance(value, list):
             for item in value:
                 await collect(item)
@@ -806,7 +1441,17 @@ _MINIMAX_ASPECT_RATIO_SIZES = {
 
 
 class MiniMaxImageGenerationClient(ImageGenerationProvider):
-    """Async client for MiniMax image generation API."""
+    """MiniMaxImageGenerationClient 类。
+
+    【中文名称】MiniMaxImageGenerationClient
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的核心数据结构或服务类。负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     provider_name = "minimax"
     missing_key_message = (
@@ -815,9 +1460,37 @@ class MiniMaxImageGenerationClient(ImageGenerationProvider):
     default_timeout = _MINIMAX_TIMEOUT_S
 
     def _default_base_url(self) -> str:
+        """执行 `_default_base_url`。
+
+        【中文名称】_default_base_url
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return "https://api.minimaxi.com/v1"
 
     def _resolve_aspect_ratio(self, aspect_ratio: str | None) -> str:
+        """执行 `_resolve_aspect_ratio`。
+
+        【中文名称】_resolve_aspect_ratio
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - aspect_ratio: 调用方传入的 `aspect_ratio` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if aspect_ratio and aspect_ratio in _MINIMAX_ASPECT_RATIO_SIZES:
             return _MINIMAX_ASPECT_RATIO_SIZES[aspect_ratio]
         return "1:1"
@@ -831,6 +1504,24 @@ class MiniMaxImageGenerationClient(ImageGenerationProvider):
         aspect_ratio: str | None = None,
         image_size: str | None = None,
     ) -> GeneratedImageResponse:
+        """异步执行 `generate`。
+
+        【中文名称】generate
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - prompt: 调用方传入的 `prompt` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - reference_images: 调用方传入的 `reference_images` 数据；具体类型以函数签名为准。
+        - aspect_ratio: 调用方传入的 `aspect_ratio` 数据；具体类型以函数签名为准。
+        - image_size: 调用方传入的 `image_size` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self.api_key:
             raise ImageGenerationError(self.missing_key_message)
 
@@ -865,6 +1556,21 @@ class MiniMaxImageGenerationClient(ImageGenerationProvider):
         body: dict[str, Any],
         headers: dict[str, str],
     ) -> GeneratedImageResponse:
+        """异步执行 `_generate_with_client`。
+
+        【中文名称】_generate_with_client
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - body: 调用方传入的 `body` 数据；具体类型以函数签名为准。
+        - headers: 调用方传入的 `headers` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         url = f"{self.api_base}/image_generation"
         try:
             response = await self._http_post(url, headers=headers, body=body)
@@ -888,10 +1594,19 @@ class MiniMaxImageGenerationClient(ImageGenerationProvider):
 
 
 def _minimax_images_from_payload(payload: dict[str, Any]) -> list[str]:
-    """Extract base64 images from MiniMax API response.
+    """执行 `_minimax_images_from_payload`。
 
-    MiniMax returns images in ``data.image_base64`` (list of base64 strings).
-    """
+    【中文名称】_minimax_images_from_payload
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - payload: 调用方传入的 `payload` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     images: list[str] = []
     data = payload.get("data")
     if not isinstance(data, dict):
@@ -902,9 +1617,9 @@ def _minimax_images_from_payload(payload: dict[str, Any]) -> list[str]:
     return images
 
 
-# ---------------------------------------------------------------------------
-# OpenAI image generation
-# ---------------------------------------------------------------------------
+# 说明：这里处理 图像生成 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 图像生成 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 图像生成 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
 
 _OPENAI_DALLE2_SUPPORTED_SIZES = {"256x256", "512x512", "1024x1024"}
 _OPENAI_DALLE3_SUPPORTED_SIZES = {"1024x1024", "1792x1024", "1024x1792"}
@@ -938,7 +1653,17 @@ _OPENAI_GPT_IMAGE_ASPECT_RATIO_SIZES = {
 
 
 class OpenAIImageGenerationClient(ImageGenerationProvider):
-    """OpenAI Images API using an API key (``providers.openai.apiKey``)."""
+    """OpenAIImageGenerationClient 类。
+
+    【中文名称】OpenAIImageGenerationClient
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的核心数据结构或服务类。负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     provider_name = "openai"
     missing_key_message = (
@@ -946,11 +1671,37 @@ class OpenAIImageGenerationClient(ImageGenerationProvider):
     )
 
     def _default_base_url(self) -> str:
+        """执行 `_default_base_url`。
+
+        【中文名称】_default_base_url
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return "https://api.openai.com/v1"
 
     @staticmethod
     def _strip_model_prefix(model: str) -> str:
-        """Remove ``openai/`` prefix if present (OpenRouter convention)."""
+        """执行 `_strip_model_prefix`。
+
+        【中文名称】_strip_model_prefix
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if model.startswith("openai/") or model.startswith("openai_codex/"):
             return model.split("/", 1)[1]
         return model
@@ -964,6 +1715,24 @@ class OpenAIImageGenerationClient(ImageGenerationProvider):
         aspect_ratio: str | None = None,
         image_size: str | None = None,
     ) -> GeneratedImageResponse:
+        """异步执行 `generate`。
+
+        【中文名称】generate
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - prompt: 调用方传入的 `prompt` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - reference_images: 调用方传入的 `reference_images` 数据；具体类型以函数签名为准。
+        - aspect_ratio: 调用方传入的 `aspect_ratio` 数据；具体类型以函数签名为准。
+        - image_size: 调用方传入的 `image_size` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self.api_key:
             raise ImageGenerationError(self.missing_key_message)
 
@@ -996,7 +1765,7 @@ class OpenAIImageGenerationClient(ImageGenerationProvider):
             body["size"] = size
 
         body.update(self.extra_body)
-        # Drop null-valued params so extraBody can opt out of defaults like response_format.
+        # 说明：这里处理 图像生成 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
         body = {key: value for key, value in body.items() if value is not None}
 
         logger.info("OpenAI Images API request: POST {}/images/generations body={}", self.api_base, body)
@@ -1036,7 +1805,17 @@ class OpenAIImageGenerationClient(ImageGenerationProvider):
 
 
 class CustomImageGenerationClient(ImageGenerationProvider):
-    """OpenAI-compatible Images API for user-configured custom providers."""
+    """CustomImageGenerationClient 类。
+
+    【中文名称】CustomImageGenerationClient
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的核心数据结构或服务类。负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     provider_name = "custom"
     missing_base_message = (
@@ -1044,10 +1823,39 @@ class CustomImageGenerationClient(ImageGenerationProvider):
     )
 
     def _default_base_url(self) -> str:
+        """执行 `_default_base_url`。
+
+        【中文名称】_default_base_url
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return ""
 
     @staticmethod
     def _custom_size(aspect_ratio: str | None, image_size: str | None) -> str:
+        """执行 `_custom_size`。
+
+        【中文名称】_custom_size
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - aspect_ratio: 调用方传入的 `aspect_ratio` 数据；具体类型以函数签名为准。
+        - image_size: 调用方传入的 `image_size` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if image_size:
             requested = image_size.strip()
             if requested:
@@ -1065,6 +1873,24 @@ class CustomImageGenerationClient(ImageGenerationProvider):
         aspect_ratio: str | None = None,
         image_size: str | None = None,
     ) -> GeneratedImageResponse:
+        """异步执行 `generate`。
+
+        【中文名称】generate
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - prompt: 调用方传入的 `prompt` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - reference_images: 调用方传入的 `reference_images` 数据；具体类型以函数签名为准。
+        - aspect_ratio: 调用方传入的 `aspect_ratio` 数据；具体类型以函数签名为准。
+        - image_size: 调用方传入的 `image_size` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self.api_base:
             raise ImageGenerationError(self.missing_base_message)
 
@@ -1128,18 +1954,23 @@ class CustomImageGenerationClient(ImageGenerationProvider):
         return GeneratedImageResponse(images=images, content="", raw=payload)
 
 
-# ---------------------------------------------------------------------------
-# OpenAI Codex image generation
-# ---------------------------------------------------------------------------
+# 说明：这里处理 图像生成 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 图像生成 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 图像生成 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
 
 
 class CodexImageGenerationClient(ImageGenerationProvider):
-    """OpenAI image generation via Codex subscription OAuth.
+    """CodexImageGenerationClient 类。
 
-    Uses the Codex Responses API with the ``image_generation`` tool
-    (the same mechanism ChatGPT uses internally).  No API key required —
-    the Codex OAuth token from ``oauth_cli_kit`` is used instead.
-    """
+    【中文名称】CodexImageGenerationClient
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的核心数据结构或服务类。负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     provider_name = "openai_codex"
     missing_key_message = (
@@ -1148,10 +1979,36 @@ class CodexImageGenerationClient(ImageGenerationProvider):
     )
 
     def _default_base_url(self) -> str:
+        """执行 `_default_base_url`。
+
+        【中文名称】_default_base_url
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return "https://chatgpt.com/backend-api"
 
     def _codex_model(self, model: str) -> str:
-        """Strip the ``openai-codex/`` prefix if present."""
+        """执行 `_codex_model`。
+
+        【中文名称】_codex_model
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         if model.startswith(("openai-codex/", "openai_codex/")):
             return model.split("/", 1)[1]
         return model
@@ -1165,6 +2022,24 @@ class CodexImageGenerationClient(ImageGenerationProvider):
         aspect_ratio: str | None = None,
         image_size: str | None = None,
     ) -> GeneratedImageResponse:
+        """异步执行 `generate`。
+
+        【中文名称】generate
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - prompt: 调用方传入的 `prompt` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - reference_images: 调用方传入的 `reference_images` 数据；具体类型以函数签名为准。
+        - aspect_ratio: 调用方传入的 `aspect_ratio` 数据；具体类型以函数签名为准。
+        - image_size: 调用方传入的 `image_size` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         try:
             from oauth_cli_kit import get_token as get_codex_token
         except ImportError:
@@ -1241,7 +2116,21 @@ def _openai_size(
     aspect_ratio: str | None,
     image_size: str | None,
 ) -> str:
-    """Resolve aspect ratio or image_size to an OpenAI Images API size string."""
+    """执行 `_openai_size`。
+
+    【中文名称】_openai_size
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+    - aspect_ratio: 调用方传入的 `aspect_ratio` 数据；具体类型以函数签名为准。
+    - image_size: 调用方传入的 `image_size` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     sizes, supported_sizes = _openai_size_options(model)
     explicit_size = _normalize_openai_image_size(image_size)
     if explicit_size and _openai_explicit_size_supported(
@@ -1261,11 +2150,39 @@ def _openai_size(
 
 
 def _openai_is_gpt_image_model(model: str) -> bool:
+    """执行 `_openai_is_gpt_image_model`。
+
+    【中文名称】_openai_is_gpt_image_model
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     normalized = model.lower()
     return normalized.startswith(("gpt-image", "chatgpt-image"))
 
 
 def _openai_size_options(model: str) -> tuple[dict[str, str], set[str] | None]:
+    """执行 `_openai_size_options`。
+
+    【中文名称】_openai_size_options
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     normalized = model.lower()
     if normalized.startswith("dall-e-2"):
         return _OPENAI_DALLE2_ASPECT_RATIO_SIZES, _OPENAI_DALLE2_SUPPORTED_SIZES
@@ -1277,6 +2194,20 @@ def _openai_size_options(model: str) -> tuple[dict[str, str], set[str] | None]:
 
 
 def _normalize_openai_image_size(image_size: str | None) -> str | None:
+    """执行 `_normalize_openai_image_size`。
+
+    【中文名称】_normalize_openai_image_size
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - image_size: 调用方传入的 `image_size` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     if not image_size:
         return None
     normalized = image_size.strip().lower()
@@ -1288,6 +2219,21 @@ def _openai_explicit_size_supported(
     *,
     supported_sizes: set[str] | None,
 ) -> bool:
+    """执行 `_openai_explicit_size_supported`。
+
+    【中文名称】_openai_explicit_size_supported
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - size: 调用方传入的 `size` 数据；具体类型以函数签名为准。
+    - supported_sizes: 调用方传入的 `supported_sizes` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     if supported_sizes is not None:
         return size in supported_sizes
     width, sep, height = size.partition("x")
@@ -1298,10 +2244,20 @@ async def _openai_images_from_payload(
     client: httpx.AsyncClient,
     payload: dict[str, Any],
 ) -> list[str]:
-    """Extract images from OpenAI Images API response.
+    """异步执行 `_openai_images_from_payload`。
 
-    Handles both ``b64_json`` (preferred) and ``url`` (downloaded) formats.
-    """
+    【中文名称】_openai_images_from_payload
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - client: 调用方传入的 `client` 数据；具体类型以函数签名为准。
+    - payload: 调用方传入的 `payload` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     images: list[str] = []
     for item in payload.get("data") or []:
         if not isinstance(item, dict):
@@ -1317,7 +2273,19 @@ async def _openai_images_from_payload(
 
 
 def _codex_responses_images_from_payload(payload: dict[str, Any]) -> list[str]:
-    """Extract images from Codex Responses API ``image_generation_call`` output."""
+    """执行 `_codex_responses_images_from_payload`。
+
+    【中文名称】_codex_responses_images_from_payload
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - payload: 调用方传入的 `payload` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     images: list[str] = []
     for item in payload.get("output") or []:
         if not isinstance(item, dict):
@@ -1338,10 +2306,19 @@ def _codex_responses_images_from_payload(payload: dict[str, Any]) -> list[str]:
 async def _parse_codex_sse_images(
     response: httpx.Response,
 ) -> tuple[list[str], str]:
-    """Parse a Codex Responses API SSE stream for image generation output.
+    """异步执行 `_parse_codex_sse_images`。
 
-    Returns ``(images, content_text)``.
-    """
+    【中文名称】_parse_codex_sse_images
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - response: 调用方传入的 `response` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     import json as _json
 
     images: list[str] = []
@@ -1373,7 +2350,7 @@ async def _parse_codex_sse_images(
             continue
         buffer.append(line)
 
-    # flush remaining
+    # 说明：这里处理 图像生成 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
     if buffer:
         data_lines = [bl[5:].strip() for bl in buffer if bl.startswith("data:")]
         raw = "".join(data_lines)
@@ -1390,6 +2367,21 @@ async def _parse_codex_sse_images(
 
 
 def _collect_images_from_sse_event(event: dict[str, Any], images: list[str]) -> None:
+    """执行 `_collect_images_from_sse_event`。
+
+    【中文名称】_collect_images_from_sse_event
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - event: 调用方传入的 `event` 数据；具体类型以函数签名为准。
+    - images: 调用方传入的 `images` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     if event.get("type") != "response.output_item.done":
         return
     item = event.get("item") or {}
@@ -1411,15 +2403,30 @@ def _collect_images_from_sse_event(event: dict[str, Any], images: list[str]) -> 
 
 
 def _collect_text_from_sse_event(event: dict[str, Any], text_parts: list[str]) -> None:
+    """执行 `_collect_text_from_sse_event`。
+
+    【中文名称】_collect_text_from_sse_event
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - event: 调用方传入的 `event` 数据；具体类型以函数签名为准。
+    - text_parts: 调用方传入的 `text_parts` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     if event.get("type") == "response.output_text.delta":
         delta = event.get("delta")
         if isinstance(delta, str) and delta:
             text_parts.append(delta)
 
 
-# ---------------------------------------------------------------------------
-# StepFun (阶跃星辰) image generation
-# ---------------------------------------------------------------------------
+# 说明：这里处理 图像生成 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 图像生成 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 图像生成 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
 
 _STEPFUN_ASPECT_RATIO_SIZES = {
     "1:1": "1024x1024",
@@ -1431,12 +2438,17 @@ _STEPFUN_ASPECT_RATIO_SIZES = {
 
 
 class StepFunImageGenerationClient(ImageGenerationProvider):
-    """Async client for StepFun (阶跃星辰) image generation.
+    """StepFunImageGenerationClient 类。
 
-    Supports:
-    - Text-to-image via step-image-edit-2 (default model)
-    - Reference-image-guided generation via style_reference (step-1x-medium)
-    """
+    【中文名称】StepFunImageGenerationClient
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的核心数据结构或服务类。负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     provider_name = "stepfun"
     missing_key_message = (
@@ -1445,6 +2457,20 @@ class StepFunImageGenerationClient(ImageGenerationProvider):
     default_timeout = 120.0
 
     def _default_base_url(self) -> str:
+        """执行 `_default_base_url`。
+
+        【中文名称】_default_base_url
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return "https://api.stepfun.com/v1"
 
     async def generate(
@@ -1456,6 +2482,24 @@ class StepFunImageGenerationClient(ImageGenerationProvider):
         aspect_ratio: str | None = None,
         image_size: str | None = None,
     ) -> GeneratedImageResponse:
+        """异步执行 `generate`。
+
+        【中文名称】generate
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - prompt: 调用方传入的 `prompt` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - reference_images: 调用方传入的 `reference_images` 数据；具体类型以函数签名为准。
+        - aspect_ratio: 调用方传入的 `aspect_ratio` 数据；具体类型以函数签名为准。
+        - image_size: 调用方传入的 `image_size` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self.api_key:
             raise ImageGenerationError(self.missing_key_message)
 
@@ -1472,12 +2516,12 @@ class StepFunImageGenerationClient(ImageGenerationProvider):
             "n": 1,
         }
 
-        # Map aspect ratio / image_size to StepFun size string
+        # 说明：这里处理 图像生成 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
         size = _stepfun_size(aspect_ratio, image_size)
         if size:
             body["size"] = size
 
-        # step-1x-medium supports style_reference for reference-image-guided generation
+        # 说明：这里处理 图像生成 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
         refs = list(reference_images or [])
         if refs and "1x" in model:
             body["style_reference"] = {
@@ -1512,12 +2556,20 @@ def _stepfun_size(
     aspect_ratio: str | None,
     image_size: str | None,
 ) -> str:
-    """Resolve aspect ratio / image_size to StepFun size string.
+    """执行 `_stepfun_size`。
 
-    StepFun expects ``WIDTHxHEIGHT`` (note: width x height, not the more
-    common ``HxW`` order used by other providers).  The accepted sizes are
-    ``1024x1024``, ``768x1360``, ``896x1184``, ``1360x768``, ``1184x896``.
-    """
+    【中文名称】_stepfun_size
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - aspect_ratio: 调用方传入的 `aspect_ratio` 数据；具体类型以函数签名为准。
+    - image_size: 调用方传入的 `image_size` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if image_size and "x" in image_size.lower():
         return image_size
     if aspect_ratio and aspect_ratio in _STEPFUN_ASPECT_RATIO_SIZES:
@@ -1526,10 +2578,19 @@ def _stepfun_size(
 
 
 def _stepfun_images_from_payload(payload: dict[str, Any]) -> list[str]:
-    """Extract base64 images from StepFun API response.
+    """执行 `_stepfun_images_from_payload`。
 
-    StepFun returns images in ``data[].b64_json`` (base64 strings).
-    """
+    【中文名称】_stepfun_images_from_payload
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - payload: 调用方传入的 `payload` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     images: list[str] = []
     for item in payload.get("data") or []:
         if not isinstance(item, dict):
@@ -1540,9 +2601,9 @@ def _stepfun_images_from_payload(payload: dict[str, Any]) -> list[str]:
     return images
 
 
-# ---------------------------------------------------------------------------
-# Zhipu (智谱) image generation
-# ---------------------------------------------------------------------------
+# 说明：这里处理 图像生成 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 图像生成 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 图像生成 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
 
 _ZHIPU_TIMEOUT_S = 300.0
 
@@ -1556,19 +2617,37 @@ _ZHIPU_ASPECT_RATIO_SIZES = {
 
 
 class ZhipuImageGenerationClient(ImageGenerationProvider):
-    """Async client for Zhipu (智谱) image generation API.
+    """ZhipuImageGenerationClient 类。
 
-    Supports:
-    - Text-to-image via glm-image, cogview-4, cogview-3-flash, etc.
-    - Aspect ratio selection
-    - Watermark control
-    """
+    【中文名称】ZhipuImageGenerationClient
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的核心数据结构或服务类。负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     provider_name = "zhipu"
     missing_key_message = "Zhipu API key is not configured. Set providers.zhipu.apiKey."
     default_timeout = _ZHIPU_TIMEOUT_S
 
     def _default_base_url(self) -> str:
+        """执行 `_default_base_url`。
+
+        【中文名称】_default_base_url
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return "https://open.bigmodel.cn/api/paas/v4"
 
     async def generate(
@@ -1580,6 +2659,24 @@ class ZhipuImageGenerationClient(ImageGenerationProvider):
         aspect_ratio: str | None = None,
         image_size: str | None = None,
     ) -> GeneratedImageResponse:
+        """异步执行 `generate`。
+
+        【中文名称】generate
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - prompt: 调用方传入的 `prompt` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - reference_images: 调用方传入的 `reference_images` 数据；具体类型以函数签名为准。
+        - aspect_ratio: 调用方传入的 `aspect_ratio` 数据；具体类型以函数签名为准。
+        - image_size: 调用方传入的 `image_size` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         if not self.api_key:
             raise ImageGenerationError(self.missing_key_message)
 
@@ -1627,6 +2724,23 @@ class ZhipuImageGenerationClient(ImageGenerationProvider):
         body: dict[str, Any],
         url: str,
     ) -> GeneratedImageResponse:
+        """异步执行 `_generate_with_client`。
+
+        【中文名称】_generate_with_client
+
+        【功能说明】
+        这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - client: 调用方传入的 `client` 数据；具体类型以函数签名为准。
+        - headers: 调用方传入的 `headers` 数据；具体类型以函数签名为准。
+        - body: 调用方传入的 `body` 数据；具体类型以函数签名为准。
+        - url: 调用方传入的 `url` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         try:
             response = await self._http_post(url, headers=headers, body=body, client=client)
         except httpx.TimeoutException as exc:
@@ -1652,11 +2766,20 @@ def _zhipu_size(
     aspect_ratio: str | None,
     image_size: str | None,
 ) -> str:
-    """Resolve aspect ratio / image_size to Zhipu size string.
+    """执行 `_zhipu_size`。
 
-    Zhipu glm-image model supports: 1280x1280 (default), 1568x1056,
-    1056x1568, 1472x1088, 1088x1472, 1728x960, 960x1728.
-    """
+    【中文名称】_zhipu_size
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - aspect_ratio: 调用方传入的 `aspect_ratio` 数据；具体类型以函数签名为准。
+    - image_size: 调用方传入的 `image_size` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if image_size and "x" in image_size.lower():
         return image_size
     if aspect_ratio and aspect_ratio in _ZHIPU_ASPECT_RATIO_SIZES:
@@ -1668,11 +2791,20 @@ async def _zhipu_images_from_payload(
     client: httpx.AsyncClient,
     payload: dict[str, Any],
 ) -> list[str]:
-    """Extract image data URLs from Zhipu API response.
+    """异步执行 `_zhipu_images_from_payload`。
 
-    Zhipu returns images as temporary URLs that expire after 30 days.
-    We download and re-encode as base64 data URLs.
-    """
+    【中文名称】_zhipu_images_from_payload
+
+    【功能说明】
+    这是 图像生成 Provider 实现 中的一个步骤函数，用来支撑：负责封装 OpenAI、Gemini、阿里云 DashScope 等图像模型，把生成结果统一保存为 ImageGenerationResult。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - client: 调用方传入的 `client` 数据；具体类型以函数签名为准。
+    - payload: 调用方传入的 `payload` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     images: list[str] = []
     for item in payload.get("data") or []:
         if not isinstance(item, dict):
@@ -1683,9 +2815,9 @@ async def _zhipu_images_from_payload(
     return images
 
 
-# ---------------------------------------------------------------------------
-# Provider registration
-# ---------------------------------------------------------------------------
+# 说明：这里处理 图像生成 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 图像生成 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
+# 说明：这里处理 图像生成 Provider 实现 的协议细节或边界情况，避免外部差异影响核心流程。
 
 register_image_gen_provider(AIHubMixImageGenerationClient)
 register_image_gen_provider(CodexImageGenerationClient)

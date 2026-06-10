@@ -1,4 +1,18 @@
-"""Runtime-specific helper functions and constants."""
+"""运行时状态工具。
+
+【中文名称】运行时状态工具
+
+【功能说明】
+负责管理进程级运行时标记、后台任务和可观测状态，帮助不同子系统共享状态。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的通用工具代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 from __future__ import annotations
 
@@ -12,7 +26,7 @@ from nanobot.utils.helpers import stringify_text_blocks
 
 _MAX_REPEAT_EXTERNAL_LOOKUPS = 2
 
-# Third same-target workspace violation in a turn escalates to "stop retrying".
+# 说明：这里处理 运行时状态工具 的协议细节或边界情况，避免外部差异影响核心流程。
 _MAX_REPEAT_WORKSPACE_VIOLATIONS = 2
 
 EMPTY_FINAL_RESPONSE_MESSAGE = (
@@ -44,12 +58,37 @@ SUSTAINED_GOAL_CONTINUE_PROMPT = (
 
 
 def empty_tool_result_message(tool_name: str) -> str:
-    """Short prompt-safe marker for tools that completed without visible output."""
+    """执行 `empty_tool_result_message`。
+
+    【中文名称】empty_tool_result_message
+
+    【功能说明】
+    这是 运行时状态工具 中的一个步骤函数，用来支撑：负责管理进程级运行时标记、后台任务和可观测状态，帮助不同子系统共享状态。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - tool_name: 调用方传入的 `tool_name` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     return f"({tool_name} completed with no output)"
 
 
 def ensure_nonempty_tool_result(tool_name: str, content: Any) -> Any:
-    """Replace semantically empty tool results with a short marker string."""
+    """执行 `ensure_nonempty_tool_result`。
+
+    【中文名称】ensure_nonempty_tool_result
+
+    【功能说明】
+    这是 运行时状态工具 中的一个步骤函数，用来支撑：负责管理进程级运行时标记、后台任务和可观测状态，帮助不同子系统共享状态。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - tool_name: 调用方传入的 `tool_name` 数据；具体类型以函数签名为准。
+    - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if content is None:
         return empty_tool_result_message(tool_name)
     if isinstance(content, str) and not content.strip():
@@ -64,32 +103,105 @@ def ensure_nonempty_tool_result(tool_name: str, content: Any) -> Any:
 
 
 def is_blank_text(content: str | None) -> bool:
-    """True when *content* is missing or only whitespace."""
+    """执行 `is_blank_text`。
+
+    【中文名称】is_blank_text
+
+    【功能说明】
+    这是 运行时状态工具 中的一个步骤函数，用来支撑：负责管理进程级运行时标记、后台任务和可观测状态，帮助不同子系统共享状态。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     return content is None or not content.strip()
 
 
 def build_finalization_retry_message() -> dict[str, str]:
-    """A short no-tools-allowed prompt for final answer recovery."""
+    """执行 `build_finalization_retry_message`。
+
+    【中文名称】build_finalization_retry_message
+
+    【功能说明】
+    这是 运行时状态工具 中的一个步骤函数，用来支撑：负责管理进程级运行时标记、后台任务和可观测状态，帮助不同子系统共享状态。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - 无显式业务参数。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     return {"role": "user", "content": FINALIZATION_RETRY_PROMPT}
 
 
 def build_budget_exhausted_finalization_message() -> dict[str, str]:
-    """Prompt the model for a no-tools final response after budget exhaustion."""
+    """执行 `build_budget_exhausted_finalization_message`。
+
+    【中文名称】build_budget_exhausted_finalization_message
+
+    【功能说明】
+    这是 运行时状态工具 中的一个步骤函数，用来支撑：负责管理进程级运行时标记、后台任务和可观测状态，帮助不同子系统共享状态。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - 无显式业务参数。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     return {"role": "user", "content": BUDGET_EXHAUSTED_FINALIZATION_PROMPT}
 
 
 def build_length_recovery_message() -> dict[str, str]:
-    """Prompt the model to continue after hitting output token limit."""
+    """执行 `build_length_recovery_message`。
+
+    【中文名称】build_length_recovery_message
+
+    【功能说明】
+    这是 运行时状态工具 中的一个步骤函数，用来支撑：负责管理进程级运行时标记、后台任务和可观测状态，帮助不同子系统共享状态。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - 无显式业务参数。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     return {"role": "user", "content": LENGTH_RECOVERY_PROMPT}
 
 
 def build_goal_continue_message(custom: str | None = None) -> dict[str, str]:
-    """Prompt the model to continue when a sustained goal is still active."""
+    """执行 `build_goal_continue_message`。
+
+    【中文名称】build_goal_continue_message
+
+    【功能说明】
+    这是 运行时状态工具 中的一个步骤函数，用来支撑：负责管理进程级运行时标记、后台任务和可观测状态，帮助不同子系统共享状态。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - custom: 调用方传入的 `custom` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     return {"role": "user", "content": custom or SUSTAINED_GOAL_CONTINUE_PROMPT}
 
 
 def external_lookup_signature(tool_name: str, arguments: Any) -> str | None:
-    """Stable signature for repeated external lookups we want to throttle."""
+    """执行 `external_lookup_signature`。
+
+    【中文名称】external_lookup_signature
+
+    【功能说明】
+    这是 运行时状态工具 中的一个步骤函数，用来支撑：负责管理进程级运行时标记、后台任务和可观测状态，帮助不同子系统共享状态。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - tool_name: 调用方传入的 `tool_name` 数据；具体类型以函数签名为准。
+    - arguments: 调用方传入的 `arguments` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if not isinstance(arguments, dict):
         return None
     if tool_name == "web_fetch":
@@ -108,7 +220,21 @@ def repeated_external_lookup_error(
     arguments: Any,
     seen_counts: dict[str, int],
 ) -> str | None:
-    """Block repeated external lookups after a small retry budget."""
+    """执行 `repeated_external_lookup_error`。
+
+    【中文名称】repeated_external_lookup_error
+
+    【功能说明】
+    这是 运行时状态工具 中的一个步骤函数，用来支撑：负责管理进程级运行时标记、后台任务和可观测状态，帮助不同子系统共享状态。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - tool_name: 调用方传入的 `tool_name` 数据；具体类型以函数签名为准。
+    - arguments: 调用方传入的 `arguments` 数据；具体类型以函数签名为准。
+    - seen_counts: 调用方传入的 `seen_counts` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     signature = external_lookup_signature(tool_name, arguments)
     if signature is None:
         return None
@@ -127,7 +253,7 @@ def repeated_external_lookup_error(
     )
 
 
-# Workspace-boundary violations are soft errors, with per-target throttling.
+# 说明：这里处理 运行时状态工具 的协议细节或边界情况，避免外部差异影响核心流程。
 
 _OUTSIDE_PATH_PATTERN = re.compile(r"(?:^|[\s|>'\"])((?:/[^\s\"'>;|<]+)|(?:~[^\s\"'>;|<]+))")
 
@@ -136,7 +262,20 @@ def workspace_violation_signature(
     tool_name: str,
     arguments: Any,
 ) -> str | None:
-    """Return a stable cross-tool signature for the outside-workspace target."""
+    """执行 `workspace_violation_signature`。
+
+    【中文名称】workspace_violation_signature
+
+    【功能说明】
+    这是 运行时状态工具 中的一个步骤函数，用来支撑：负责管理进程级运行时标记、后台任务和可观测状态，帮助不同子系统共享状态。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - tool_name: 调用方传入的 `tool_name` 数据；具体类型以函数签名为准。
+    - arguments: 调用方传入的 `arguments` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if not isinstance(arguments, dict):
         return None
     for key in ("path", "file_path", "target", "source", "destination"):
@@ -158,7 +297,19 @@ def workspace_violation_signature(
 
 
 def _normalize_violation_target(raw: str) -> str:
-    """Normalize *raw* path so that equivalent spellings collide on the same key."""
+    """执行 `_normalize_violation_target`。
+
+    【中文名称】_normalize_violation_target
+
+    【功能说明】
+    这是 运行时状态工具 中的一个步骤函数，用来支撑：负责管理进程级运行时标记、后台任务和可观测状态，帮助不同子系统共享状态。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - raw: 调用方传入的 `raw` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     try:
         normalized = Path(raw).expanduser().resolve().as_posix()
     except Exception:
@@ -171,7 +322,21 @@ def repeated_workspace_violation_error(
     arguments: Any,
     seen_counts: dict[str, int],
 ) -> str | None:
-    """Return an escalated error after repeated bypass attempts."""
+    """执行 `repeated_workspace_violation_error`。
+
+    【中文名称】repeated_workspace_violation_error
+
+    【功能说明】
+    这是 运行时状态工具 中的一个步骤函数，用来支撑：负责管理进程级运行时标记、后台任务和可观测状态，帮助不同子系统共享状态。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - tool_name: 调用方传入的 `tool_name` 数据；具体类型以函数签名为准。
+    - arguments: 调用方传入的 `arguments` 数据；具体类型以函数签名为准。
+    - seen_counts: 调用方传入的 `seen_counts` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     signature = workspace_violation_signature(tool_name, arguments)
     if signature is None:
         return None

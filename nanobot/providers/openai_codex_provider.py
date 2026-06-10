@@ -1,4 +1,18 @@
-"""OpenAI Codex Responses Provider."""
+"""OpenAI Codex Provider 实现。
+
+【中文名称】OpenAI Codex Provider 实现
+
+【功能说明】
+负责对接 Codex CLI/服务的模型接口，处理认证、会话和流式输出。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的模型 Provider代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 from __future__ import annotations
 
@@ -25,11 +39,35 @@ DEFAULT_ORIGINATOR = "nanobot"
 
 
 class OpenAICodexProvider(LLMProvider):
-    """Use Codex OAuth to call the Responses API."""
+    """OpenAICodexProvider 类。
+
+    【中文名称】OpenAICodexProvider
+
+    【功能说明】
+    这是 OpenAI Codex Provider 实现 中的核心数据结构或服务类。负责对接 Codex CLI/服务的模型接口，处理认证、会话和流式输出。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     supports_progress_deltas = True
 
     def __init__(self, default_model: str = "openai-codex/gpt-5.1-codex"):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 OpenAI Codex Provider 实现 中的一个步骤函数，用来支撑：负责对接 Codex CLI/服务的模型接口，处理认证、会话和流式输出。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - default_model: 调用方传入的 `default_model` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         super().__init__(api_key=None, api_base=None)
         self.default_model = default_model
 
@@ -44,7 +82,26 @@ class OpenAICodexProvider(LLMProvider):
         on_thinking_delta: Callable[[str], Awaitable[None]] | None = None,
         on_tool_call_delta: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> LLMResponse:
-        """Shared request logic for both chat() and chat_stream()."""
+        """异步执行 `_call_codex`。
+
+        【中文名称】_call_codex
+
+        【功能说明】
+        这是 OpenAI Codex Provider 实现 中的一个步骤函数，用来支撑：负责对接 Codex CLI/服务的模型接口，处理认证、会话和流式输出。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - messages: 调用方传入的 `messages` 数据；具体类型以函数签名为准。
+        - tools: 调用方传入的 `tools` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - reasoning_effort: 调用方传入的 `reasoning_effort` 数据；具体类型以函数签名为准。
+        - tool_choice: 调用方传入的 `tool_choice` 数据；具体类型以函数签名为准。
+        - on_content_delta: 调用方传入的 `on_content_delta` 数据；具体类型以函数签名为准。
+        - on_thinking_delta: 调用方传入的 `on_thinking_delta` 数据；具体类型以函数签名为准。
+        - on_tool_call_delta: 调用方传入的 `on_tool_call_delta` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         model = model or self.default_model
         system_prompt, input_items = convert_messages(messages)
 
@@ -117,6 +174,26 @@ class OpenAICodexProvider(LLMProvider):
         reasoning_effort: str | None = None,
         tool_choice: str | dict[str, Any] | None = None,
     ) -> LLMResponse:
+        """异步执行 `chat`。
+
+        【中文名称】chat
+
+        【功能说明】
+        这是 OpenAI Codex Provider 实现 中的一个步骤函数，用来支撑：负责对接 Codex CLI/服务的模型接口，处理认证、会话和流式输出。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - messages: 调用方传入的 `messages` 数据；具体类型以函数签名为准。
+        - tools: 调用方传入的 `tools` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - max_tokens: 调用方传入的 `max_tokens` 数据；具体类型以函数签名为准。
+        - temperature: 调用方传入的 `temperature` 数据；具体类型以函数签名为准。
+        - reasoning_effort: 调用方传入的 `reasoning_effort` 数据；具体类型以函数签名为准。
+        - tool_choice: 调用方传入的 `tool_choice` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return await self._call_codex(messages, tools, model, reasoning_effort, tool_choice)
 
     async def chat_stream(
@@ -128,6 +205,29 @@ class OpenAICodexProvider(LLMProvider):
         on_thinking_delta: Callable[[str], Awaitable[None]] | None = None,
         on_tool_call_delta: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> LLMResponse:
+        """异步执行 `chat_stream`。
+
+        【中文名称】chat_stream
+
+        【功能说明】
+        这是 OpenAI Codex Provider 实现 中的一个步骤函数，用来支撑：负责对接 Codex CLI/服务的模型接口，处理认证、会话和流式输出。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - messages: 调用方传入的 `messages` 数据；具体类型以函数签名为准。
+        - tools: 调用方传入的 `tools` 数据；具体类型以函数签名为准。
+        - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+        - max_tokens: 调用方传入的 `max_tokens` 数据；具体类型以函数签名为准。
+        - temperature: 调用方传入的 `temperature` 数据；具体类型以函数签名为准。
+        - reasoning_effort: 调用方传入的 `reasoning_effort` 数据；具体类型以函数签名为准。
+        - tool_choice: 调用方传入的 `tool_choice` 数据；具体类型以函数签名为准。
+        - on_content_delta: 调用方传入的 `on_content_delta` 数据；具体类型以函数签名为准。
+        - on_thinking_delta: 调用方传入的 `on_thinking_delta` 数据；具体类型以函数签名为准。
+        - on_tool_call_delta: 调用方传入的 `on_tool_call_delta` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return await self._call_codex(
             messages,
             tools,
@@ -140,17 +240,57 @@ class OpenAICodexProvider(LLMProvider):
         )
 
     def get_default_model(self) -> str:
+        """执行 `get_default_model`。
+
+        【中文名称】get_default_model
+
+        【功能说明】
+        这是 OpenAI Codex Provider 实现 中的一个步骤函数，用来支撑：负责对接 Codex CLI/服务的模型接口，处理认证、会话和流式输出。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         return self.default_model
 
 
 def _strip_model_prefix(model: str) -> str:
+    """执行 `_strip_model_prefix`。
+
+    【中文名称】_strip_model_prefix
+
+    【功能说明】
+    这是 OpenAI Codex Provider 实现 中的一个步骤函数，用来支撑：负责对接 Codex CLI/服务的模型接口，处理认证、会话和流式输出。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     if model.startswith("openai-codex/") or model.startswith("openai_codex/"):
         return model.split("/", 1)[1]
     return model
 
 
 def _build_reasoning_options(reasoning_effort: str | None) -> dict[str, str] | None:
-    """Opt in to visible summaries without changing provider-default effort."""
+    """执行 `_build_reasoning_options`。
+
+    【中文名称】_build_reasoning_options
+
+    【功能说明】
+    这是 OpenAI Codex Provider 实现 中的一个步骤函数，用来支撑：负责对接 Codex CLI/服务的模型接口，处理认证、会话和流式输出。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - reasoning_effort: 调用方传入的 `reasoning_effort` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if reasoning_effort and reasoning_effort.lower() == "none":
         return {"effort": "none"}
     options = {"summary": "auto"}
@@ -160,6 +300,21 @@ def _build_reasoning_options(reasoning_effort: str | None) -> dict[str, str] | N
 
 
 def _build_headers(account_id: str, token: str) -> dict[str, str]:
+    """执行 `_build_headers`。
+
+    【中文名称】_build_headers
+
+    【功能说明】
+    这是 OpenAI Codex Provider 实现 中的一个步骤函数，用来支撑：负责对接 Codex CLI/服务的模型接口，处理认证、会话和流式输出。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - account_id: 调用方传入的 `account_id` 数据；具体类型以函数签名为准。
+    - token: 调用方传入的 `token` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     return {
         "Authorization": f"Bearer {token}",
         "chatgpt-account-id": account_id,
@@ -172,6 +327,18 @@ def _build_headers(account_id: str, token: str) -> dict[str, str]:
 
 
 class _CodexHTTPError(RuntimeError):
+    """_CodexHTTPError 类。
+
+    【中文名称】_CodexHTTPError
+
+    【功能说明】
+    这是 OpenAI Codex Provider 实现 中的核心数据结构或服务类。负责对接 Codex CLI/服务的模型接口，处理认证、会话和流式输出。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
+
     def __init__(
         self,
         message: str,
@@ -182,6 +349,25 @@ class _CodexHTTPError(RuntimeError):
         error_code: str | None = None,
         should_retry: bool | None = None,
     ):
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 OpenAI Codex Provider 实现 中的一个步骤函数，用来支撑：负责对接 Codex CLI/服务的模型接口，处理认证、会话和流式输出。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - message: 调用方传入的 `message` 数据；具体类型以函数签名为准。
+        - status_code: 调用方传入的 `status_code` 数据；具体类型以函数签名为准。
+        - retry_after: 调用方传入的 `retry_after` 数据；具体类型以函数签名为准。
+        - error_type: 调用方传入的 `error_type` 数据；具体类型以函数签名为准。
+        - error_code: 调用方传入的 `error_code` 数据；具体类型以函数签名为准。
+        - should_retry: 调用方传入的 `should_retry` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         super().__init__(message)
         self.status_code = status_code
         self.retry_after = retry_after
@@ -199,6 +385,26 @@ async def _request_codex(
     on_thinking_delta: Callable[[str], Awaitable[None]] | None = None,
     on_tool_call_delta: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
 ) -> tuple[str, list[ToolCallRequest], str, dict[str, int], str | None]:
+    """异步执行 `_request_codex`。
+
+    【中文名称】_request_codex
+
+    【功能说明】
+    这是 OpenAI Codex Provider 实现 中的一个步骤函数，用来支撑：负责对接 Codex CLI/服务的模型接口，处理认证、会话和流式输出。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - url: 调用方传入的 `url` 数据；具体类型以函数签名为准。
+    - headers: 调用方传入的 `headers` 数据；具体类型以函数签名为准。
+    - body: 调用方传入的 `body` 数据；具体类型以函数签名为准。
+    - verify: 调用方传入的 `verify` 数据；具体类型以函数签名为准。
+    - on_content_delta: 调用方传入的 `on_content_delta` 数据；具体类型以函数签名为准。
+    - on_thinking_delta: 调用方传入的 `on_thinking_delta` 数据；具体类型以函数签名为准。
+    - on_tool_call_delta: 调用方传入的 `on_tool_call_delta` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     idle_timeout_s = int(os.environ.get("NANOBOT_STREAM_IDLE_TIMEOUT_S", "90"))
     async with httpx.AsyncClient(timeout=idle_timeout_s, verify=verify) as client:
         async with client.stream("POST", url, headers=headers, json=body) as response:
@@ -224,11 +430,40 @@ async def _request_codex(
 
 
 def _prompt_cache_key(messages: list[dict[str, Any]]) -> str:
+    """执行 `_prompt_cache_key`。
+
+    【中文名称】_prompt_cache_key
+
+    【功能说明】
+    这是 OpenAI Codex Provider 实现 中的一个步骤函数，用来支撑：负责对接 Codex CLI/服务的模型接口，处理认证、会话和流式输出。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - messages: 调用方传入的 `messages` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     raw = json.dumps(messages, ensure_ascii=True, sort_keys=True)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def _friendly_error(status_code: int, raw: str) -> str:
+    """执行 `_friendly_error`。
+
+    【中文名称】_friendly_error
+
+    【功能说明】
+    这是 OpenAI Codex Provider 实现 中的一个步骤函数，用来支撑：负责对接 Codex CLI/服务的模型接口，处理认证、会话和流式输出。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - status_code: 调用方传入的 `status_code` 数据；具体类型以函数签名为准。
+    - raw: 调用方传入的 `raw` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     _ = raw
     if status_code == 429:
         return "ChatGPT usage quota exceeded or rate limit triggered. Please try again later."
@@ -236,7 +471,19 @@ def _friendly_error(status_code: int, raw: str) -> str:
 
 
 def _codex_error_response(exc: Exception) -> LLMResponse:
-    """Convert Codex transport/API failures into actionable, retryable metadata."""
+    """执行 `_codex_error_response`。
+
+    【中文名称】_codex_error_response
+
+    【功能说明】
+    这是 OpenAI Codex Provider 实现 中的一个步骤函数，用来支撑：负责对接 Codex CLI/服务的模型接口，处理认证、会话和流式输出。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - exc: 调用方传入的 `exc` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     exc_type = "CodexHTTPError" if isinstance(exc, _CodexHTTPError) else type(exc).__name__
     detail = str(exc).strip()
 
@@ -287,7 +534,20 @@ def _codex_error_response(exc: Exception) -> LLMResponse:
 
 
 def _codex_log_summary(exc_type: str, response: LLMResponse) -> str:
-    """Return a bounded diagnostic summary without request body or raw upstream payload."""
+    """执行 `_codex_log_summary`。
+
+    【中文名称】_codex_log_summary
+
+    【功能说明】
+    这是 OpenAI Codex Provider 实现 中的一个步骤函数，用来支撑：负责对接 Codex CLI/服务的模型接口，处理认证、会话和流式输出。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - exc_type: 调用方传入的 `exc_type` 数据；具体类型以函数签名为准。
+    - response: 调用方传入的 `response` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if response.error_status_code is not None:
         parts = [f"HTTP {response.error_status_code}"]
         if response.error_type:
@@ -309,6 +569,23 @@ def _should_retry_status(
     error_code: str | None,
     content: str | None,
 ) -> bool:
+    """执行 `_should_retry_status`。
+
+    【中文名称】_should_retry_status
+
+    【功能说明】
+    这是 OpenAI Codex Provider 实现 中的一个步骤函数，用来支撑：负责对接 Codex CLI/服务的模型接口，处理认证、会话和流式输出。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - status_code: 调用方传入的 `status_code` 数据；具体类型以函数签名为准。
+    - error_type: 调用方传入的 `error_type` 数据；具体类型以函数签名为准。
+    - error_code: 调用方传入的 `error_code` 数据；具体类型以函数签名为准。
+    - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     if status_code == 429:
         return LLMProvider._is_retryable_429_response(
             LLMResponse(

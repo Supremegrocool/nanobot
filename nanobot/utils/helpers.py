@@ -1,4 +1,18 @@
-"""Utility functions for nanobot."""
+"""通用辅助函数。
+
+【中文名称】通用辅助函数
+
+【功能说明】
+负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+
+【在整体架构中的位置】
+该文件属于 P1 范围的通用工具代码：它不改变 Agent 主循环的骨架，
+而是负责把某一种外部协议、模型接口或通用能力接到 nanobot 的统一抽象上。
+
+【学习重点】
+- 先看本文件的配置类/数据类，理解外部服务需要哪些参数。
+- 再看 start/stop/send 或 generate/stream 等入口方法，理解数据如何进出。
+- 最后看私有辅助函数，它们通常是在处理平台限制、协议兼容或安全边界。"""
 
 import base64
 import json
@@ -16,52 +30,41 @@ from loguru import logger
 
 
 def strip_think(text: str) -> str:
-    """Remove thinking blocks, unclosed trailing tags, and tokenizer-level
-    template leaks occasionally emitted by some models (notably Gemma 4's
-    Ollama renderer).
+    """执行 `strip_think`。
 
-    Covers:
-      1. Well-formed `<think>...</think>` and `<thought>...</thought>` blocks.
-      2. Streaming prefixes where the block is never closed.
-      3. *Malformed* opening tags missing the `>` — e.g. `<think广场…`. The
-         model sometimes emits the tag name directly followed by user-facing
-         content with no delimiter; without this step the literal `<think`
-         leaks into the rendered message.
-      4. Harmony-style channel markers like `<channel|>` / `<|channel|>`
-         **at the start of the text** — conservative to avoid eating
-         explanatory prose that mentions these tokens.
-      5. Orphan closing tags `</think>` / `</thought>` **at the very start
-         or end of the text** only, for the same reason.
-      6. Trailing partial control tags split across stream chunks, such as
-         `<thi`, `<thin`, or `<tho`.
+    【中文名称】strip_think
 
-    Since this is also applied before persisting to history (memory.py),
-    the edge-only stripping of (4) and (5) is deliberate: stripping those
-    tokens mid-text would silently rewrite any message where a user or the
-    assistant discusses the tokens themselves.
-    """
-    # Well-formed blocks first.
+    【功能说明】
+    这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+    # 说明：这里处理 通用辅助函数 的协议细节或边界情况，避免外部差异影响核心流程。
     text = re.sub(r"<think>[\s\S]*?</think>", "", text)
     text = re.sub(r"^\s*<think>[\s\S]*$", "", text)
     text = re.sub(r"<thought>[\s\S]*?</thought>", "", text)
     text = re.sub(r"^\s*<thought>[\s\S]*$", "", text)
-    # Malformed opening tags: `<think` / `<thought` where the next char is
-    # NOT one that could continue a valid tag / identifier name. Explicitly
-    # listing ASCII tag-name chars (letters, digits, `_`, `-`, `:`) plus
-    # `>` / `/` — we can't use `\w` here because in Python's default
-    # Unicode regex mode it matches CJK characters too, which would defeat
-    # the primary fix for `<think广场…` leaks.
+    # 说明：这里处理 通用辅助函数 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 通用辅助函数 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 通用辅助函数 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 通用辅助函数 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 通用辅助函数 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 通用辅助函数 的协议细节或边界情况，避免外部差异影响核心流程。
     text = re.sub(r"<think(?![A-Za-z0-9_\-:>/])", "", text)
     text = re.sub(r"<thought(?![A-Za-z0-9_\-:>/])", "", text)
-    # Edge-only orphan closing tags (start or end of text).
+    # 说明：这里处理 通用辅助函数 的协议细节或边界情况，避免外部差异影响核心流程。
     text = re.sub(r"^\s*</think>\s*", "", text)
     text = re.sub(r"\s*</think>\s*$", "", text)
     text = re.sub(r"^\s*</thought>\s*", "", text)
     text = re.sub(r"\s*</thought>\s*$", "", text)
-    # Edge-only channel markers (harmony / Gemma 4 variant leaks).
+    # 说明：这里处理 通用辅助函数 的协议细节或边界情况，避免外部差异影响核心流程。
     text = re.sub(r"^\s*<\|?channel\|?>\s*", "", text)
-    # Stream chunks may end in the middle of a control tag. Strip only known
-    # control-token prefixes at the very end.
+    # 说明：这里处理 通用辅助函数 的协议细节或边界情况，避免外部差异影响核心流程。
+    # 说明：这里处理 通用辅助函数 的协议细节或边界情况，避免外部差异影响核心流程。
     partial_control_tag = (
         r"</?(?:t|th|thi|thin|think|tho|thou|thoug|though|thought)>?"
         r"|<\|?(?:c|ch|cha|chan|chann|channe|channel)(?:\|?>?)?"
@@ -72,12 +75,19 @@ def strip_think(text: str) -> str:
 
 
 def extract_think(text: str) -> tuple[str | None, str]:
-    """Extract thinking content from inline ``<think>`` / ``<thought>`` blocks.
+    """执行 `extract_think`。
 
-    Returns ``(thinking_text, cleaned_text)``. Only closed blocks are
-    extracted; unclosed streaming prefixes are stripped from the cleaned
-    text but not surfaced — :func:`strip_think` handles that case.
-    """
+    【中文名称】extract_think
+
+    【功能说明】
+    这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     parts: list[str] = []
     for m in re.finditer(r"<think>([\s\S]*?)</think>", text):
         parts.append(m.group(1).strip())
@@ -88,30 +98,69 @@ def extract_think(text: str) -> tuple[str | None, str]:
 
 
 class IncrementalThinkExtractor:
-    """Stateful inline ``<think>`` extractor for streaming buffers.
+    """IncrementalThinkExtractor 类。
 
-    Streaming providers expose only a single content delta channel. When a
-    model embeds reasoning in ``<think>...</think>`` blocks inside that
-    channel, callers need to surface the reasoning incrementally as it
-    arrives without re-emitting earlier text. This holds the "already
-    emitted" cursor so the runner and the loop hook share one shape.
-    """
+    【中文名称】IncrementalThinkExtractor
+
+    【功能说明】
+    这是 通用辅助函数 中的核心数据结构或服务类。负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+
+    【学习重点】
+    - 类属性/字段通常描述外部平台、模型或工具的配置。
+    - public 方法通常是其他模块会调用的入口。
+    - private 方法通常负责协议细节、格式转换或异常兜底。"""
 
     __slots__ = ("_emitted",)
 
     def __init__(self) -> None:
+        """执行 `__init__`。
+
+        【中文名称】__init__
+
+        【功能说明】
+        这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self._emitted = ""
 
     def reset(self) -> None:
+        """执行 `reset`。
+
+        【中文名称】reset
+
+        【功能说明】
+        这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - 无显式业务参数。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         self._emitted = ""
 
     async def feed(self, buf: str, emit: Any) -> bool:
-        """Emit any new thinking text found in ``buf``.
+        """异步执行 `feed`。
 
-        Returns True if anything was emitted this call. ``emit`` is an
-        async callable taking a single string (typically
-        ``hook.emit_reasoning``).
-        """
+        【中文名称】feed
+
+        【功能说明】
+        这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - buf: 调用方传入的 `buf` 数据；具体类型以函数签名为准。
+        - emit: 调用方传入的 `emit` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
         thinking, _ = extract_think(buf)
         if not thinking or thinking == self._emitted:
             return False
@@ -128,21 +177,21 @@ def extract_reasoning(
     thinking_blocks: list[dict[str, Any]] | None,
     content: str | None,
 ) -> tuple[str | None, str | None]:
-    """Return ``(reasoning_text, cleaned_content)`` from one model response.
+    """执行 `extract_reasoning`。
 
-    Single source of truth for "what reasoning did this response carry, and
-    what answer text remains after we peel it out". Fallback order:
+    【中文名称】extract_reasoning
 
-    1. Dedicated ``reasoning_content`` (DeepSeek-R1, Kimi, MiMo, OpenAI
-       reasoning models, Bedrock).
-    2. Anthropic ``thinking_blocks``.
-    3. Inline ``<think>`` / ``<thought>`` blocks in ``content``.
+    【功能说明】
+    这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
 
-    Only one source contributes per response; lower-priority sources are
-    ignored if a higher-priority one is present, but inline ``<think>``
-    tags are still stripped from ``content`` so they never leak into the
-    final answer.
-    """
+    【参数说明】
+    - reasoning_content: 调用方传入的 `reasoning_content` 数据；具体类型以函数签名为准。
+    - thinking_blocks: 调用方传入的 `thinking_blocks` 数据；具体类型以函数签名为准。
+    - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if reasoning_content:
         return reasoning_content, strip_think(content) if content else content
     if thinking_blocks:
@@ -159,7 +208,19 @@ def extract_reasoning(
 
 
 def detect_image_mime(data: bytes) -> str | None:
-    """Detect image MIME type from magic bytes, ignoring file extension."""
+    """执行 `detect_image_mime`。
+
+    【中文名称】detect_image_mime
+
+    【功能说明】
+    这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - data: 调用方传入的 `data` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if data[:8] == b"\x89PNG\r\n\x1a\n":
         return "image/png"
     if data[:3] == b"\xff\xd8\xff":
@@ -174,7 +235,22 @@ def detect_image_mime(data: bytes) -> str | None:
 def build_image_content_blocks(
     raw: bytes, mime: str, path: str, label: str
 ) -> list[dict[str, Any]]:
-    """Build native image blocks plus a short text label."""
+    """执行 `build_image_content_blocks`。
+
+    【中文名称】build_image_content_blocks
+
+    【功能说明】
+    这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - raw: 调用方传入的 `raw` 数据；具体类型以函数签名为准。
+    - mime: 调用方传入的 `mime` 数据；具体类型以函数签名为准。
+    - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+    - label: 调用方传入的 `label` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     b64 = base64.b64encode(raw).decode()
     return [
         {
@@ -187,18 +263,54 @@ def build_image_content_blocks(
 
 
 def ensure_dir(path: Path) -> Path:
-    """Ensure directory exists, return it."""
+    """执行 `ensure_dir`。
+
+    【中文名称】ensure_dir
+
+    【功能说明】
+    这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
 def timestamp() -> str:
-    """Current ISO timestamp."""
+    """执行 `timestamp`。
+
+    【中文名称】timestamp
+
+    【功能说明】
+    这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - 无显式业务参数。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     return datetime.now().isoformat()
 
 
 def current_time_str(timezone: str | None = None) -> str:
-    """Return the current time string."""
+    """执行 `current_time_str`。
+
+    【中文名称】current_time_str
+
+    【功能说明】
+    这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - timezone: 调用方传入的 `timezone` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     from zoneinfo import ZoneInfo
 
     try:
@@ -221,24 +333,74 @@ _TOOL_RESULT_MAX_BUCKETS = 32
 
 
 def safe_filename(name: str) -> str:
-    """Replace unsafe path characters with underscores."""
+    """执行 `safe_filename`。
+
+    【中文名称】safe_filename
+
+    【功能说明】
+    这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - name: 调用方传入的 `name` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     return _UNSAFE_CHARS.sub("_", name).strip()
 
 
 def image_placeholder_text(path: str | None, *, empty: str = "[image]") -> str:
-    """Build an image placeholder string."""
+    """执行 `image_placeholder_text`。
+
+    【中文名称】image_placeholder_text
+
+    【功能说明】
+    这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+    - empty: 调用方传入的 `empty` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     return f"[image: {path}]" if path else empty
 
 
 def truncate_text(text: str, max_chars: int) -> str:
-    """Truncate text with a stable suffix."""
+    """执行 `truncate_text`。
+
+    【中文名称】truncate_text
+
+    【功能说明】
+    这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - text: 调用方传入的 `text` 数据；具体类型以函数签名为准。
+    - max_chars: 调用方传入的 `max_chars` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if max_chars <= 0 or len(text) <= max_chars:
         return text
     return text[:max_chars] + "\n... (truncated)"
 
 
 def find_legal_message_start(messages: list[dict[str, Any]]) -> int:
-    """Find the first index whose tool results have matching assistant calls."""
+    """执行 `find_legal_message_start`。
+
+    【中文名称】find_legal_message_start
+
+    【功能说明】
+    这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - messages: 调用方传入的 `messages` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     declared: set[str] = set()
     start = 0
     for i, msg in enumerate(messages):
@@ -256,6 +418,20 @@ def find_legal_message_start(messages: list[dict[str, Any]]) -> int:
 
 
 def stringify_text_blocks(content: list[dict[str, Any]]) -> str | None:
+    """执行 `stringify_text_blocks`。
+
+    【中文名称】stringify_text_blocks
+
+    【功能说明】
+    这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     parts: list[str] = []
     for block in content:
         if not isinstance(block, dict):
@@ -276,6 +452,23 @@ def _render_tool_result_reference(
     preview: str,
     truncated_preview: bool,
 ) -> str:
+    """执行 `_render_tool_result_reference`。
+
+    【中文名称】_render_tool_result_reference
+
+    【功能说明】
+    这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - filepath: 调用方传入的 `filepath` 数据；具体类型以函数签名为准。
+    - original_size: 调用方传入的 `original_size` 数据；具体类型以函数签名为准。
+    - preview: 调用方传入的 `preview` 数据；具体类型以函数签名为准。
+    - truncated_preview: 调用方传入的 `truncated_preview` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     result = (
         f"[tool output persisted]\n"
         f"Full output saved to: {filepath}\n"
@@ -288,6 +481,20 @@ def _render_tool_result_reference(
 
 
 def _bucket_mtime(path: Path) -> float:
+    """执行 `_bucket_mtime`。
+
+    【中文名称】_bucket_mtime
+
+    【功能说明】
+    这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     try:
         return path.stat().st_mtime
     except OSError:
@@ -295,6 +502,21 @@ def _bucket_mtime(path: Path) -> float:
 
 
 def _cleanup_tool_result_buckets(root: Path, current_bucket: Path) -> None:
+    """执行 `_cleanup_tool_result_buckets`。
+
+    【中文名称】_cleanup_tool_result_buckets
+
+    【功能说明】
+    这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - root: 调用方传入的 `root` 数据；具体类型以函数签名为准。
+    - current_bucket: 调用方传入的 `current_bucket` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     siblings = [path for path in root.iterdir() if path.is_dir() and path != current_bucket]
     cutoff = time.time() - _TOOL_RESULT_RETENTION_SECS
     for path in siblings:
@@ -310,6 +532,21 @@ def _cleanup_tool_result_buckets(root: Path, current_bucket: Path) -> None:
 
 
 def _write_text_atomic(path: Path, content: str) -> None:
+    """执行 `_write_text_atomic`。
+
+    【中文名称】_write_text_atomic
+
+    【功能说明】
+    这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - path: 调用方传入的 `path` 数据；具体类型以函数签名为准。
+    - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
     tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     try:
         tmp.write_text(content, encoding="utf-8")
@@ -327,7 +564,23 @@ def maybe_persist_tool_result(
     *,
     max_chars: int,
 ) -> Any:
-    """Persist oversized tool output and replace it with a stable reference string."""
+    """执行 `maybe_persist_tool_result`。
+
+    【中文名称】maybe_persist_tool_result
+
+    【功能说明】
+    这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - workspace: 调用方传入的 `workspace` 数据；具体类型以函数签名为准。
+    - session_key: 调用方传入的 `session_key` 数据；具体类型以函数签名为准。
+    - tool_call_id: 调用方传入的 `tool_call_id` 数据；具体类型以函数签名为准。
+    - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+    - max_chars: 调用方传入的 `max_chars` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if workspace is None or max_chars <= 0:
         return content
 
@@ -369,16 +622,20 @@ def maybe_persist_tool_result(
 
 
 def split_message(content: str, max_len: int = 2000) -> list[str]:
-    """
-    Split content into chunks within max_len, preferring line breaks.
+    """执行 `split_message`。
 
-    Args:
-        content: The text content to split.
-        max_len: Maximum length per chunk (default 2000 for Discord compatibility).
+    【中文名称】split_message
 
-    Returns:
-        List of message chunks, each within max_len.
-    """
+    【功能说明】
+    这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+    - max_len: 调用方传入的 `max_len` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     if not content:
         return []
     if len(content) <= max_len:
@@ -389,7 +646,7 @@ def split_message(content: str, max_len: int = 2000) -> list[str]:
             chunks.append(content)
             break
         cut = content[:max_len]
-        # Try to break at newline first, then space, then hard break
+        # 说明：这里处理 通用辅助函数 的协议细节或边界情况，避免外部差异影响核心流程。
         pos = cut.rfind("\n")
         if pos <= 0:
             pos = cut.rfind(" ")
@@ -406,7 +663,22 @@ def build_assistant_message(
     reasoning_content: str | None = None,
     thinking_blocks: list[dict] | None = None,
 ) -> dict[str, Any]:
-    """Build a provider-safe assistant message with optional reasoning fields."""
+    """执行 `build_assistant_message`。
+
+    【中文名称】build_assistant_message
+
+    【功能说明】
+    这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - content: 调用方传入的 `content` 数据；具体类型以函数签名为准。
+    - tool_calls: 调用方传入的 `tool_calls` 数据；具体类型以函数签名为准。
+    - reasoning_content: 调用方传入的 `reasoning_content` 数据；具体类型以函数签名为准。
+    - thinking_blocks: 调用方传入的 `thinking_blocks` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     msg: dict[str, Any] = {"role": "assistant", "content": content or ""}
     if tool_calls:
         msg["tool_calls"] = tool_calls
@@ -421,11 +693,20 @@ def estimate_prompt_tokens(
     messages: list[dict[str, Any]],
     tools: list[dict[str, Any]] | None = None,
 ) -> int:
-    """Estimate prompt tokens with tiktoken.
+    """执行 `estimate_prompt_tokens`。
 
-    Counts all fields that providers send to the LLM: content, tool_calls,
-    reasoning_content, tool_call_id, name, plus per-message framing overhead.
-    """
+    【中文名称】estimate_prompt_tokens
+
+    【功能说明】
+    这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - messages: 调用方传入的 `messages` 数据；具体类型以函数签名为准。
+    - tools: 调用方传入的 `tools` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     try:
         enc = tiktoken.get_encoding("cl100k_base")
         parts: list[str] = []
@@ -463,7 +744,19 @@ def estimate_prompt_tokens(
 
 
 def estimate_message_tokens(message: dict[str, Any]) -> int:
-    """Estimate prompt tokens contributed by one persisted message."""
+    """执行 `estimate_message_tokens`。
+
+    【中文名称】estimate_message_tokens
+
+    【功能说明】
+    这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - message: 调用方传入的 `message` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     content = message.get("content")
     parts: list[str] = []
     if isinstance(content, str):
@@ -506,7 +799,22 @@ def estimate_prompt_tokens_chain(
     messages: list[dict[str, Any]],
     tools: list[dict[str, Any]] | None = None,
 ) -> tuple[int, str]:
-    """Estimate prompt tokens via provider counter first, then tiktoken fallback."""
+    """执行 `estimate_prompt_tokens_chain`。
+
+    【中文名称】estimate_prompt_tokens_chain
+
+    【功能说明】
+    这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - provider: 调用方传入的 `provider` 数据；具体类型以函数签名为准。
+    - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+    - messages: 调用方传入的 `messages` 数据；具体类型以函数签名为准。
+    - tools: 调用方传入的 `tools` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     provider_counter = getattr(provider, "estimate_prompt_tokens", None)
     if callable(provider_counter):
         with suppress(Exception):
@@ -532,13 +840,28 @@ def build_status_content(
     active_task_count: int = 0,
     max_completion_tokens: int = 8192,
 ) -> str:
-    """Build a human-readable runtime status snapshot.
+    """执行 `build_status_content`。
 
-    Args:
-        search_usage_text: Optional pre-formatted web search usage string
-                           (produced by SearchUsageInfo.format()). When provided
-                           it is appended as an extra section.
-    """
+    【中文名称】build_status_content
+
+    【功能说明】
+    这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - version: 调用方传入的 `version` 数据；具体类型以函数签名为准。
+    - model: 调用方传入的 `model` 数据；具体类型以函数签名为准。
+    - start_time: 调用方传入的 `start_time` 数据；具体类型以函数签名为准。
+    - last_usage: 调用方传入的 `last_usage` 数据；具体类型以函数签名为准。
+    - context_window_tokens: 调用方传入的 `context_window_tokens` 数据；具体类型以函数签名为准。
+    - session_msg_count: 调用方传入的 `session_msg_count` 数据；具体类型以函数签名为准。
+    - context_tokens_estimate: 调用方传入的 `context_tokens_estimate` 数据；具体类型以函数签名为准。
+    - search_usage_text: 调用方传入的 `search_usage_text` 数据；具体类型以函数签名为准。
+    - active_task_count: 调用方传入的 `active_task_count` 数据；具体类型以函数签名为准。
+    - max_completion_tokens: 调用方传入的 `max_completion_tokens` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     uptime_s = int(time.time() - start_time)
     uptime = (
         f"{uptime_s // 3600}h {(uptime_s % 3600) // 60}m"
@@ -549,7 +872,7 @@ def build_status_content(
     last_out = last_usage.get("completion_tokens", 0)
     cached = last_usage.get("cached_tokens", 0)
     ctx_total = max(context_window_tokens, 0)
-    # Budget mirrors Consolidator formula: ctx_window - max_completion - _SAFETY_BUFFER
+    # 说明：这里处理 通用辅助函数 的协议细节或边界情况，避免外部差异影响核心流程。
     ctx_budget = max(ctx_total - int(max_completion_tokens) - 1024, 1)
     ctx_pct = min(int((context_tokens_estimate / ctx_budget) * 100), 999) if ctx_budget > 0 else 0
     ctx_used_str = (
@@ -576,7 +899,20 @@ def build_status_content(
 
 
 def sync_workspace_templates(workspace: Path, silent: bool = False) -> list[str]:
-    """Sync bundled templates to workspace. Creates missing files without overwriting user files."""
+    """执行 `sync_workspace_templates`。
+
+    【中文名称】sync_workspace_templates
+
+    【功能说明】
+    这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - workspace: 调用方传入的 `workspace` 数据；具体类型以函数签名为准。
+    - silent: 调用方传入的 `silent` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     from importlib.resources import files as pkg_files
 
     try:
@@ -589,6 +925,21 @@ def sync_workspace_templates(workspace: Path, silent: bool = False) -> list[str]
     added: list[str] = []
 
     def _write(src, dest: Path):
+        """执行 `_write`。
+
+        【中文名称】_write
+
+        【功能说明】
+        这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+        阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+        【参数说明】
+        - src: 调用方传入的 `src` 数据；具体类型以函数签名为准。
+        - dest: 调用方传入的 `dest` 数据；具体类型以函数签名为准。
+
+        【返回值】
+        - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
+
         content = src.read_text(encoding="utf-8") if src else ""
         if dest.exists():
             return
@@ -609,7 +960,7 @@ def sync_workspace_templates(workspace: Path, silent: bool = False) -> list[str]
         for name in added:
             Console().print(f"  [dim]Created {name}[/dim]")
 
-    # Initialize git for memory version control
+    # 说明：这里处理 通用辅助函数 的协议细节或边界情况，避免外部差异影响核心流程。
     try:
         from nanobot.utils.gitstore import GitStore
 
@@ -629,7 +980,19 @@ def sync_workspace_templates(workspace: Path, silent: bool = False) -> list[str]
 
 
 def load_bundled_template(template_name: str) -> str | None:
-    """Read a bundled template file from the nanobot package."""
+    """执行 `load_bundled_template`。
+
+    【中文名称】load_bundled_template
+
+    【功能说明】
+    这是 通用辅助函数 中的一个步骤函数，用来支撑：负责消息切分、模板同步、目录复制、文本处理等多个子系统共享的小工具。
+    阅读时可以把它看作“把上游传入的数据整理、校验或转换后，再交给下一层”的小环节。
+
+    【参数说明】
+    - template_name: 调用方传入的 `template_name` 数据；具体类型以函数签名为准。
+
+    【返回值】
+    - 返回当前步骤的处理结果；如果没有显式返回值，则表示只完成状态更新、发送消息或副作用操作。"""
     from importlib.resources import files as pkg_files
 
     with suppress(Exception):
