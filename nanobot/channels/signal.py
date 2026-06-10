@@ -1,4 +1,21 @@
-"""Signal channel implementation using signal-cli daemon JSON-RPC interface."""
+"""Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+
+【中文名称】渠道适配器：nanobot/channels/signal.py
+
+【功能说明】
+本文件属于 P1 学习范围，重点帮助初学者理解“外部系统 ↔ nanobot 后端”之间的适配层。
+阅读时可以先看类和函数的中文说明，再沿着消息、配置、异常和返回值四条线索跟代码。
+
+【主要职责】
+1. 接收配置或输入数据，整理成后端内部统一使用的结构。
+2. 调用第三方 SDK、HTTP API 或公共工具函数完成实际工作。
+3. 把外部返回值、错误和流式事件转换成 nanobot 可继续处理的数据。
+4. 在边界处处理鉴权、限流、媒体文件、重试和日志，避免复杂度泄漏到核心 Agent。
+
+【学习提示】
+如果你是 Agent 或后端初学者，可以把本文件看成“翻译器”：它不改变核心 Agent 思路，
+而是负责理解某个平台或服务商的协议，并把它翻译成项目内部约定的数据形状。
+"""
 
 from __future__ import annotations
 
@@ -28,9 +45,23 @@ from nanobot.utils.helpers import safe_filename, split_message
 
 @dataclass
 class _Run:
+    """_Run 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】_Run
+
+    【功能说明】
+    Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    普通 Python 类。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
     text: str
     styles: frozenset[str] = field(default_factory=frozenset)
-    opaque: bool = False  # code / table content — skip further pattern processing
+    opaque: bool = False  # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
 
 
 _SIG_CODE_BLOCK_RE = re.compile(r"```(?:\w+)?\n?([\s\S]*?)```")
@@ -47,11 +78,11 @@ _SIG_ITALIC_RE = re.compile(
 _SIG_STRIKE_RE = re.compile(r"~~(.+?)~~|(?<![~\w])~([^~\n]+)~(?![~\w])", re.DOTALL)
 _SIG_TOKEN_RE = re.compile(r"\x00C(\d+)\x00")
 
-# Patterns used to strip inline markdown when rendering table cells as plain
-# text. Defined separately from the styling regexes above because the cell
-# stripper needs a fixed, narrow subset (no single-asterisk italic, no
-# single-tilde strikethrough) and benefits from each pattern's group 1 being
-# the content directly.
+# 中文说明：这一段围绕Markdown处理，注意输入、输出和异常路径。
+# 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+# 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+# 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+# 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
 _SIG_CELL_STRIP_PATTERNS: tuple[tuple[re.Pattern, str], ...] = (
     (re.compile(r"\*\*(.+?)\*\*"), r"\1"),
     (re.compile(r"__(.+?)__"), r"\1"),
@@ -61,21 +92,74 @@ _SIG_CELL_STRIP_PATTERNS: tuple[tuple[re.Pattern, str], ...] = (
 
 
 def _utf16_len(s: str) -> int:
-    """UTF-16 code-unit length, matching Signal BodyRange semantics."""
+    """执行辅助逻辑（_utf16_len = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `_utf16_len` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    s: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     return len(s.encode("utf-16-le")) // 2
 
 
 def _sig_strip_cell(s: str) -> str:
-    """Strip inline markdown from a table cell for plain-text rendering."""
+    """执行辅助逻辑（_sig_strip_cell = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `_sig_strip_cell` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    s: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     for pattern, repl in _SIG_CELL_STRIP_PATTERNS:
         s = pattern.sub(repl, s)
     return s.strip()
 
 
 def _sig_render_table(table_lines: list[str]) -> str:
-    """Render a markdown pipe-table as fixed-width plain text."""
+    """渲染内容（_sig_render_table = 原函数名）。
+
+    【中文名称】渲染内容
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `_sig_render_table` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    table_lines: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
 
     def dw(s: str) -> int:
+        """执行辅助逻辑（dw = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `dw` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        s: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in s)
 
     rows: list[list[str]] = []
@@ -95,6 +179,20 @@ def _sig_render_table(table_lines: list[str]) -> str:
     widths = [max(dw(r[c]) for r in rows) for c in range(ncols)]
 
     def dr(cells: list[str]) -> str:
+        """执行辅助逻辑（dr = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `dr` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cells: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return "  ".join(f"{c}{' ' * (w - dw(c))}" for c, w in zip(cells, widths))
 
     out = [dr(rows[0])]
@@ -105,25 +203,48 @@ def _sig_render_table(table_lines: list[str]) -> str:
 
 
 def _markdown_to_signal(text: str) -> tuple[str, list[str]]:
-    """Convert markdown text to Signal plain text + textStyle ranges.
+    """执行辅助逻辑（_markdown_to_signal = 原函数名）。
 
-    Returns ``(plain_text, text_styles)`` where ``text_styles`` are
-    ``"start:length:STYLE"`` strings for the signal-cli ``textStyle`` parameter.
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `_markdown_to_signal` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    text: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
     """
     if not text:
         return text, []
 
-    # Phase 1 (text-level): extract code blocks and tables with placeholder tokens
-    # so they're protected from inline-style processing.
+    # 中文说明：提取。
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
     protected: list[str] = []
 
     def save_code(m: re.Match) -> str:
+        """保存数据（save_code = 原函数名）。
+
+        【中文名称】保存数据
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `save_code` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        m: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         protected.append(m.group(1))
         return f"\x00C{len(protected) - 1}\x00"
 
     text = _SIG_CODE_BLOCK_RE.sub(save_code, text)
 
-    # Detect and render pipe-tables line by line.
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
     lines = text.split("\n")
     rebuilt: list[str] = []
     i = 0
@@ -144,13 +265,28 @@ def _markdown_to_signal(text: str) -> tuple[str, list[str]]:
             i += 1
     text = "\n".join(rebuilt)
 
-    # Phase 2 (run-based): process inline patterns.
+    # 中文说明：这里标记当前处理阶段，便于按执行顺序跟读代码。
     runs: list[_Run] = [_Run(text)]
 
     def transform(
         pattern: re.Pattern,
         make_runs: Callable[[re.Match, frozenset[str]], list[_Run]],
     ) -> None:
+        """执行辅助逻辑（transform = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `transform` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        pattern: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        make_runs: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         new_runs: list[_Run] = []
         for run in runs:
             if run.opaque:
@@ -166,32 +302,61 @@ def _markdown_to_signal(text: str) -> tuple[str, list[str]]:
                 new_runs.append(_Run(run.text[pos:], run.styles))
         runs[:] = new_runs
 
-    # Restore code/table placeholders as opaque MONOSPACE runs.
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
     transform(
         _SIG_TOKEN_RE,
         lambda m, s: [_Run(protected[int(m.group(1))], s | {"MONOSPACE"}, opaque=True)],
     )
 
-    # Inline code (opaque).
+    # 中文说明：行内代码。
     transform(_SIG_INLINE_CODE_RE, lambda m, s: [_Run(m.group(1), s | {"MONOSPACE"}, opaque=True)])
 
-    # Headers → bold plain text.
+    # 中文说明：普通文本。
     transform(_SIG_HEADER_RE, lambda m, s: [_Run(m.group(1), s | {"BOLD"})])
 
-    # Blockquotes → strip marker.
+    # 中文说明：引用块。
     transform(_SIG_BLOCKQUOTE_RE, lambda m, s: [_Run(m.group(1), s)])
 
-    # Bullet lists → bullet character.
+    # 中文说明：项目符号列表。
     transform(_SIG_BULLET_RE, lambda m, s: [_Run("• ", s)])
 
-    # Numbered lists → normalize spacing.
+    # 中文说明：有序编号列表。
     transform(_SIG_OLIST_RE, lambda m, s: [_Run(m.group(1) + ". ", s)])
 
-    # Links → "text (url)" or bare url when text equals url.
+    # 中文说明：这里描述一次数据形态转换，左边是输入形态，右边是输出形态。
     def _link_runs(m: re.Match, s: frozenset) -> list[_Run]:
+        """执行辅助逻辑（_link_runs = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `_link_runs` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        m: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        s: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         link_text, url = m.group(1), m.group(2)
 
         def _norm(u: str) -> str:
+            """执行辅助逻辑（_norm = 原函数名）。
+
+            【中文名称】执行辅助逻辑
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `_norm` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            u: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             return re.sub(r"^https?://(www\.)?", "", u).rstrip("/").lower()
 
         if _norm(url) == _norm(link_text):
@@ -200,19 +365,19 @@ def _markdown_to_signal(text: str) -> tuple[str, list[str]]:
 
     transform(_SIG_LINK_RE, _link_runs)
 
-    # Bold (before italic so ** doesn't interfere).
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
     transform(_SIG_BOLD_RE, lambda m, s: [_Run(m.group(1) or m.group(2), s | {"BOLD"})])
 
-    # Italic (single * or _).
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
     transform(_SIG_ITALIC_RE, lambda m, s: [_Run(m.group(1) or m.group(2), s | {"ITALIC"})])
 
-    # Strikethrough: ~~text~~ (standard) or ~text~ (single-tilde variant).
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
     transform(_SIG_STRIKE_RE, lambda m, s: [_Run(m.group(1) or m.group(2), s | {"STRIKETHROUGH"})])
 
-    # Phase 3: assemble output. Offsets and lengths are emitted in UTF-16 code
-    # units because Signal's BodyRange (via signal-cli's textStyle) interprets
-    # them as such; Python's len() counts code points, which would shift ranges
-    # left by 1 unit per non-BMP character preceding them.
+    # 中文说明：这里标记当前处理阶段，便于按执行顺序跟读代码。
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
     plain_text = ""
     text_styles: list[str] = []
     utf16_offset = 0
@@ -232,26 +397,32 @@ def _markdown_to_signal(text: str) -> tuple[str, list[str]]:
 def _partition_styles(
     plain_text: str, chunks: list[str], text_styles: list[str]
 ) -> list[list[str]]:
-    """Partition Signal textStyle ranges across message chunks.
+    """执行辅助逻辑（_partition_styles = 原函数名）。
 
-    ``split_message`` slices ``plain_text`` into pieces (optionally trimming
-    whitespace at the boundaries), but the style ranges produced by
-    ``_markdown_to_signal`` are expressed in UTF-16 offsets relative to the
-    full ``plain_text``. This redistributes them per chunk with offsets
-    rebased to each chunk's start. Ranges that span a boundary are split
-    across the chunks they touch; ranges that fall entirely in trimmed
-    whitespace are dropped.
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `_partition_styles` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    plain_text: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    chunks: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    text_styles: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
     """
     if not chunks:
         return []
     if not text_styles:
         return [[] for _ in chunks]
 
-    # Locate each chunk's UTF-16 start in plain_text. split_message lstrips at
-    # boundaries (but not before the first chunk), so we skip whitespace
-    # between chunks to mirror that.
+    # 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
     chunk_ranges: list[tuple[int, int]] = []
-    cursor = 0  # Python codepoint cursor in plain_text
+    cursor = 0  # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
     for i, chunk in enumerate(chunks):
         if i > 0:
             while cursor < len(plain_text) and plain_text[cursor].isspace():
@@ -278,34 +449,73 @@ def _partition_styles(
 
 
 class SignalDMConfig(Base):
-    """Signal DM policy configuration."""
+    """SignalDMConfig 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】SignalDMConfig
+
+    【功能说明】
+    Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    Base。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     enabled: bool = False
-    policy: str = "allowlist"  # "open" or "allowlist"
-    allow_from: list[str] = Field(default_factory=list)  # Allowed phone numbers/UUIDs
+    policy: str = "allowlist"  # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+    allow_from: list[str] = Field(default_factory=list)  # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
 
 
 class SignalGroupConfig(Base):
-    """Signal group policy configuration."""
+    """SignalGroupConfig 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】SignalGroupConfig
+
+    【功能说明】
+    Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    Base。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     enabled: bool = False
-    policy: str = "allowlist"  # "open" or "allowlist" - which groups to operate in
-    allow_from: list[str] = Field(default_factory=list)  # Allowed group IDs if allowlist policy
-    require_mention: bool = True  # Whether bot must be mentioned to respond
+    policy: str = "allowlist"  # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+    allow_from: list[str] = Field(default_factory=list)  # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+    require_mention: bool = True  # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
 
 
 class SignalConfig(Base):
-    """Signal channel configuration using signal-cli daemon (HTTP mode with -a flag only)."""
+    """SignalConfig 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】SignalConfig
+
+    【功能说明】
+    Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    Base。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     enabled: bool = False
-    phone_number: str = ""  # Your Signal phone number (e.g., "+1234567890")
+    phone_number: str = ""  # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
     daemon_host: str = "localhost"
     daemon_port: int = 8080
-    group_message_buffer_size: int = 20  # Number of recent group messages to keep for context
-    # Override the directory signal-cli writes inbound attachments to. When
-    # None, defaults to ~/.local/share/signal-cli/attachments (the daemon's
-    # platform default on Linux). Set this if the daemon is running with a
-    # custom XDG_DATA_HOME or on macOS/Windows where the default path differs.
+    group_message_buffer_size: int = 20  # 中文说明：这一段围绕消息、上下文处理，注意输入、输出和异常路径。
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+    # 中文说明：这一段围绕路径处理，注意输入、输出和异常路径。
     attachments_dir: str | None = None
     dm: SignalDMConfig = Field(default_factory=SignalDMConfig)
     group: SignalGroupConfig = Field(default_factory=SignalGroupConfig)
@@ -313,6 +523,21 @@ class SignalConfig(Base):
     @field_validator("group_message_buffer_size")
     @classmethod
     def _validate_buffer_size(cls, v: int) -> int:
+        """校验输入（_validate_buffer_size = 原函数名）。
+
+        【中文名称】校验输入
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalConfig._validate_buffer_size` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        v: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if v <= 0:
             raise ValueError("group_message_buffer_size must be > 0")
         return v
@@ -320,36 +545,80 @@ class SignalConfig(Base):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def allow_from(self) -> list[str]:
-        """Aggregate allowlist for the base-class is_allowed() check.
+        """执行辅助逻辑（allow_from = 原函数名）。
 
-        Returns the union of dm.allow_from and group.allow_from so the base
-        channel gate sees a populated list when either sub-policy is configured.
-        A ``"*"`` wildcard in either sub-list propagates to allow all.
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalConfig.allow_from` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         return list(dict.fromkeys(self.dm.allow_from + self.group.allow_from))
 
 
 class SignalChannel(BaseChannel):
-    """
-    Signal channel using signal-cli daemon via HTTP JSON-RPC interface.
+    """SignalChannel 类，封装 渠道适配器 的核心状态和行为。
 
-    Requires signal-cli daemon in HTTP mode:
-    - signal-cli -a +1234567890 daemon --http localhost:8080
+    【中文名称】SignalChannel
 
-    See https://github.com/AsamK/signal-cli for setup instructions.
+    【功能说明】
+    Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    BaseChannel。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
     """
 
     name = "signal"
     display_name = "Signal"
     _TYPING_REFRESH_SECONDS = 10.0
-    _MAX_MESSAGE_LEN = 64_000  # signal-cli practical limit (protocol max ~64 KB)
+    _MAX_MESSAGE_LEN = 64_000  # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
     _HTTP_TIMEOUT_SECONDS = 60.0
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
+        """执行辅助逻辑（default_config = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel.default_config` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return SignalConfig().model_dump(by_alias=True)
 
     def __init__(self, config: SignalConfig, bus: MessageBus):
+        """初始化对象（__init__ = 原函数名）。
+
+        【中文名称】初始化对象
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel.__init__` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        config: 配置对象或配置片段，决定该逻辑如何连接外部服务。
+        bus: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if isinstance(config, dict):
             config = SignalConfig.model_validate(config)
         super().__init__(config, bus)
@@ -362,18 +631,25 @@ class SignalChannel(BaseChannel):
         self._account_id_aliases: set[str] = set()
         self._remember_account_id_alias(self.config.phone_number)
 
-        # Rolling message buffer for group context (group_id -> deque of messages)
-        # Each message is a dict with: sender_name, sender_number, content, timestamp
+        # 中文说明：这里描述一次数据形态转换，左边是输入形态，右边是输出形态。
+        # 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
         self._group_buffers: dict[str, deque] = {}
 
     def is_allowed(self, sender_id: str) -> bool:
-        """Override base check to normalize and split pipe-joined identifiers.
+        """判断条件是否成立（is_allowed = 原函数名）。
 
-        ``sender_id`` from Signal is the pipe-joined composite produced by
-        ``_collect_sender_id_parts``; allow_from entries may be single
-        identifiers or composites and may use the ``+`` prefix variant or
-        not. Delegates to ``_sender_matches_allowlist`` so the base gate
-        matches the per-policy DM gate.
+        【中文名称】判断条件是否成立
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel.is_allowed` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        sender_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         allow_list = self.config.allow_from
         if "*" in allow_list:
@@ -387,11 +663,20 @@ class SignalChannel(BaseChannel):
         return False
 
     def _sender_approved_via_pairing(self, sender_id: str) -> bool:
-        """Return True if any normalized variant of sender_id is in the pairing store.
+        """发送输出消息（_sender_approved_via_pairing = 原函数名）。
 
-        Pairing approval may be recorded under any of the identifier forms
-        signal exposes (phone with/without ``+``, UUID, ACI), so we check
-        each part of the pipe-joined composite against ``is_approved``.
+        【中文名称】发送输出消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._sender_approved_via_pairing` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        sender_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         for part in str(sender_id).split("|"):
             for variant in self._normalize_signal_id(part):
@@ -409,13 +694,26 @@ class SignalChannel(BaseChannel):
         session_key: str | None = None,
         is_dm: bool = False,
     ) -> None:
-        """Handle an inbound message whose policy has already been checked.
+        """异步处理事件（_handle_message = 原函数名）。
 
-        ``_check_inbound_policy`` is the authoritative gate for DM/group
-        access, so we skip the base-class ``is_allowed()`` check and publish
-        directly to the bus.  The denied-DM pairing path calls
-        ``super()._handle_message`` instead, which goes through
-        ``is_allowed`` and issues a pairing code.
+        【中文名称】处理事件
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._handle_message` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        sender_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        content: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        media: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        metadata: 结构化数据负载，后续会被解析或转发。
+        session_key: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        is_dm: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         meta = metadata or {}
         if self.supports_streaming:
@@ -433,7 +731,20 @@ class SignalChannel(BaseChannel):
         )
 
     async def start(self) -> None:
-        """Start the Signal channel and connect to signal-cli daemon."""
+        """异步启动流程（start = 原函数名）。
+
+        【中文名称】启动流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel.start` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self.config.phone_number:
             self.logger.error("Signal account not configured")
             return
@@ -442,7 +753,20 @@ class SignalChannel(BaseChannel):
         await self._start_http_mode()
 
     async def _start_http_mode(self) -> None:
-        """Start Signal channel using Server-Sent Events for receiving messages."""
+        """异步启动流程（_start_http_mode = 原函数名）。
+
+        【中文名称】启动流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._start_http_mode` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         base_url = f"http://{self.config.daemon_host}:{self.config.daemon_port}"
         reconnect_delay_s = 1.0
         max_reconnect_delay_s = 30.0
@@ -451,12 +775,12 @@ class SignalChannel(BaseChannel):
             try:
                 self.logger.info("Connecting to signal-cli daemon at {}...", base_url)
 
-                # Create HTTP client
+                # 中文说明：这一段围绕HTTP处理，注意输入、输出和异常路径。
                 self._http = httpx.AsyncClient(
                     timeout=self._HTTP_TIMEOUT_SECONDS, base_url=base_url
                 )
 
-                # Test connection
+                # 中文说明：Test connection 相关逻辑。
                 try:
                     response = await self._http.get("/api/v1/check")
                     if response.status_code == 200:
@@ -468,14 +792,14 @@ class SignalChannel(BaseChannel):
                 except Exception as e:
                     raise ConnectionRefusedError(f"signal-cli daemon not responding: {e}")
 
-                # Reset reconnect delay after successful connection check.
+                # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
                 reconnect_delay_s = 1.0
 
-                # Ensure account-level typing indicators are enabled.
+                # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
                 await self._ensure_typing_indicators_enabled()
 
-                # Start SSE receiver and supervise it. If it exits while we're still
-                # running, treat it as a disconnect and reconnect.
+                # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+                # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
                 self._sse_task = asyncio.create_task(self._sse_receive_loop())
                 await self._sse_task
                 if self._running:
@@ -517,10 +841,23 @@ class SignalChannel(BaseChannel):
                 reconnect_delay_s = min(reconnect_delay_s * 2, max_reconnect_delay_s)
 
     async def stop(self) -> None:
-        """Stop the Signal channel."""
+        """异步停止流程（stop = 原函数名）。
+
+        【中文名称】停止流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel.stop` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         self._running = False
 
-        # Stop SSE task
+        # 中文说明：Stop SSE task 相关逻辑。
         if self._sse_task:
             self._sse_task.cancel()
             try:
@@ -528,17 +865,31 @@ class SignalChannel(BaseChannel):
             except asyncio.CancelledError:
                 pass
 
-        # Cancel active typing indicators
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         for chat_id in list(self._typing_tasks):
             await self._stop_typing(chat_id)
 
-        # Close HTTP client
+        # 中文说明：这一段围绕HTTP处理，注意输入、输出和异常路径。
         if self._http:
             await self._http.aclose()
             self._http = None
 
     async def send(self, msg: OutboundMessage) -> None:
-        """Send a message through Signal."""
+        """异步发送消息（send = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel.send` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        msg: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         is_progress_message = bool(msg.metadata.get("_progress"))
         try:
             plain_text, text_styles = _markdown_to_signal(msg.content)
@@ -570,14 +921,27 @@ class SignalChannel(BaseChannel):
             self.logger.exception("Error sending Signal message")
             raise
         finally:
-            # Keep typing active across progress updates; stop on the final reply.
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
             if not is_progress_message:
-                # Avoid immediate START->STOP for fast responses, which can be invisible
-                # in some Signal clients. Let indicator expire naturally (~15s).
+                # 中文说明：这里描述一次数据形态转换，左边是输入形态，右边是输出形态。
+                # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
                 await self._stop_typing(msg.chat_id, send_stop=False)
 
     async def _sse_receive_loop(self) -> None:
-        """Receive messages via Server-Sent Events (HTTP mode)."""
+        """异步接收消息（_sse_receive_loop = 原函数名）。
+
+        【中文名称】接收消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._sse_receive_loop` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self._http:
             raise RuntimeError("HTTP client not initialized for Signal SSE stream")
 
@@ -592,23 +956,23 @@ class SignalChannel(BaseChannel):
 
                 self.logger.info("Subscribed to Signal messages via SSE")
 
-                # Buffer for accumulating SSE data across multiple lines
+                # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
                 event_buffer = []
 
                 async for line in response.aiter_lines():
                     if not self._running:
                         break
 
-                    # Debug: log raw SSE lines (except keepalive pings)
+                    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
                     if line and line != ":":
                         self.logger.debug("SSE line received: {}", line[:200])
 
-                    # SSE format handling
+                    # 中文说明：这一段围绕格式处理，注意输入、输出和异常路径。
                     if isinstance(line, str):
-                        # Empty line signals end of event
+                        # 中文说明：这一段围绕事件处理，注意输入、输出和异常路径。
                         if not line or line == ":":
                             if event_buffer:
-                                # Try to parse the accumulated data
+                                # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
                                 data_str = ""
                                 try:
                                     data_str = "\n".join(event_buffer)
@@ -624,14 +988,14 @@ class SignalChannel(BaseChannel):
                                 finally:
                                     event_buffer = []
 
-                        # "data:" line - accumulate it
+                        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
                         elif line.startswith("data:"):
-                            # SSE spec: strip one optional leading space after "data:".
+                            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
                             event_buffer.append(line[6:] if line[5:6] == " " else line[5:])
 
-                        # "event:" line - just log it (we only care about data)
+                        # 中文说明：这一段围绕事件处理，注意输入、输出和异常路径。
                         elif line.startswith("event:"):
-                            pass  # Ignore event type for now
+                            pass  # 中文说明：这一段围绕事件处理，注意输入、输出和异常路径。
 
                 if self._running:
                     raise ConnectionError("Signal SSE stream closed by remote endpoint")
@@ -645,11 +1009,21 @@ class SignalChannel(BaseChannel):
 
     @asynccontextmanager
     async def _safe_handle(self, action: str, payload: Any = None) -> AsyncIterator[None]:
-        """Swallow and log any exception from a top-level handler block.
+        """异步处理事件（_safe_handle = 原函数名）。
 
-        Logs `self.logger.error` with the action name, the exception, and a
-        bounded ``repr`` of the offending payload so the offending input is
-        recoverable from logs without having to correlate by timestamp.
+        【中文名称】处理事件
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._safe_handle` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        action: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        payload: 结构化数据负载，后续会被解析或转发。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         try:
             yield
@@ -661,10 +1035,24 @@ class SignalChannel(BaseChannel):
             self.logger.opt(exception=True).error(text)
 
     async def _handle_receive_notification(self, params: dict[str, Any]) -> None:
-        """Handle incoming message notification from signal-cli."""
+        """异步处理事件（_handle_receive_notification = 原函数名）。
+
+        【中文名称】处理事件
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._handle_receive_notification` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        params: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         self.logger.debug("_handle_receive_notification called with: {}", params)
         async with self._safe_handle("receive notification", params):
-            # Extract envelope from SSE notification: {"envelope": {...}}
+            # 中文说明：提取。
             envelope = params.get("envelope", {})
 
             self.logger.debug("Extracted envelope: {}", envelope)
@@ -673,7 +1061,7 @@ class SignalChannel(BaseChannel):
                 self.logger.debug("No envelope found in params")
                 return
 
-            # Extract sender information
+            # 中文说明：提取。
             sender_parts = self._collect_sender_id_parts(envelope)
             source_name = envelope.get("sourceName")
 
@@ -684,26 +1072,26 @@ class SignalChannel(BaseChannel):
             sender_number = self._primary_sender_id(sender_parts)
             sender_id = "|".join(sender_parts)
 
-            # Keep aliases of the bot account for robust mention matching.
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
             if any(self._id_matches_account(part) for part in sender_parts):
                 for part in sender_parts:
                     self._remember_account_id_alias(part)
 
-            # Check different message types
+            # 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
             data_message = envelope.get("dataMessage")
             sync_message = envelope.get("syncMessage")
             typing_message = envelope.get("typingMessage")
             receipt_message = envelope.get("receiptMessage")
 
-            # Ignore receipt messages (delivery/read receipts)
+            # 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
             if receipt_message:
                 return
 
-            # Handle data messages (incoming messages from others)
+            # 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
             if data_message:
                 await self._handle_data_message(sender_id, sender_number, data_message, source_name)
 
-            # Handle sync messages (messages sent from another device)
+            # 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
             elif sync_message and sync_message.get("sentMessage"):
                 sent_msg = sync_message["sentMessage"]
                 destination = sent_msg.get("destination") or sent_msg.get("destinationNumber")
@@ -712,9 +1100,9 @@ class SignalChannel(BaseChannel):
                         "Sync message sent to {}: {}", destination, sent_msg.get("message", "")[:50]
                     )
 
-            # Handle typing indicators (silently ignore)
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
             elif typing_message:
-                pass  # Ignore typing indicators
+                pass  # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
 
     async def _handle_data_message(
         self,
@@ -723,7 +1111,24 @@ class SignalChannel(BaseChannel):
         data_message: dict[str, Any],
         sender_name: str | None,
     ) -> None:
-        """Handle a data message (text, attachments, etc.)."""
+        """异步处理事件（_handle_data_message = 原函数名）。
+
+        【中文名称】处理事件
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._handle_data_message` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        sender_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        sender_number: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        data_message: 消息数据，可能来自用户、频道、模型或工具调用。
+        sender_name: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         message_text = data_message.get("message") or ""
         attachments = data_message.get("attachments", [])
         mentions = data_message.get("mentions", [])
@@ -762,9 +1167,9 @@ class SignalChannel(BaseChannel):
             timestamp=timestamp,
         )
         if not allowed:
-            # Mirror Slack: let denied DMs reach the base-class
-            # _handle_message so it can reply with a pairing code.
-            # Group denials stay dropped.
+            # 中文说明：这一段围绕Slack处理，注意输入、输出和异常路径。
+            # 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
             if not is_group_message and self.config.dm.enabled:
                 await super()._handle_message(
                     sender_id=sender_id,
@@ -818,11 +1223,27 @@ class SignalChannel(BaseChannel):
         sender_name: str | None,
         timestamp: int | None,
     ) -> tuple[bool, str]:
-        """Decide whether to route an inbound message past DM/group policy.
+        """执行辅助逻辑（_check_inbound_policy = 原函数名）。
 
-        Returns ``(allow, chat_id)``. Has one side effect: when a group
-        message passes the enabled+allowlist gates, it is appended to the
-        group's rolling context buffer before the mention check.
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._check_inbound_policy` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        sender_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        sender_number: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        group_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        is_group_message: 消息数据，可能来自用户、频道、模型或工具调用。
+        message_text: 消息数据，可能来自用户、频道、模型或工具调用。
+        mentions: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        sender_name: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        timestamp: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         if is_group_message:
             chat_id = group_id or sender_number
@@ -857,7 +1278,7 @@ class SignalChannel(BaseChannel):
                 return False, chat_id
             return True, chat_id
 
-        # Direct message
+        # 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
         chat_id = sender_number
         if not self.config.dm.enabled:
             self.logger.debug("Ignoring DM from {} (DMs disabled)", sender_id)
@@ -881,11 +1302,26 @@ class SignalChannel(BaseChannel):
         is_group_message: bool,
         chat_id: str,
     ) -> tuple[str, list[str]]:
-        """Build ``(content, media_paths)`` for an inbound message.
+        """执行辅助逻辑（_assemble_inbound_content = 原函数名）。
 
-        Pulls in group context, strips bot mentions, prefixes the sender's
-        display name on group messages, and copies any attachments from
-        signal-cli's storage into the channel media dir.
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._assemble_inbound_content` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        sender_name: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        sender_number: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        message_text: 消息数据，可能来自用户、频道、模型或工具调用。
+        attachments: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        mentions: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        is_group_message: 消息数据，可能来自用户、频道、模型或工具调用。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         content_parts: list[str] = []
         media_paths: list[str] = []
@@ -939,21 +1375,30 @@ class SignalChannel(BaseChannel):
         message_text: str,
         timestamp: int | None,
     ) -> None:
-        """
-        Add a message to the group's rolling buffer.
+        """执行辅助逻辑（_add_to_group_buffer = 原函数名）。
 
-        Args:
-            group_id: The group ID
-            sender_name: Display name of sender
-            sender_number: Phone number of sender
-            message_text: The message content
-            timestamp: Message timestamp
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._add_to_group_buffer` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        group_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        sender_name: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        sender_number: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        message_text: 消息数据，可能来自用户、频道、模型或工具调用。
+        timestamp: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
-        # Create buffer for this group if it doesn't exist
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         if group_id not in self._group_buffers:
             self._group_buffers[group_id] = deque(maxlen=self.config.group_message_buffer_size)
 
-        # Add message to buffer (deque will automatically drop oldest when full)
+        # 中文说明：这一段围绕消息、调用处理，注意输入、输出和异常路径。
         self._group_buffers[group_id].append(
             {
                 "sender_name": sender_name,
@@ -971,39 +1416,54 @@ class SignalChannel(BaseChannel):
         )
 
     def _get_group_buffer_context(self, group_id: str) -> str:
-        """
-        Get formatted context from the group's message buffer.
+        """执行辅助逻辑（_get_group_buffer_context = 原函数名）。
 
-        Args:
-            group_id: The group ID
+        【中文名称】执行辅助逻辑
 
-        Returns:
-            Formatted string of recent messages (excluding the current one)
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._get_group_buffer_context` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        group_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         if group_id not in self._group_buffers:
             return ""
 
         buffer = self._group_buffers[group_id]
-        if len(buffer) <= 1:  # Only current message, no context
+        if len(buffer) <= 1:  # 中文说明：这一段围绕消息、上下文处理，注意输入、输出和异常路径。
             return ""
 
-        # Format all messages except the last one (which is the current message)
-        # We want to show context BEFORE the mention
-        context_messages = list(buffer)[:-1]  # Exclude the last (current) message
+        # 中文说明：这一段围绕消息、格式处理，注意输入、输出和异常路径。
+        # 中文说明：这一段围绕上下文处理，注意输入、输出和异常路径。
+        context_messages = list(buffer)[:-1]  # 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
 
         lines = []
         for msg in context_messages:
             sender = msg["sender_name"]
-            content = msg["content"][:200]  # Limit to 200 chars per message
+            content = msg["content"][:200]  # 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
             lines.append(f"{sender}: {content}")
 
         return "\n".join(lines)
 
     def _signal_attachments_dir(self) -> Path:
-        """Return the directory signal-cli writes inbound attachments to.
+        """执行辅助逻辑（_signal_attachments_dir = 原函数名）。
 
-        Defaults to ``~/.local/share/signal-cli/attachments`` (the daemon's
-        platform default on Linux) when ``config.attachments_dir`` is unset.
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._signal_attachments_dir` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         configured = self.config.attachments_dir
         if configured:
@@ -1012,7 +1472,20 @@ class SignalChannel(BaseChannel):
 
     @staticmethod
     def _normalize_signal_id(value: str) -> list[str]:
-        """Normalize Signal identifiers (phone/uuid/service-id) for matching."""
+        """标准化数据（_normalize_signal_id = 原函数名）。
+
+        【中文名称】标准化数据
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._normalize_signal_id` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         raw = value.strip()
         if not raw:
             return []
@@ -1026,14 +1499,21 @@ class SignalChannel(BaseChannel):
 
     @classmethod
     def _sender_matches_allowlist(cls, sender_id: str, allow_list: list[str]) -> bool:
-        """Return True if any normalized variant of sender_id is on allow_list.
+        """发送输出消息（_sender_matches_allowlist = 原函数名）。
 
-        Both ``sender_id`` and each allow_list entry can be a single
-        identifier or a pipe-joined composite of several (e.g.
-        ``"+1234567890|uuid-abc"``); both sides are split on ``|`` and each
-        part is run through ``_normalize_signal_id`` so an allowlist entry
-        like ``1234567890`` matches a sender ``+1234567890`` (and vice
-        versa), and case-only differences in UUIDs/ACIs match too.
+        【中文名称】发送输出消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._sender_matches_allowlist` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        sender_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        allow_list: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         if not allow_list:
             return False
@@ -1049,7 +1529,21 @@ class SignalChannel(BaseChannel):
         return bool(sender_variants & allow_variants)
 
     def _remember_account_id_alias(self, value: str | None) -> None:
-        """Remember known bot identifiers for mention matching."""
+        """执行辅助逻辑（_remember_account_id_alias = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._remember_account_id_alias` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not value:
             return
         if not isinstance(value, str):
@@ -1058,7 +1552,21 @@ class SignalChannel(BaseChannel):
             self._account_id_aliases.add(candidate)
 
     def _id_matches_account(self, value: str | None) -> bool:
-        """Return True when an identifier refers to the bot account."""
+        """执行辅助逻辑（_id_matches_account = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._id_matches_account` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not value:
             return False
         if not isinstance(value, str):
@@ -1069,7 +1577,20 @@ class SignalChannel(BaseChannel):
 
     @staticmethod
     def _collect_sender_id_parts(envelope: dict[str, Any]) -> list[str]:
-        """Collect all known sender identifier variants from an envelope."""
+        """执行辅助逻辑（_collect_sender_id_parts = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._collect_sender_id_parts` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        envelope: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         parts: list[str] = []
         for key in (
             "sourceNumber",
@@ -1089,7 +1610,20 @@ class SignalChannel(BaseChannel):
 
     @staticmethod
     def _primary_sender_id(sender_parts: list[str]) -> str:
-        """Pick the best sender identifier for routing (prefer phone-like IDs)."""
+        """执行辅助逻辑（_primary_sender_id = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._primary_sender_id` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        sender_parts: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         for part in sender_parts:
             if part.startswith("+") or part.isdigit():
                 return part
@@ -1097,7 +1631,21 @@ class SignalChannel(BaseChannel):
 
     @staticmethod
     def _extract_group_id(group_info: Any, group_v2: Any) -> str | None:
-        """Extract group ID from groupInfo/groupV2 payloads across signal-cli variants."""
+        """提取信息（_extract_group_id = 原函数名）。
+
+        【中文名称】提取信息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._extract_group_id` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        group_info: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        group_v2: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         for group_obj in (group_info, group_v2):
             if not isinstance(group_obj, dict):
                 continue
@@ -1109,10 +1657,38 @@ class SignalChannel(BaseChannel):
 
     @staticmethod
     def _mention_id_candidates(mention: dict[str, Any]) -> list[str]:
-        """Extract possible identifier fields from a mention payload."""
+        """执行辅助逻辑（_mention_id_candidates = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._mention_id_candidates` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        mention: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         ids: list[str] = []
 
         def _walk(value: dict[str, Any] | Any, depth: int = 0) -> None:
+            """执行辅助逻辑（_walk = 原函数名）。
+
+            【中文名称】执行辅助逻辑
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `SignalChannel._walk` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+            depth: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             if depth > 2:
                 return
             if not isinstance(value, dict):
@@ -1130,7 +1706,20 @@ class SignalChannel(BaseChannel):
 
     @staticmethod
     def _mention_span(mention: dict[str, Any]) -> tuple[int, int] | None:
-        """Extract a safe (start, length) span from a mention."""
+        """执行辅助逻辑（_mention_span = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._mention_span` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        mention: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         try:
             start = int(mention.get("start", 0))
             length = int(mention.get("length", 0))
@@ -1143,11 +1732,19 @@ class SignalChannel(BaseChannel):
 
     @staticmethod
     def _leading_placeholder_span(text: str | None) -> tuple[int, int] | None:
-        """
-        Detect a leading Signal mention placeholder when mention metadata is missing.
+        """执行辅助逻辑（_leading_placeholder_span = 原函数名）。
 
-        Some clients/integrations deliver mentions as a leading placeholder character
-        (typically U+FFFC) but omit `mentions` metadata in the payload.
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._leading_placeholder_span` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        text: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         if not text:
             return None
@@ -1170,21 +1767,27 @@ class SignalChannel(BaseChannel):
         return (start, 1)
 
     def _should_respond_in_group(self, message_text: str, mentions: list[dict[str, Any]]) -> bool:
-        """
-        Determine if the bot should respond to a group message.
+        """执行辅助逻辑（_should_respond_in_group = 原函数名）。
 
-        Args:
-            message_text: The message text content
-            mentions: List of mentions from Signal (format: [{"number": "+1234567890", "start": 0, "length": 10}])
+        【中文名称】执行辅助逻辑
 
-        Returns:
-            True if bot should respond, False otherwise
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._should_respond_in_group` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        message_text: 消息数据，可能来自用户、频道、模型或工具调用。
+        mentions: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
-        # Group reply behavior is controlled only by group.require_mention.
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         if not self.config.group.require_mention:
             return True
 
-        # If mention is required, check if bot was mentioned.
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         for mention in mentions:
             if not isinstance(mention, dict):
                 continue
@@ -1192,9 +1795,9 @@ class SignalChannel(BaseChannel):
                 if self._id_matches_account(mention_id):
                     return True
 
-        # Some Signal clients emit mention spans without recipient identifiers
-        # (for handle-style mentions). Accept a leading identifier-less mention
-        # as a mention of the bot to avoid false negatives.
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         for mention in mentions:
             if not isinstance(mention, dict):
                 continue
@@ -1208,13 +1811,13 @@ class SignalChannel(BaseChannel):
                 self.logger.debug("Accepting identifier-less leading mention as bot mention")
                 return True
 
-        # Some payloads omit `mentions` but still include the leading mention
-        # placeholder character in the message body.
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+        # 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
         if not mentions and self._leading_placeholder_span(message_text):
             self.logger.debug("Accepting leading placeholder mention without mention metadata")
             return True
 
-        # Fallback: check for configured phone number in plain text.
+        # 中文说明：普通文本。
         if message_text and self.config.phone_number:
             for account_id in self._normalize_signal_id(self.config.phone_number):
                 if account_id and account_id in message_text:
@@ -1223,23 +1826,26 @@ class SignalChannel(BaseChannel):
         return False
 
     def _strip_bot_mention(self, text: str, mentions: list[dict[str, Any]]) -> str:
-        """
-        Remove bot mentions from message text.
+        """执行辅助逻辑（_strip_bot_mention = 原函数名）。
 
-        Signal mentions are embedded in the text, so we need to remove them based on
-        the mentions array which provides start position and length.
+        【中文名称】执行辅助逻辑
 
-        Args:
-            text: Original message text
-            mentions: List of mention objects with start/length positions
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._strip_bot_mention` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
 
-        Returns:
-            Text with bot mentions removed
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        text: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        mentions: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         if not text:
             return text
 
-        # Build a list of (start, length) tuples for our bot's mentions
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         bot_mentions = []
         for mention in mentions:
             if not isinstance(mention, dict):
@@ -1249,12 +1855,12 @@ class SignalChannel(BaseChannel):
             if not span:
                 continue
 
-            # Strip matched bot mentions by ID.
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
             if any(self._id_matches_account(mention_id) for mention_id in mention_ids):
                 bot_mentions.append(span)
                 continue
 
-            # Also strip identifier-less leading mention spans (handle mentions).
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
             if not mention_ids:
                 start, _ = span
                 if not text[:start].strip():
@@ -1265,11 +1871,11 @@ class SignalChannel(BaseChannel):
             if placeholder_span:
                 bot_mentions.append(placeholder_span)
 
-        # Sort mentions by start position (descending) to remove from end to start
-        # This prevents position shifts when removing earlier mentions
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+        # 中文说明：这一段围绕事件处理，注意输入、输出和异常路径。
         bot_mentions.sort(reverse=True)
 
-        # Remove each mention
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         for start, length in bot_mentions:
             if start >= len(text):
                 continue
@@ -1280,23 +1886,79 @@ class SignalChannel(BaseChannel):
 
     @staticmethod
     def _is_group_chat_id(chat_id: str) -> bool:
-        """Return True when chat_id appears to be a Signal group ID (base64)."""
+        """判断条件是否成立（_is_group_chat_id = 原函数名）。
+
+        【中文名称】判断条件是否成立
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._is_group_chat_id` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return "=" in chat_id or (len(chat_id) > 40 and "-" not in chat_id)
 
     def _recipient_params(self, chat_id: str) -> dict[str, Any]:
-        """Build recipient params for signal-cli JSON-RPC methods."""
+        """执行辅助逻辑（_recipient_params = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._recipient_params` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if self._is_group_chat_id(chat_id):
             return {"groupId": chat_id}
         return {"recipient": [chat_id]}
 
     async def _start_typing(self, chat_id: str) -> None:
-        """Start periodic typing indicator updates for a chat."""
+        """异步启动流程（_start_typing = 原函数名）。
+
+        【中文名称】启动流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._start_typing` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         await self._stop_typing(chat_id, send_stop=False)
         await self._send_typing(chat_id)
         self._typing_tasks[chat_id] = asyncio.create_task(self._typing_loop(chat_id))
 
     async def _stop_typing(self, chat_id: str, send_stop: bool = True) -> None:
-        """Stop typing indicator updates for a chat."""
+        """异步停止流程（_stop_typing = 原函数名）。
+
+        【中文名称】停止流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._stop_typing` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        send_stop: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         task = self._typing_tasks.pop(chat_id, None)
         had_task = task is not None
         if task and not task.done():
@@ -1310,7 +1972,21 @@ class SignalChannel(BaseChannel):
             await self._send_typing(chat_id, stop=True)
 
     async def _typing_loop(self, chat_id: str) -> None:
-        """Send typing updates periodically until cancelled."""
+        """异步执行辅助逻辑（_typing_loop = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._typing_loop` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         try:
             while self._running:
                 await asyncio.sleep(self._TYPING_REFRESH_SECONDS)
@@ -1323,7 +1999,23 @@ class SignalChannel(BaseChannel):
     async def _send_typing(
         self, chat_id: str, stop: bool = False, quiet_success: bool = False
     ) -> None:
-        """Send a typing START/STOP message via signal-cli."""
+        """异步发送消息（_send_typing = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._send_typing` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        stop: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        quiet_success: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         action = "stop" if stop else "start"
         if (
             not self._is_group_chat_id(chat_id)
@@ -1363,7 +2055,20 @@ class SignalChannel(BaseChannel):
         )
 
     async def _ensure_typing_indicators_enabled(self) -> None:
-        """Enable typing indicators on the bot account."""
+        """异步确保前置条件成立（_ensure_typing_indicators_enabled = 原函数名）。
+
+        【中文名称】确保前置条件成立
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._ensure_typing_indicators_enabled` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         response = await self._send_request("updateConfiguration", {"typingIndicators": True})
         if "error" in response:
             self.logger.warning(
@@ -1375,12 +2080,27 @@ class SignalChannel(BaseChannel):
     async def _send_request(
         self, method: str, params: dict[str, Any] | None = None
     ) -> dict[str, Any]:
-        """Send a JSON-RPC request via HTTP and wait for response."""
-        # Generate request ID
+        """异步发送消息（_send_request = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._send_request` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        method: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        params: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
+        # 中文说明：这一段围绕请求处理，注意输入、输出和异常路径。
         self._request_id += 1
         request_id = self._request_id
 
-        # Build JSON-RPC request
+        # 中文说明：这一段围绕请求、JSON处理，注意输入、输出和异常路径。
         request = {"jsonrpc": "2.0", "method": method, "id": request_id}
 
         if params:
@@ -1389,7 +2109,21 @@ class SignalChannel(BaseChannel):
         return await self._send_http_request(request)
 
     async def _send_http_request(self, request: dict[str, Any]) -> dict[str, Any]:
-        """Send JSON-RPC request via HTTP."""
+        """异步发送消息（_send_http_request = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Signal 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `SignalChannel._send_http_request` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        request: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self._http:
             raise RuntimeError("Not connected to signal-cli daemon")
 
@@ -1400,3 +2134,4 @@ class SignalChannel(BaseChannel):
         except Exception as e:
             self.logger.error("HTTP request failed: {}", e)
             return {"error": {"message": str(e)}}
+

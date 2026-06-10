@@ -1,4 +1,21 @@
-"""Provider wrapper that transparently fails over to fallback models on error."""
+"""多 Provider 兜底路由 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+
+【中文名称】Provider 实现：nanobot/providers/fallback_provider.py
+
+【功能说明】
+本文件属于 P1 学习范围，重点帮助初学者理解“外部系统 ↔ nanobot 后端”之间的适配层。
+阅读时可以先看类和函数的中文说明，再沿着消息、配置、异常和返回值四条线索跟代码。
+
+【主要职责】
+1. 接收配置或输入数据，整理成后端内部统一使用的结构。
+2. 调用第三方 SDK、HTTP API 或公共工具函数完成实际工作。
+3. 把外部返回值、错误和流式事件转换成 nanobot 可继续处理的数据。
+4. 在边界处处理鉴权、限流、媒体文件、重试和日志，避免复杂度泄漏到核心 Agent。
+
+【学习提示】
+如果你是 Agent 或后端初学者，可以把本文件看成“翻译器”：它不改变核心 Agent 思路，
+而是负责理解某个平台或服务商的协议，并把它翻译成项目内部约定的数据形状。
+"""
 
 from __future__ import annotations
 
@@ -10,7 +27,7 @@ from loguru import logger
 
 from nanobot.providers.base import LLMProvider, LLMResponse
 
-# Circuit breaker tuned to match OpenAICompatProvider's Responses API breaker.
+# 中文说明：这一段围绕Provider、响应、API处理，注意输入、输出和异常路径。
 _PRIMARY_FAILURE_THRESHOLD = 3
 _PRIMARY_COOLDOWN_S = 60
 _MISSING = object()
@@ -56,22 +73,19 @@ _FALLBACK_ERROR_TOKENS = (
 
 
 class FallbackProvider(LLMProvider):
-    """Wrap a primary provider and transparently failover to fallback models.
+    """FallbackProvider 类，封装 Provider 实现 的核心状态和行为。
 
-    When the primary model returns a fallbackable error before content has been
-    streamed, the wrapper tries each fallback model in order. Streamed timeout
-    errors are the recovery exception: the caller may close the current stream
-    segment, then the wrapper continues failover with later deltas in a new
-    segment. Each fallback model may reside on a different provider — a factory
-    callable creates the underlying provider on-the-fly.
+    【中文名称】FallbackProvider
 
-    Key design:
-    - Failover is request-scoped (the wrapper itself is stateless between turns).
-    - Skipped when content was already streamed to avoid duplicate output,
-      except timeout recovery can resume in a new stream segment.
-    - Recursive failover is prevented by the factory returning plain providers.
-    - Primary provider is circuit-broken after repeated failures to avoid
-      wasting requests on a known-bad endpoint.
+    【功能说明】
+    多 Provider 兜底路由 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    LLMProvider。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
     """
 
     supports_stream_recover_callback = True
@@ -82,6 +96,23 @@ class FallbackProvider(LLMProvider):
         fallback_presets: list[Any],
         provider_factory: Callable[[Any], LLMProvider],
     ):
+        """初始化对象（__init__ = 原函数名）。
+
+        【中文名称】初始化对象
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。多 Provider 兜底路由 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `FallbackProvider.__init__` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        primary: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        fallback_presets: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        provider_factory: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         self._primary = primary
         self._fallback_presets = list(fallback_presets)
         self._provider_factory = provider_factory
@@ -91,29 +122,114 @@ class FallbackProvider(LLMProvider):
 
     @property
     def generation(self):
+        """执行辅助逻辑（generation = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。多 Provider 兜底路由 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `FallbackProvider.generation` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return self._primary.generation
 
     @generation.setter
     def generation(self, value):
+        """执行辅助逻辑（generation = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。多 Provider 兜底路由 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `FallbackProvider.generation` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         self._primary.generation = value
 
     def get_default_model(self) -> str:
+        """执行辅助逻辑（get_default_model = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。多 Provider 兜底路由 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `FallbackProvider.get_default_model` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return self._primary.get_default_model()
 
     @property
     def supports_progress_deltas(self) -> bool:
+        """执行辅助逻辑（supports_progress_deltas = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。多 Provider 兜底路由 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `FallbackProvider.supports_progress_deltas` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return bool(getattr(self._primary, "supports_progress_deltas", False))
 
     def _primary_available(self) -> bool:
-        """Return True if the primary provider is not currently tripped."""
+        """执行辅助逻辑（_primary_available = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。多 Provider 兜底路由 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `FallbackProvider._primary_available` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if self._primary_tripped_at is None:
             return True
         if time.monotonic() - self._primary_tripped_at >= _PRIMARY_COOLDOWN_S:
-            # Half-open: allow one probe attempt.
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
             return True
         return False
 
     async def chat(self, **kwargs: Any) -> LLMResponse:
+        """异步执行辅助逻辑（chat = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。多 Provider 兜底路由 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `FallbackProvider.chat` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        **kwargs: 额外关键字参数，通常向下透传给 SDK 或工具函数。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self._has_fallbacks:
             return await self._primary.chat(**kwargs)
         return await self._try_with_fallback(
@@ -121,6 +237,21 @@ class FallbackProvider(LLMProvider):
         )
 
     async def chat_stream(self, **kwargs: Any) -> LLMResponse:
+        """异步流式处理（chat_stream = 原函数名）。
+
+        【中文名称】流式处理
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。多 Provider 兜底路由 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `FallbackProvider.chat_stream` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        **kwargs: 额外关键字参数，通常向下透传给 SDK 或工具函数。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         on_stream_recover = kwargs.pop("on_stream_recover", None)
         if not self._has_fallbacks:
             return await self._primary.chat_stream(**kwargs)
@@ -129,6 +260,20 @@ class FallbackProvider(LLMProvider):
         original_delta = kwargs.get("on_content_delta")
 
         async def _tracking_delta(text: str) -> None:
+            """异步执行辅助逻辑（_tracking_delta = 原函数名）。
+
+            【中文名称】执行辅助逻辑
+
+            【功能说明】
+            这是 Provider 实现 中的一个关键步骤。多 Provider 兜底路由 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+            在阅读 `FallbackProvider._tracking_delta` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            text: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             if text:
                 has_streamed[0] = True
             if original_delta:
@@ -149,6 +294,24 @@ class FallbackProvider(LLMProvider):
         has_streamed: list[bool] | None,
         on_stream_recover: Callable[[], Awaitable[None]] | None = None,
     ) -> LLMResponse:
+        """异步执行辅助逻辑（_try_with_fallback = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。多 Provider 兜底路由 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `FallbackProvider._try_with_fallback` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        call: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        kwargs: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        has_streamed: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        on_stream_recover: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         primary_model = kwargs.get("model") or self._primary.get_default_model()
 
         if self._primary_available():
@@ -275,10 +438,10 @@ class FallbackProvider(LLMProvider):
             "All {} fallback model(s) failed",
             len(self._fallback_presets),
         )
-        # Return the last error response we saw (primary or last fallback).
+        # 中文说明：兜底。
         if last_response is not None:
             return last_response
-        # Primary was tripped and we have no fallbacks — synthesize an error.
+        # 中文说明：兜底。
         return LLMResponse(
             content=f"Primary model '{primary_model}' circuit open and no fallbacks available",
             finish_reason="error",
@@ -286,6 +449,20 @@ class FallbackProvider(LLMProvider):
 
     @staticmethod
     def _should_fallback(response: LLMResponse) -> bool:
+        """执行辅助逻辑（_should_fallback = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。多 Provider 兜底路由 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `FallbackProvider._should_fallback` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        response: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if response.error_should_retry is False:
             return False
         status = response.error_status_code
@@ -307,3 +484,4 @@ class FallbackProvider(LLMProvider):
         if kind in _FALLBACK_ERROR_KINDS:
             return True
         return any(token in value for value in (kind, error_type, code, text) for token in _FALLBACK_ERROR_TOKENS)
+

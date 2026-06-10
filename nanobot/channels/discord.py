@@ -1,4 +1,21 @@
-"""Discord channel implementation using discord.py."""
+"""Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+
+【中文名称】渠道适配器：nanobot/channels/discord.py
+
+【功能说明】
+本文件属于 P1 学习范围，重点帮助初学者理解“外部系统 ↔ nanobot 后端”之间的适配层。
+阅读时可以先看类和函数的中文说明，再沿着消息、配置、异常和返回值四条线索跟代码。
+
+【主要职责】
+1. 接收配置或输入数据，整理成后端内部统一使用的结构。
+2. 调用第三方 SDK、HTTP API 或公共工具函数完成实际工作。
+3. 把外部返回值、错误和流式事件转换成 nanobot 可继续处理的数据。
+4. 在边界处处理鉴权、限流、媒体文件、重试和日志，避免复杂度泄漏到核心 Agent。
+
+【学习提示】
+如果你是 Agent 或后端初学者，可以把本文件看成“翻译器”：它不改变核心 Agent 思路，
+而是负责理解某个平台或服务商的协议，并把它翻译成项目内部约定的数据形状。
+"""
 
 from __future__ import annotations
 
@@ -32,14 +49,27 @@ if DISCORD_AVAILABLE:
     from discord import app_commands
     from discord.abc import Messageable
 
-MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024  # 20MB
-MAX_MESSAGE_LEN = 2000  # Discord message character limit
+MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024  # 中文说明：20MB 相关逻辑。
+MAX_MESSAGE_LEN = 2000  # 中文说明：消息字符长度上限。
 TYPING_INTERVAL_S = 8
 
 
 @dataclass
 class _StreamBuf:
-    """Per-chat streaming accumulator for progressive Discord message edits."""
+    """_StreamBuf 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】_StreamBuf
+
+    【功能说明】
+    Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    普通 Python 类。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     text: str = ""
     message: Any | None = None
@@ -48,12 +78,25 @@ class _StreamBuf:
 
 
 class DiscordConfig(Base):
-    """Discord channel configuration."""
+    """DiscordConfig 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】DiscordConfig
+
+    【功能说明】
+    Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    Base。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     enabled: bool = False
     token: str = ""
     allow_from: list[str] = Field(default_factory=list)
-    allow_channels: list[str] = Field(default_factory=list)  # Allowed channel IDs (empty = all)
+    allow_channels: list[str] = Field(default_factory=list)  # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
     intents: int = 37377
     group_policy: Literal["mention", "open"] = "mention"
     read_receipt_emoji: str = "👀"
@@ -68,7 +111,20 @@ class DiscordConfig(Base):
 if DISCORD_AVAILABLE:
 
     class DiscordBotClient(discord.Client):
-        """discord.py client that forwards events to the channel."""
+        """DiscordBotClient 类，封装 渠道适配器 的核心状态和行为。
+
+        【中文名称】DiscordBotClient
+
+        【功能说明】
+        Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+        让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+        【继承关系】
+        discord.Client。继承关系决定它需要实现哪些项目约定的方法。
+
+        【学习提示】
+        先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+        """
 
         def __init__(
             self,
@@ -78,12 +134,44 @@ if DISCORD_AVAILABLE:
             proxy: str | None = None,
             proxy_auth: aiohttp.BasicAuth | None = None,
         ) -> None:
+            """初始化对象（__init__ = 原函数名）。
+
+            【中文名称】初始化对象
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `DiscordBotClient.__init__` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+            channel: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+            intents: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+            proxy: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+            proxy_auth: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             super().__init__(intents=intents, proxy=proxy, proxy_auth=proxy_auth)
             self._channel = channel
             self.tree = app_commands.CommandTree(self)
             self._register_app_commands()
 
         async def on_ready(self) -> None:
+            """异步执行辅助逻辑（on_ready = 原函数名）。
+
+            【中文名称】执行辅助逻辑
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `DiscordBotClient.on_ready` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             self._channel._bot_user_id = str(self.user.id) if self.user else None
             self._channel.logger.info("bot connected as user {}", self._channel._bot_user_id)
             try:
@@ -93,19 +181,80 @@ if DISCORD_AVAILABLE:
                 self._channel.logger.warning("app command sync failed: {}", e)
 
         async def on_message(self, message: discord.Message) -> None:
+            """异步执行辅助逻辑（on_message = 原函数名）。
+
+            【中文名称】执行辅助逻辑
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `DiscordBotClient.on_message` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+            message: 消息数据，可能来自用户、频道、模型或工具调用。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             await self._channel._handle_discord_message(message)
 
         async def on_thread_delete(self, thread: discord.Thread) -> None:
+            """异步执行辅助逻辑（on_thread_delete = 原函数名）。
+
+            【中文名称】执行辅助逻辑
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `DiscordBotClient.on_thread_delete` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+            thread: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             self._channel._forget_channel(thread)
 
         async def on_thread_update(self, before: discord.Thread, after: discord.Thread) -> None:
+            """异步执行辅助逻辑（on_thread_update = 原函数名）。
+
+            【中文名称】执行辅助逻辑
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `DiscordBotClient.on_thread_update` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+            before: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+            after: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             if getattr(after, "archived", False):
                 self._channel._forget_channel(after)
             else:
                 self._channel._remember_channel(after)
 
         async def _reply_ephemeral(self, interaction: discord.Interaction, text: str) -> bool:
-            """Send an ephemeral interaction response and report success."""
+            """异步执行辅助逻辑（_reply_ephemeral = 原函数名）。
+
+            【中文名称】执行辅助逻辑
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `DiscordBotClient._reply_ephemeral` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+            interaction: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+            text: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             try:
                 await interaction.response.send_message(text, ephemeral=True)
                 return True
@@ -117,6 +266,21 @@ if DISCORD_AVAILABLE:
             self,
             interaction: discord.Interaction,
         ) -> Any | None:
+            """异步解析目标（_resolve_interaction_channel = 原函数名）。
+
+            【中文名称】解析目标
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `DiscordBotClient._resolve_interaction_channel` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+            interaction: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             channel_id = interaction.channel_id
             if channel_id is None:
                 return None
@@ -135,6 +299,22 @@ if DISCORD_AVAILABLE:
             interaction: discord.Interaction,
             channel: Any | None,
         ) -> bool:
+            """异步执行辅助逻辑（_interaction_channel_allowed = 原函数名）。
+
+            【中文名称】执行辅助逻辑
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `DiscordBotClient._interaction_channel_allowed` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+            interaction: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+            channel: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             allow_channels = self._channel.config.allow_channels
             if not allow_channels:
                 return True
@@ -149,6 +329,22 @@ if DISCORD_AVAILABLE:
             interaction: discord.Interaction,
             command_text: str,
         ) -> None:
+            """异步执行辅助逻辑（_forward_slash_command = 原函数名）。
+
+            【中文名称】执行辅助逻辑
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `DiscordBotClient._forward_slash_command` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+            interaction: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+            command_text: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             sender_id = str(interaction.user.id)
             channel_id = interaction.channel_id
 
@@ -190,6 +386,20 @@ if DISCORD_AVAILABLE:
             )
 
         def _register_app_commands(self) -> None:
+            """执行辅助逻辑（_register_app_commands = 原函数名）。
+
+            【中文名称】执行辅助逻辑
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `DiscordBotClient._register_app_commands` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             commands = (
                 ("new", "Stop current task and start a new conversation", "/new"),
                 ("stop", "Stop the current task", "/stop"),
@@ -205,6 +415,21 @@ if DISCORD_AVAILABLE:
                     interaction: discord.Interaction,
                     _command_text: str = command_text,
                 ) -> None:
+                    """异步执行辅助逻辑（command_handler = 原函数名）。
+
+                    【中文名称】执行辅助逻辑
+
+                    【功能说明】
+                    这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+                    在阅读 `DiscordBotClient.command_handler` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+                    【参数说明】
+                    interaction: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+                    _command_text: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+                    【返回值】
+                    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+                    """
                     await self._forward_slash_command(interaction, _command_text)
 
             @self.tree.command(name="model", description="Show or switch runtime model preset")
@@ -213,12 +438,41 @@ if DISCORD_AVAILABLE:
                 interaction: discord.Interaction,
                 preset: str | None = None,
             ) -> None:
+                """异步执行辅助逻辑（model_command = 原函数名）。
+
+                【中文名称】执行辅助逻辑
+
+                【功能说明】
+                这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+                在阅读 `DiscordBotClient.model_command` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+                【参数说明】
+                interaction: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+                preset: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+                【返回值】
+                返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+                """
                 preset = (preset or "").strip()
                 command_text = f"/model {preset}" if preset else "/model"
                 await self._forward_slash_command(interaction, command_text)
 
             @self.tree.command(name="help", description="Show available commands")
             async def help_command(interaction: discord.Interaction) -> None:
+                """异步执行辅助逻辑（help_command = 原函数名）。
+
+                【中文名称】执行辅助逻辑
+
+                【功能说明】
+                这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+                在阅读 `DiscordBotClient.help_command` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+                【参数说明】
+                interaction: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+                【返回值】
+                返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+                """
                 sender_id = str(interaction.user.id)
                 if not self._channel.is_allowed(sender_id):
                     await self._reply_ephemeral(interaction, "You are not allowed to use this bot.")
@@ -234,6 +488,21 @@ if DISCORD_AVAILABLE:
                 interaction: discord.Interaction,
                 error: app_commands.AppCommandError,
             ) -> None:
+                """异步执行辅助逻辑（on_app_command_error = 原函数名）。
+
+                【中文名称】执行辅助逻辑
+
+                【功能说明】
+                这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+                在阅读 `DiscordBotClient.on_app_command_error` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+                【参数说明】
+                interaction: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+                error: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+                【返回值】
+                返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+                """
                 command_name = interaction.command.qualified_name if interaction.command else "?"
                 self._channel.logger.warning(
                     "app command failed user={} channel={} cmd={} error={}",
@@ -244,7 +513,21 @@ if DISCORD_AVAILABLE:
                 )
 
         async def send_outbound(self, msg: OutboundMessage) -> None:
-            """Send a nanobot outbound message using Discord transport rules."""
+            """异步发送消息（send_outbound = 原函数名）。
+
+            【中文名称】发送消息
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `DiscordBotClient.send_outbound` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+            msg: 消息数据，可能来自用户、频道、模型或工具调用。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             channel_id = int(msg.chat_id)
 
             channel = self._channel._known_channels.get(msg.chat_id) or self.get_channel(channel_id)
@@ -287,7 +570,24 @@ if DISCORD_AVAILABLE:
             reference: discord.PartialMessage | None,
             mention_settings: discord.AllowedMentions,
         ) -> bool:
-            """Send a file attachment via discord.py."""
+            """异步发送消息（_send_file = 原函数名）。
+
+            【中文名称】发送消息
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `DiscordBotClient._send_file` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+            channel: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+            file_path: 文件或路径信息，代码会按安全边界读取或写入。
+            reference: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+            mention_settings: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             path = Path(file_path)
             if not path.is_file():
                 self._channel.logger.warning("file not found, skipping: {}", file_path)
@@ -311,7 +611,22 @@ if DISCORD_AVAILABLE:
 
         @staticmethod
         def _build_chunks(content: str, failed_media: list[str], sent_media: bool) -> list[str]:
-            """Build outbound text chunks, including attachment-failure fallback text."""
+            """构建对象（_build_chunks = 原函数名）。
+
+            【中文名称】构建对象
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `DiscordBotClient._build_chunks` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            content: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+            failed_media: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+            sent_media: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             chunks = split_message(content, MAX_MESSAGE_LEN)
             if chunks or not failed_media or sent_media:
                 return chunks
@@ -323,7 +638,22 @@ if DISCORD_AVAILABLE:
             channel: Messageable,
             reply_to: str | None,
         ) -> tuple[discord.PartialMessage | None, discord.AllowedMentions]:
-            """Build reply context for outbound messages."""
+            """构建对象（_build_reply_context = 原函数名）。
+
+            【中文名称】构建对象
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `DiscordBotClient._build_reply_context` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+            channel: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+            reply_to: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             mention_settings = discord.AllowedMentions(replied_user=False)
             if not reply_to:
                 return None, mention_settings
@@ -337,7 +667,20 @@ if DISCORD_AVAILABLE:
 
 
 class DiscordChannel(BaseChannel):
-    """Discord channel using discord.py."""
+    """DiscordChannel 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】DiscordChannel
+
+    【功能说明】
+    Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    BaseChannel。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     name = "discord"
     display_name = "Discord"
@@ -345,17 +688,58 @@ class DiscordChannel(BaseChannel):
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
+        """执行辅助逻辑（default_config = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DiscordChannel.default_config` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return DiscordConfig().model_dump(by_alias=True)
 
     @staticmethod
     def _channel_key(channel_or_id: Any) -> str:
-        """Normalize channel-like objects and ids to a stable string key."""
+        """执行辅助逻辑（_channel_key = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DiscordChannel._channel_key` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        channel_or_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         channel_id = getattr(channel_or_id, "id", channel_or_id)
         return str(channel_id)
 
     @classmethod
     def _channel_allow_keys(cls, channel: Any) -> set[str]:
-        """Return channel IDs that can satisfy allow_channels for this channel."""
+        """执行辅助逻辑（_channel_allow_keys = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DiscordChannel._channel_allow_keys` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        channel: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         keys = {cls._channel_key(channel)}
         if parent_key := cls._channel_parent_key(channel):
             keys.add(parent_key)
@@ -363,7 +747,21 @@ class DiscordChannel(BaseChannel):
 
     @classmethod
     def _channel_parent_key(cls, channel: Any) -> str | None:
-        """Return the parent channel key for a Discord thread-like channel."""
+        """执行辅助逻辑（_channel_parent_key = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DiscordChannel._channel_parent_key` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        channel: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         parent_id = getattr(channel, "parent_id", None)
         if parent_id is not None:
             return cls._channel_key(parent_id)
@@ -373,6 +771,22 @@ class DiscordChannel(BaseChannel):
         return None
 
     def __init__(self, config: Any, bus: MessageBus):
+        """初始化对象（__init__ = 原函数名）。
+
+        【中文名称】初始化对象
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DiscordChannel.__init__` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        config: 配置对象或配置片段，决定该逻辑如何连接外部服务。
+        bus: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if isinstance(config, dict):
             config = DiscordConfig.model_validate(config)
         super().__init__(config, bus)
@@ -380,19 +794,62 @@ class DiscordChannel(BaseChannel):
         self._client: DiscordBotClient | None = None
         self._typing_tasks: dict[str, asyncio.Task[None]] = {}
         self._bot_user_id: str | None = None
-        self._pending_reactions: dict[str, Any] = {}  # chat_id -> message object
+        self._pending_reactions: dict[str, Any] = {}  # 中文说明：这里描述一次数据形态转换，左边是输入形态，右边是输出形态。
         self._working_emoji_tasks: dict[str, asyncio.Task[None]] = {}
         self._stream_bufs: dict[str, _StreamBuf] = {}
         self._known_channels: dict[str, Any] = {}
 
     def _remember_channel(self, channel: Any) -> None:
+        """执行辅助逻辑（_remember_channel = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DiscordChannel._remember_channel` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        channel: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         self._known_channels[self._channel_key(channel)] = channel
 
     def _forget_channel(self, channel_or_id: Any) -> None:
+        """执行辅助逻辑（_forget_channel = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DiscordChannel._forget_channel` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        channel_or_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         self._known_channels.pop(self._channel_key(channel_or_id), None)
 
     async def start(self) -> None:
-        """Start the Discord client."""
+        """异步启动流程（start = 原函数名）。
+
+        【中文名称】启动流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DiscordChannel.start` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not DISCORD_AVAILABLE:
             self.logger.error("discord.py not installed. Run: pip install nanobot-ai[discord]")
             return
@@ -447,12 +904,39 @@ class DiscordChannel(BaseChannel):
             await self._reset_runtime_state(close_client=True)
 
     async def stop(self) -> None:
-        """Stop the Discord channel."""
+        """异步停止流程（stop = 原函数名）。
+
+        【中文名称】停止流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DiscordChannel.stop` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         self._running = False
         await self._reset_runtime_state(close_client=True)
 
     async def send(self, msg: OutboundMessage) -> None:
-        """Send a message through Discord using discord.py."""
+        """异步发送消息（send = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DiscordChannel.send` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        msg: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         client = self._client
         if client is None or not client.is_ready():
             self.logger.warning("client not ready; dropping outbound message")
@@ -473,7 +957,23 @@ class DiscordChannel(BaseChannel):
     async def send_delta(
         self, chat_id: str, delta: str, metadata: dict[str, Any] | None = None
     ) -> None:
-        """Progressive Discord delivery: send once, then edit until the stream ends."""
+        """异步发送消息（send_delta = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DiscordChannel.send_delta` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        delta: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        metadata: 结构化数据负载，后续会被解析或转发。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         client = self._client
         if client is None or not client.is_ready():
             self.logger.warning("client not ready; dropping stream delta")
@@ -530,13 +1030,20 @@ class DiscordChannel(BaseChannel):
             raise
 
     async def _handle_discord_message(self, message: discord.Message) -> None:
-        """Handle incoming Discord messages from discord.py.
+        """异步处理事件（_handle_discord_message = 原函数名）。
 
-        Self-loop guard: only drop messages from this bot's own account. Messages
-        from other bots are allowed through so multi-agent setups (one bot asking
-        another for help, a bot mentioning another by @name, etc.) can work.
-        Bot-from-bot loops are still prevented per-instance because each bot
-        still ignores its own outbound messages. (#3217)
+        【中文名称】处理事件
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DiscordChannel._handle_discord_message` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        message: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         if self._bot_user_id is not None and str(message.author.id) == self._bot_user_id:
             return
@@ -564,15 +1071,29 @@ class DiscordChannel(BaseChannel):
 
         await self._start_typing(message.channel)
 
-        # Add read receipt reaction immediately, working emoji after delay
+        # 中文说明：这一段围绕媒体处理，注意输入、输出和异常路径。
         try:
             await message.add_reaction(self.config.read_receipt_emoji)
             self._pending_reactions[channel_id] = message
         except Exception as e:
             self.logger.debug("Failed to add read receipt reaction: {}", e)
 
-        # Delayed working indicator (cosmetic — not tied to subagent lifecycle)
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         async def _delayed_working_emoji() -> None:
+            """异步执行辅助逻辑（_delayed_working_emoji = 原函数名）。
+
+            【中文名称】执行辅助逻辑
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `DiscordChannel._delayed_working_emoji` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            无显式参数。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             await asyncio.sleep(self.config.working_emoji_delay)
             with suppress(Exception):
                 await message.add_reaction(self.config.working_emoji)
@@ -595,11 +1116,39 @@ class DiscordChannel(BaseChannel):
             raise
 
     async def _on_message(self, message: discord.Message) -> None:
-        """Backward-compatible alias for legacy tests/callers."""
+        """异步执行辅助逻辑（_on_message = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DiscordChannel._on_message` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        message: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         await self._handle_discord_message(message)
 
     async def _resolve_channel(self, chat_id: str) -> Any | None:
-        """Resolve a Discord channel from cache first, then network fetch."""
+        """异步解析目标（_resolve_channel = 原函数名）。
+
+        【中文名称】解析目标
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DiscordChannel._resolve_channel` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         client = self._client
         if client is None or not client.is_ready():
             return None
@@ -617,7 +1166,22 @@ class DiscordChannel(BaseChannel):
             return None
 
     async def _finalize_stream(self, chat_id: str, buf: _StreamBuf) -> None:
-        """Commit the final streamed content and flush overflow chunks."""
+        """异步流式处理（_finalize_stream = 原函数名）。
+
+        【中文名称】流式处理
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DiscordChannel._finalize_stream` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        buf: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         chunks = DiscordBotClient._build_chunks(buf.text, [], False)
         if not chunks:
             self._stream_bufs.pop(chat_id, None)
@@ -648,10 +1212,26 @@ class DiscordChannel(BaseChannel):
         sender_id: str,
         content: str,
     ) -> bool:
-        """Check if inbound Discord message should be processed."""
+        """执行辅助逻辑（_should_accept_inbound = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DiscordChannel._should_accept_inbound` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        message: 消息数据，可能来自用户、频道、模型或工具调用。
+        sender_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        content: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self.is_allowed(sender_id):
             return False
-        # Channel-based filtering: only respond in allowed channels
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         allow_channels = self.config.allow_channels
         if allow_channels:
             channel_ids = self._channel_allow_keys(message.channel)
@@ -665,7 +1245,21 @@ class DiscordChannel(BaseChannel):
         self,
         attachments: list[discord.Attachment],
     ) -> tuple[list[str], list[str]]:
-        """Download supported attachments and return paths + display markers."""
+        """异步下载资源（_download_attachments = 原函数名）。
+
+        【中文名称】下载资源
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DiscordChannel._download_attachments` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        attachments: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         media_paths: list[str] = []
         markers: list[str] = []
         media_dir = get_media_dir("discord")
@@ -690,20 +1284,60 @@ class DiscordChannel(BaseChannel):
 
     @staticmethod
     def _compose_inbound_content(content: str, attachment_markers: list[str]) -> str:
-        """Combine message text with attachment markers."""
+        """执行辅助逻辑（_compose_inbound_content = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DiscordChannel._compose_inbound_content` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        content: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        attachment_markers: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         content_parts = [content] if content else []
         content_parts.extend(attachment_markers)
         return "\n".join(part for part in content_parts if part) or "[empty message]"
 
     @staticmethod
     def _is_system_message(message: discord.Message) -> bool:
-        """Return True for Discord system messages that carry no user prompt."""
+        """判断条件是否成立（_is_system_message = 原函数名）。
+
+        【中文名称】判断条件是否成立
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DiscordChannel._is_system_message` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        message: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         message_type = getattr(message, "type", discord.MessageType.default)
         return message_type not in {discord.MessageType.default, discord.MessageType.reply}
 
     @staticmethod
     def _build_inbound_metadata(message: discord.Message) -> dict[str, str | None]:
-        """Build metadata for inbound Discord messages."""
+        """构建对象（_build_inbound_metadata = 原函数名）。
+
+        【中文名称】构建对象
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DiscordChannel._build_inbound_metadata` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        message: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         reply_to = (
             str(message.reference.message_id)
             if message.reference and message.reference.message_id
@@ -716,7 +1350,22 @@ class DiscordChannel(BaseChannel):
         }
 
     def _should_respond_in_group(self, message: discord.Message, content: str) -> bool:
-        """Check if the bot should respond in a guild channel based on policy."""
+        """执行辅助逻辑（_should_respond_in_group = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DiscordChannel._should_respond_in_group` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        message: 消息数据，可能来自用户、频道、模型或工具调用。
+        content: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if self.config.group_policy == "open":
             return True
 
@@ -746,7 +1395,21 @@ class DiscordChannel(BaseChannel):
 
     @staticmethod
     def _references_bot_message(message: discord.Message, bot_user_id: str) -> bool:
-        """Return True when a Discord reply targets a message authored by this bot."""
+        """执行辅助逻辑（_references_bot_message = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DiscordChannel._references_bot_message` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        message: 消息数据，可能来自用户、频道、模型或工具调用。
+        bot_user_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         reference = getattr(message, "reference", None)
         if reference is None:
             return False
@@ -757,11 +1420,39 @@ class DiscordChannel(BaseChannel):
         return str(getattr(author, "id", "")) == bot_user_id
 
     async def _start_typing(self, channel: Messageable) -> None:
-        """Start periodic typing indicator for a channel."""
+        """异步启动流程（_start_typing = 原函数名）。
+
+        【中文名称】启动流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DiscordChannel._start_typing` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        channel: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         channel_id = self._channel_key(channel)
         await self._stop_typing(channel_id)
 
         async def typing_loop() -> None:
+            """异步执行辅助逻辑（typing_loop = 原函数名）。
+
+            【中文名称】执行辅助逻辑
+
+            【功能说明】
+            这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+            在阅读 `DiscordChannel.typing_loop` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            无显式参数。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             while self._running:
                 try:
                     async with channel.typing():
@@ -775,7 +1466,21 @@ class DiscordChannel(BaseChannel):
         self._typing_tasks[channel_id] = asyncio.create_task(typing_loop())
 
     async def _stop_typing(self, channel_id: str) -> None:
-        """Stop typing indicator for a channel."""
+        """异步停止流程（_stop_typing = 原函数名）。
+
+        【中文名称】停止流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DiscordChannel._stop_typing` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        channel_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         task = self._typing_tasks.pop(self._channel_key(channel_id), None)
         if task is None:
             return
@@ -784,8 +1489,22 @@ class DiscordChannel(BaseChannel):
             await task
 
     async def _clear_reactions(self, chat_id: str) -> None:
-        """Remove all pending reactions after bot replies."""
-        # Cancel delayed working emoji if it hasn't fired yet
+        """异步执行辅助逻辑（_clear_reactions = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DiscordChannel._clear_reactions` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         task = self._working_emoji_tasks.pop(chat_id, None)
         if task and not task.done():
             task.cancel()
@@ -799,13 +1518,40 @@ class DiscordChannel(BaseChannel):
                 await msg_obj.remove_reaction(emoji, bot_user)
 
     async def _cancel_all_typing(self) -> None:
-        """Stop all typing tasks."""
+        """异步执行辅助逻辑（_cancel_all_typing = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DiscordChannel._cancel_all_typing` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         channel_ids = list(self._typing_tasks)
         for channel_id in channel_ids:
             await self._stop_typing(channel_id)
 
     async def _reset_runtime_state(self, close_client: bool) -> None:
-        """Reset client and typing state."""
+        """异步执行辅助逻辑（_reset_runtime_state = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Discord 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DiscordChannel._reset_runtime_state` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        close_client: 第三方 SDK 或 HTTP 客户端实例。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         await self._cancel_all_typing()
         self._stream_bufs.clear()
         self._known_channels.clear()
@@ -816,3 +1562,4 @@ class DiscordChannel(BaseChannel):
                 self.logger.warning("client close failed: {}", e)
         self._client = None
         self._bot_user_id = None
+

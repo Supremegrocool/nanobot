@@ -1,9 +1,20 @@
-"""Responses API 解析层：把原始流/对象转换成 nanobot 统一结果。
+"""OpenAI Responses API 的辅助转换模块，负责在内部消息结构和 Responses 事件之间做适配。
 
-nanobot 内部很多地方仍然偏向使用“类似 Chat Completions”的统一抽象，
-而 OpenAI Responses API 的事件流、tool call、reasoning 表示方式并不一样。
+【中文名称】Provider 辅助模块：nanobot/providers/openai_responses/parsing.py
 
-这个模块的职责就是做这层翻译。
+【功能说明】
+本文件属于 P1 学习范围，重点帮助初学者理解“外部系统 ↔ nanobot 后端”之间的适配层。
+阅读时可以先看类和函数的中文说明，再沿着消息、配置、异常和返回值四条线索跟代码。
+
+【主要职责】
+1. 接收配置或输入数据，整理成后端内部统一使用的结构。
+2. 调用第三方 SDK、HTTP API 或公共工具函数完成实际工作。
+3. 把外部返回值、错误和流式事件转换成 nanobot 可继续处理的数据。
+4. 在边界处处理鉴权、限流、媒体文件、重试和日志，避免复杂度泄漏到核心 Agent。
+
+【学习提示】
+如果你是 Agent 或后端初学者，可以把本文件看成“翻译器”：它不改变核心 Agent 思路，
+而是负责理解某个平台或服务商的协议，并把它翻译成项目内部约定的数据形状。
 """
 
 from __future__ import annotations
@@ -26,11 +37,38 @@ FINISH_REASON_MAP = {
 
 
 def map_finish_reason(status: str | None) -> str:
-    """把 Responses API 状态映射成 Chat Completions 风格的 finish_reason。"""
+    """执行辅助逻辑（map_finish_reason = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 辅助模块 中的一个关键步骤。OpenAI Responses API 的辅助转换模块，负责在内部消息结构和 Responses 事件之间做适配。
+    在阅读 `map_finish_reason` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    status: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     return FINISH_REASON_MAP.get(status or "completed", "stop")
 
 
 def _usage_from_response_obj(response: Any) -> dict[str, int]:
+    """执行辅助逻辑（_usage_from_response_obj = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 辅助模块 中的一个关键步骤。OpenAI Responses API 的辅助转换模块，负责在内部消息结构和 Responses 事件之间做适配。
+    在阅读 `_usage_from_response_obj` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    response: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     usage_raw = response.get("usage") if isinstance(response, dict) else getattr(response, "usage", None)
     if not usage_raw:
         return {}
@@ -50,6 +88,21 @@ def _usage_from_response_obj(response: Any) -> dict[str, int]:
 
 
 def _parse_tool_call_arguments(args_raw: Any, name: str | None) -> Any:
+    """解析数据（_parse_tool_call_arguments = 原函数名）。
+
+    【中文名称】解析数据
+
+    【功能说明】
+    这是 Provider 辅助模块 中的一个关键步骤。OpenAI Responses API 的辅助转换模块，负责在内部消息结构和 Responses 事件之间做适配。
+    在阅读 `_parse_tool_call_arguments` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    args_raw: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    name: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     parsed = parse_tool_arguments(args_raw)
     if parsed == args_raw and isinstance(args_raw, str) and args_raw.strip():
         logger.warning(
@@ -61,6 +114,20 @@ def _parse_tool_call_arguments(args_raw: Any, name: str | None) -> Any:
 
 
 def _tool_arguments_source(*values: Any) -> Any:
+    """执行辅助逻辑（_tool_arguments_source = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 辅助模块 中的一个关键步骤。OpenAI Responses API 的辅助转换模块，负责在内部消息结构和 Responses 事件之间做适配。
+    在阅读 `_tool_arguments_source` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    *values: 可变位置参数，承载数量不固定的输入。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     for value in values:
         if value is None:
             continue
@@ -71,10 +138,37 @@ def _tool_arguments_source(*values: Any) -> Any:
 
 
 async def iter_sse(response: httpx.Response) -> AsyncGenerator[dict[str, Any], None]:
-    """逐条产出 Responses API SSE 流中的 JSON 事件。"""
+    """异步执行辅助逻辑（iter_sse = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 辅助模块 中的一个关键步骤。OpenAI Responses API 的辅助转换模块，负责在内部消息结构和 Responses 事件之间做适配。
+    在阅读 `iter_sse` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    response: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     buffer: list[str] = []
 
     def _flush() -> dict[str, Any] | None:
+        """执行辅助逻辑（_flush = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 辅助模块 中的一个关键步骤。OpenAI Responses API 的辅助转换模块，负责在内部消息结构和 Responses 事件之间做适配。
+        在阅读 `_flush` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        无显式参数。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         data_lines = [line[5:].strip() for line in buffer if line.startswith("data:")]
         buffer.clear()
         if not data_lines:
@@ -109,7 +203,22 @@ async def consume_sse(
     on_content_delta: Callable[[str], Awaitable[None]] | None = None,
     on_tool_call_delta: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
 ) -> tuple[str, list[ToolCallRequest], str]:
-    """消费 SSE 流，并提取文本、工具调用和 finish_reason。"""
+    """异步执行辅助逻辑（consume_sse = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 辅助模块 中的一个关键步骤。OpenAI Responses API 的辅助转换模块，负责在内部消息结构和 Responses 事件之间做适配。
+    在阅读 `consume_sse` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    response: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    on_content_delta: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    on_tool_call_delta: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     content, tool_calls, finish_reason, _, _ = await consume_sse_with_reasoning(
         response,
         on_content_delta=on_content_delta,
@@ -124,7 +233,23 @@ async def consume_sse_with_reasoning(
     on_tool_call_delta: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     on_reasoning_delta: Callable[[str], Awaitable[None]] | None = None,
 ) -> tuple[str, list[ToolCallRequest], str, dict[str, int], str | None]:
-    """消费 SSE 流，并额外收集可见 reasoning 摘要。"""
+    """异步执行辅助逻辑（consume_sse_with_reasoning = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 辅助模块 中的一个关键步骤。OpenAI Responses API 的辅助转换模块，负责在内部消息结构和 Responses 事件之间做适配。
+    在阅读 `consume_sse_with_reasoning` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    response: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    on_content_delta: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    on_tool_call_delta: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    on_reasoning_delta: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     content = ""
     tool_calls: list[ToolCallRequest] = []
     tool_call_buffers: dict[str, dict[str, Any]] = {}
@@ -256,7 +381,20 @@ async def consume_sse_with_reasoning(
 
 
 def _extract_reasoning_summary_from_output(output: Any) -> str | None:
-    """从 Responses ``output`` 结构中提取 reasoning summary 文本。"""
+    """提取信息（_extract_reasoning_summary_from_output = 原函数名）。
+
+    【中文名称】提取信息
+
+    【功能说明】
+    这是 Provider 辅助模块 中的一个关键步骤。OpenAI Responses API 的辅助转换模块，负责在内部消息结构和 Responses 事件之间做适配。
+    在阅读 `_extract_reasoning_summary_from_output` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    output: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     parts: list[str] = []
     for item in output or []:
         if not isinstance(item, dict):
@@ -274,7 +412,20 @@ def _extract_reasoning_summary_from_output(output: Any) -> str | None:
 
 
 def parse_response_output(response: Any) -> LLMResponse:
-    """把 SDK ``Response`` 对象解析成统一的 ``LLMResponse``。"""
+    """解析数据（parse_response_output = 原函数名）。
+
+    【中文名称】解析数据
+
+    【功能说明】
+    这是 Provider 辅助模块 中的一个关键步骤。OpenAI Responses API 的辅助转换模块，负责在内部消息结构和 Responses 事件之间做适配。
+    在阅读 `parse_response_output` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    response: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     if not isinstance(response, dict):
         dump = getattr(response, "model_dump", None)
         response = dump() if callable(dump) else vars(response)
@@ -334,7 +485,22 @@ async def consume_sdk_stream(
     on_content_delta: Callable[[str], Awaitable[None]] | None = None,
     on_tool_call_delta: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
 ) -> tuple[str, list[ToolCallRequest], str, dict[str, int], str | None]:
-    """消费 OpenAI SDK 的异步 Responses 流。"""
+    """异步流式处理（consume_sdk_stream = 原函数名）。
+
+    【中文名称】流式处理
+
+    【功能说明】
+    这是 Provider 辅助模块 中的一个关键步骤。OpenAI Responses API 的辅助转换模块，负责在内部消息结构和 Responses 事件之间做适配。
+    在阅读 `consume_sdk_stream` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    stream: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    on_content_delta: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    on_tool_call_delta: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     content = ""
     tool_calls: list[ToolCallRequest] = []
     tool_call_buffers: dict[str, dict[str, Any]] = {}
@@ -447,3 +613,4 @@ async def consume_sdk_stream(
             raise RuntimeError(f"Response failed: {str(detail)[:500]}")
 
     return content, tool_calls, finish_reason, usage, reasoning_content
+

@@ -1,4 +1,21 @@
-"""DingTalk/DingDing channel implementation using Stream Mode."""
+"""钉钉 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+
+【中文名称】渠道适配器：nanobot/channels/dingtalk.py
+
+【功能说明】
+本文件属于 P1 学习范围，重点帮助初学者理解“外部系统 ↔ nanobot 后端”之间的适配层。
+阅读时可以先看类和函数的中文说明，再沿着消息、配置、异常和返回值四条线索跟代码。
+
+【主要职责】
+1. 接收配置或输入数据，整理成后端内部统一使用的结构。
+2. 调用第三方 SDK、HTTP API 或公共工具函数完成实际工作。
+3. 把外部返回值、错误和流式事件转换成 nanobot 可继续处理的数据。
+4. 在边界处处理鉴权、限流、媒体文件、重试和日志，避免复杂度泄漏到核心 Agent。
+
+【学习提示】
+如果你是 Agent 或后端初学者，可以把本文件看成“翻译器”：它不改变核心 Agent 思路，
+而是负责理解某个平台或服务商的协议，并把它翻译成项目内部约定的数据形状。
+"""
 
 import asyncio
 import json
@@ -36,7 +53,7 @@ try:
     DINGTALK_AVAILABLE = True
 except ImportError:
     DINGTALK_AVAILABLE = False
-    # Fallback so class definitions don't crash at module level
+    # 中文说明：兜底。
     CallbackHandler = object  # type: ignore[assignment,misc]
     CallbackMessage = None  # type: ignore[assignment,misc]
     AckMessage = None  # type: ignore[assignment,misc]
@@ -44,22 +61,61 @@ except ImportError:
 
 
 class NanobotDingTalkHandler(CallbackHandler):
-    """
-    Standard DingTalk Stream SDK Callback Handler.
-    Parses incoming messages and forwards them to the Nanobot channel.
+    """NanobotDingTalkHandler 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】NanobotDingTalkHandler
+
+    【功能说明】
+    钉钉 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    CallbackHandler。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
     """
 
     def __init__(self, channel: "DingTalkChannel"):
+        """初始化对象（__init__ = 原函数名）。
+
+        【中文名称】初始化对象
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。钉钉 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `NanobotDingTalkHandler.__init__` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        channel: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         super().__init__()
         self.channel = channel
 
     async def process(self, message: CallbackMessage):
-        """Process incoming stream message."""
+        """异步执行辅助逻辑（process = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。钉钉 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `NanobotDingTalkHandler.process` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        message: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         try:
-            # Parse using SDK's ChatbotMessage for robust handling
+            # 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
             chatbot_msg = ChatbotMessage.from_dict(message.data)
 
-            # Extract text content; fall back to raw dict if SDK object is empty
+            # 中文说明：提取。
             content = ""
             if chatbot_msg.text:
                 content = chatbot_msg.text.content.strip()
@@ -68,7 +124,7 @@ class NanobotDingTalkHandler(CallbackHandler):
             if not content:
                 content = message.data.get("text", {}).get("content", "").strip()
 
-            # Handle file/image messages
+            # 中文说明：这一段围绕消息、图片、文件处理，注意输入、输出和异常路径。
             file_paths = []
             if chatbot_msg.message_type == "picture" and chatbot_msg.image_content:
                 download_code = chatbot_msg.image_content.download_code
@@ -129,8 +185,8 @@ class NanobotDingTalkHandler(CallbackHandler):
 
             self.channel.logger.info("Received message from {} ({}): {}", sender_name, sender_id, content)
 
-            # Forward to Nanobot via _on_message (non-blocking).
-            # Store reference to prevent GC before task completes.
+            # 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
+            # 中文说明：这一段围绕事件处理，注意输入、输出和异常路径。
             task = asyncio.create_task(
                 self.channel._on_message(
                     content,
@@ -147,12 +203,25 @@ class NanobotDingTalkHandler(CallbackHandler):
 
         except Exception:
             self.channel.logger.exception("Error processing message")
-            # Return OK to avoid retry loop from DingTalk server
+            # 中文说明：这一段围绕钉钉、重试处理，注意输入、输出和异常路径。
             return AckMessage.STATUS_OK, "Error"
 
 
 class DingTalkConfig(Base):
-    """DingTalk channel configuration using Stream mode."""
+    """DingTalkConfig 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】DingTalkConfig
+
+    【功能说明】
+    钉钉 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    Base。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     enabled: bool = False
     client_id: str = ""
@@ -160,18 +229,23 @@ class DingTalkConfig(Base):
     allow_from: list[str] = Field(default_factory=list)
     allow_remote_media_redirects: bool = False
     remote_media_redirect_allowed_hosts: list[str] = Field(default_factory=list)
-    group_user_isolation: bool = False  # If True, each user in group chat gets their own session
+    group_user_isolation: bool = False  # 中文说明：这一段围绕会话、用户处理，注意输入、输出和异常路径。
 
 
 class DingTalkChannel(BaseChannel):
-    """
-    DingTalk channel using Stream Mode.
+    """DingTalkChannel 类，封装 渠道适配器 的核心状态和行为。
 
-    Uses WebSocket to receive events via `dingtalk-stream` SDK.
-    Uses direct HTTP API to send messages (SDK is mainly for receiving).
+    【中文名称】DingTalkChannel
 
-    Supports both private (1:1) and group chats.
-    Group chat_id is stored with a "group:" prefix to route replies back.
+    【功能说明】
+    钉钉 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    BaseChannel。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
     """
 
     name = "dingtalk"
@@ -183,9 +257,39 @@ class DingTalkChannel(BaseChannel):
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
+        """执行辅助逻辑（default_config = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。钉钉 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DingTalkChannel.default_config` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return DingTalkConfig().model_dump(by_alias=True)
 
     def __init__(self, config: Any, bus: MessageBus):
+        """初始化对象（__init__ = 原函数名）。
+
+        【中文名称】初始化对象
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。钉钉 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DingTalkChannel.__init__` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        config: 配置对象或配置片段，决定该逻辑如何连接外部服务。
+        bus: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if isinstance(config, dict):
             config = DingTalkConfig.model_validate(config)
         super().__init__(config, bus)
@@ -193,15 +297,28 @@ class DingTalkChannel(BaseChannel):
         self._client: Any = None
         self._http: httpx.AsyncClient | None = None
 
-        # Access Token management for sending messages
+        # 中文说明：这一段围绕消息、令牌处理，注意输入、输出和异常路径。
         self._access_token: str | None = None
         self._token_expiry: float = 0
 
-        # Hold references to background tasks to prevent GC
+        # 中文说明：这一段围绕事件处理，注意输入、输出和异常路径。
         self._background_tasks: set[asyncio.Task] = set()
 
     async def start(self) -> None:
-        """Start the DingTalk bot with Stream Mode."""
+        """异步启动流程（start = 原函数名）。
+
+        【中文名称】启动流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。钉钉 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DingTalkChannel.start` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         try:
             if not DINGTALK_AVAILABLE:
                 self.logger.error(
@@ -223,13 +340,13 @@ class DingTalkChannel(BaseChannel):
             credential = Credential(self.config.client_id, self.config.client_secret)
             self._client = DingTalkStreamClient(credential)
 
-            # Register standard handler
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
             handler = NanobotDingTalkHandler(self)
             self._client.register_callback_handler(ChatbotMessage.TOPIC, handler)
 
             self.logger.info("bot started with Stream Mode")
 
-            # Reconnect loop: restart stream if SDK exits or crashes
+            # 中文说明：这一段围绕流式输出处理，注意输入、输出和异常路径。
             while self._running:
                 try:
                     await self._client.start()
@@ -243,19 +360,45 @@ class DingTalkChannel(BaseChannel):
             self.logger.exception("Failed to start channel")
 
     async def stop(self) -> None:
-        """Stop the DingTalk bot."""
+        """异步停止流程（stop = 原函数名）。
+
+        【中文名称】停止流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。钉钉 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DingTalkChannel.stop` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         self._running = False
-        # Close the shared HTTP client
+        # 中文说明：这一段围绕HTTP处理，注意输入、输出和异常路径。
         if self._http:
             await self._http.aclose()
             self._http = None
-        # Cancel outstanding background tasks
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         for task in self._background_tasks:
             task.cancel()
         self._background_tasks.clear()
 
     async def _get_access_token(self) -> str | None:
-        """Get or refresh Access Token."""
+        """异步执行辅助逻辑（_get_access_token = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。钉钉 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DingTalkChannel._get_access_token` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if self._access_token and time.time() < self._token_expiry:
             return self._access_token
 
@@ -274,7 +417,7 @@ class DingTalkChannel(BaseChannel):
             resp.raise_for_status()
             res_data = resp.json()
             self._access_token = res_data.get("accessToken")
-            # Expire 60s early to be safe
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
             self._token_expiry = time.time() + int(res_data.get("expireIn", 7200)) - 60
             return self._access_token
         except Exception:
@@ -283,9 +426,38 @@ class DingTalkChannel(BaseChannel):
 
     @staticmethod
     def _is_http_url(value: str) -> bool:
+        """判断条件是否成立（_is_http_url = 原函数名）。
+
+        【中文名称】判断条件是否成立
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。钉钉 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DingTalkChannel._is_http_url` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return urlparse(value).scheme in ("http", "https")
 
     def _guess_upload_type(self, media_ref: str) -> str:
+        """上传资源（_guess_upload_type = 原函数名）。
+
+        【中文名称】上传资源
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。钉钉 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DingTalkChannel._guess_upload_type` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        media_ref: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         ext = Path(urlparse(media_ref).path).suffix.lower()
         if ext in self._IMAGE_EXTS:
             return "image"
@@ -296,11 +468,42 @@ class DingTalkChannel(BaseChannel):
         return "file"
 
     def _guess_filename(self, media_ref: str, upload_type: str) -> str:
+        """执行辅助逻辑（_guess_filename = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。钉钉 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DingTalkChannel._guess_filename` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        media_ref: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        upload_type: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         name = os.path.basename(urlparse(media_ref).path)
         return name or {"image": "image.jpg", "voice": "audio.amr", "video": "video.mp4"}.get(upload_type, "file.bin")
 
     @staticmethod
     def _zip_bytes(filename: str, data: bytes) -> tuple[bytes, str, str]:
+        """执行辅助逻辑（_zip_bytes = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。钉钉 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DingTalkChannel._zip_bytes` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        filename: 文件或路径信息，代码会按安全边界读取或写入。
+        data: 结构化数据负载，后续会被解析或转发。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         stem = Path(filename).stem or "attachment"
         safe_name = filename or "attachment.bin"
         zip_name = f"{stem}.zip"
@@ -315,6 +518,23 @@ class DingTalkChannel(BaseChannel):
         data: bytes,
         content_type: str | None,
     ) -> tuple[bytes, str, str | None]:
+        """标准化数据（_normalize_upload_payload = 原函数名）。
+
+        【中文名称】标准化数据
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。钉钉 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DingTalkChannel._normalize_upload_payload` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        filename: 文件或路径信息，代码会按安全边界读取或写入。
+        data: 结构化数据负载，后续会被解析或转发。
+        content_type: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         ext = Path(filename).suffix.lower()
         if ext in self._ZIP_BEFORE_UPLOAD_EXTS or content_type == "text/html":
             self.logger.info(
@@ -325,6 +545,21 @@ class DingTalkChannel(BaseChannel):
         return data, filename, content_type
 
     def _validate_remote_media_url(self, media_ref: str) -> bool:
+        """校验输入（_validate_remote_media_url = 原函数名）。
+
+        【中文名称】校验输入
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。钉钉 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DingTalkChannel._validate_remote_media_url` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        media_ref: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         ok, err = validate_url_target(media_ref)
         if not ok:
             self.logger.warning("remote media URL blocked ref={} reason={}", media_ref, err)
@@ -332,6 +567,22 @@ class DingTalkChannel(BaseChannel):
         return True
 
     def _redirect_host_allowed(self, current_url: str, next_url: str) -> bool:
+        """执行辅助逻辑（_redirect_host_allowed = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。钉钉 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DingTalkChannel._redirect_host_allowed` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        current_url: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        next_url: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         current_host = (urlparse(current_url).hostname or "").lower()
         next_host = (urlparse(next_url).hostname or "").lower()
         if not next_host:
@@ -342,6 +593,22 @@ class DingTalkChannel(BaseChannel):
         return next_host in allowed_hosts
 
     def _next_remote_media_url(self, current_url: str, location: str | None) -> str | None:
+        """执行辅助逻辑（_next_remote_media_url = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。钉钉 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DingTalkChannel._next_remote_media_url` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        current_url: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        location: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self.config.allow_remote_media_redirects:
             self.logger.warning("media download redirect refused ref={}", current_url)
             return None
@@ -364,7 +631,21 @@ class DingTalkChannel(BaseChannel):
         self,
         media_ref: str,
     ) -> tuple[bytes | None, str | None]:
-        """Fetch a remote media URL with SSRF, redirect, and size checks."""
+        """异步执行辅助逻辑（_fetch_remote_media_bytes = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。钉钉 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DingTalkChannel._fetch_remote_media_bytes` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        media_ref: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self._http:
             return None, None
 
@@ -372,9 +653,9 @@ class DingTalkChannel(BaseChannel):
             return None, None
 
         try:
-            # Prefer streaming with a running byte cap so large responses are not
-            # materialized before the limit is enforced. Test fakes may only
-            # implement get(), so keep a small compatibility fallback below.
+            # 中文说明：流式输出。
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+            # 中文说明：兜底。
             stream = getattr(self._http, "stream", None)
             if stream is not None:
                 current_url = media_ref
@@ -468,6 +749,21 @@ class DingTalkChannel(BaseChannel):
         self,
         media_ref: str,
     ) -> tuple[bytes | None, str | None, str | None]:
+        """异步执行辅助逻辑（_read_media_bytes = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。钉钉 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DingTalkChannel._read_media_bytes` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        media_ref: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not media_ref:
             return None, None, None
 
@@ -503,6 +799,25 @@ class DingTalkChannel(BaseChannel):
         filename: str,
         content_type: str | None,
     ) -> str | None:
+        """异步上传资源（_upload_media = 原函数名）。
+
+        【中文名称】上传资源
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。钉钉 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DingTalkChannel._upload_media` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        token: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        data: 结构化数据负载，后续会被解析或转发。
+        media_type: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        filename: 文件或路径信息，代码会按安全边界读取或写入。
+        content_type: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self._http:
             return None
         url = f"https://oapi.dingtalk.com/media/upload?access_token={token}&type={media_type}"
@@ -540,22 +855,40 @@ class DingTalkChannel(BaseChannel):
         msg_key: str,
         msg_param: dict[str, Any],
     ) -> bool:
+        """异步发送消息（_send_batch_message = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。钉钉 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DingTalkChannel._send_batch_message` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        token: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        msg_key: 消息数据，可能来自用户、频道、模型或工具调用。
+        msg_param: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self._http:
             self.logger.warning("HTTP client not initialized, cannot send")
             return False
 
         headers = {"x-acs-dingtalk-access-token": token}
         if chat_id.startswith("group:"):
-            # Group chat
+            # 中文说明：Group chat 相关逻辑。
             url = "https://api.dingtalk.com/v1.0/robot/groupMessages/send"
             payload = {
                 "robotCode": self.config.client_id,
-                "openConversationId": chat_id[6:],  # Remove "group:" prefix,
+                "openConversationId": chat_id[6:],  # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
                 "msgKey": msg_key,
                 "msgParam": json.dumps(msg_param, ensure_ascii=False),
             }
         else:
-            # Private chat
+            # 中文说明：Private chat 相关逻辑。
             url = "https://api.dingtalk.com/v1.0/robot/oToMessages/batchSend"
             payload = {
                 "robotCode": self.config.client_id,
@@ -588,6 +921,23 @@ class DingTalkChannel(BaseChannel):
             return False
 
     async def _send_markdown_text(self, token: str, chat_id: str, content: str) -> bool:
+        """异步发送消息（_send_markdown_text = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。钉钉 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DingTalkChannel._send_markdown_text` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        token: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        content: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return await self._send_batch_message(
             token,
             chat_id,
@@ -596,6 +946,23 @@ class DingTalkChannel(BaseChannel):
         )
 
     async def _send_media_ref(self, token: str, chat_id: str, media_ref: str) -> bool:
+        """异步发送消息（_send_media_ref = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。钉钉 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DingTalkChannel._send_media_ref` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        token: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        media_ref: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         media_ref = (media_ref or "").strip()
         if not media_ref:
             return True
@@ -637,7 +1004,7 @@ class DingTalkChannel(BaseChannel):
             return False
 
         if upload_type == "image":
-            # Verified in production: sampleImageMsg accepts media_id in photoURL.
+            # 中文说明：这一段围绕媒体、图片处理，注意输入、输出和异常路径。
             ok = await self._send_batch_message(
                 token,
                 chat_id,
@@ -656,7 +1023,21 @@ class DingTalkChannel(BaseChannel):
         )
 
     async def send(self, msg: OutboundMessage) -> None:
-        """Send a message through DingTalk."""
+        """异步发送消息（send = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。钉钉 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DingTalkChannel.send` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        msg: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         token = await self._get_access_token()
         if not token:
             return
@@ -669,7 +1050,7 @@ class DingTalkChannel(BaseChannel):
             if ok:
                 continue
             self.logger.error("media send failed for {}", media_ref)
-            # Send visible fallback so failures are observable by the user.
+            # 中文说明：兜底。
             filename = self._guess_filename(media_ref, self._guess_upload_type(media_ref))
             await self._send_markdown_text(
                 token,
@@ -685,10 +1066,24 @@ class DingTalkChannel(BaseChannel):
         conversation_type: str | None = None,
         conversation_id: str | None = None,
     ) -> None:
-        """Handle incoming message (called by NanobotDingTalkHandler).
+        """异步执行辅助逻辑（_on_message = 原函数名）。
 
-        Delegates to BaseChannel._handle_message() which enforces allow_from
-        permission checks before publishing to the bus.
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。钉钉 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DingTalkChannel._on_message` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        content: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        sender_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        sender_name: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        conversation_type: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        conversation_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         try:
             self.logger.info("inbound: {} from {}", content, sender_name)
@@ -717,7 +1112,23 @@ class DingTalkChannel(BaseChannel):
         filename: str,
         sender_id: str,
     ) -> str | None:
-        """Download a DingTalk file to the media directory, return local path."""
+        """异步下载资源（_download_dingtalk_file = 原函数名）。
+
+        【中文名称】下载资源
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。钉钉 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `DingTalkChannel._download_dingtalk_file` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        download_code: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        filename: 文件或路径信息，代码会按安全边界读取或写入。
+        sender_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         from nanobot.config.paths import get_media_dir
 
         try:
@@ -726,7 +1137,7 @@ class DingTalkChannel(BaseChannel):
                 self.logger.error("file download: no token or http client")
                 return None
 
-            # Step 1: Exchange downloadCode for a temporary download URL
+            # 中文说明：这里标记当前处理阶段，便于按执行顺序跟读代码。
             api_url = "https://api.dingtalk.com/v1.0/robot/messageFiles/download"
             headers = {"x-acs-dingtalk-access-token": token, "Content-Type": "application/json"}
             payload = {"downloadCode": download_code, "robotCode": self.config.client_id}
@@ -741,13 +1152,13 @@ class DingTalkChannel(BaseChannel):
                 self.logger.error("download URL not found in response: {}", result)
                 return None
 
-            # Step 2: Download the file content
+            # 中文说明：这一段围绕文件处理，注意输入、输出和异常路径。
             file_resp = await self._http.get(download_url, follow_redirects=True)
             if file_resp.status_code != 200:
                 self.logger.error("file download failed: status={}", file_resp.status_code)
                 return None
 
-            # Save to media directory (accessible under workspace)
+            # 中文说明：这一段围绕媒体处理，注意输入、输出和异常路径。
             download_dir = get_media_dir("dingtalk") / sender_id
             download_dir.mkdir(parents=True, exist_ok=True)
             file_path = download_dir / filename
@@ -757,3 +1168,4 @@ class DingTalkChannel(BaseChannel):
         except Exception:
             self.logger.exception("file download error")
             return None
+

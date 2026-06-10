@@ -1,4 +1,21 @@
-"""Telegram channel implementation using python-telegram-bot."""
+"""Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+
+【中文名称】渠道适配器：nanobot/channels/telegram.py
+
+【功能说明】
+本文件属于 P1 学习范围，重点帮助初学者理解“外部系统 ↔ nanobot 后端”之间的适配层。
+阅读时可以先看类和函数的中文说明，再沿着消息、配置、异常和返回值四条线索跟代码。
+
+【主要职责】
+1. 接收配置或输入数据，整理成后端内部统一使用的结构。
+2. 调用第三方 SDK、HTTP API 或公共工具函数完成实际工作。
+3. 把外部返回值、错误和流式事件转换成 nanobot 可继续处理的数据。
+4. 在边界处处理鉴权、限流、媒体文件、重试和日志，避免复杂度泄漏到核心 Agent。
+
+【学习提示】
+如果你是 Agent 或后端初学者，可以把本文件看成“翻译器”：它不改变核心 Agent 思路，
+而是负责理解某个平台或服务商的协议，并把它翻译成项目内部约定的数据形状。
+"""
 
 from __future__ import annotations
 
@@ -34,27 +51,66 @@ from nanobot.config.schema import Base
 from nanobot.security.network import validate_url_target
 from nanobot.utils.helpers import split_message
 
-TELEGRAM_MAX_MESSAGE_LEN = 4000  # Telegram message character limit
-# Telegram's actual API limit is 4096; we split raw markdown at 4000 as a
-# safety margin for mid-stream edits (plain text).  For _stream_end, we
-# convert to HTML first and then split at the true 4096-char boundary so
-# the final rendered message never overflows.
+TELEGRAM_MAX_MESSAGE_LEN = 4000  # 中文说明：消息字符长度上限。
+# 中文说明：这一段围绕Telegram、API、Markdown处理，注意输入、输出和异常路径。
+# 中文说明：安全余量。
+# 中文说明：这一段围绕HTML处理，注意输入、输出和异常路径。
+# 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
 TELEGRAM_HTML_MAX_LEN = 4096
-TELEGRAM_REPLY_CONTEXT_MAX_LEN = TELEGRAM_MAX_MESSAGE_LEN  # Max length for reply context in user message
+TELEGRAM_REPLY_CONTEXT_MAX_LEN = TELEGRAM_MAX_MESSAGE_LEN  # 中文说明：最大长度。
 
 
 def _escape_telegram_html(text: str) -> str:
-    """Escape text for Telegram HTML parse mode."""
+    """执行辅助逻辑（_escape_telegram_html = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `_escape_telegram_html` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    text: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def _tool_hint_to_telegram_blockquote(text: str) -> str:
-    """Render tool hints as an expandable blockquote (collapsed by default)."""
+    """执行辅助逻辑（_tool_hint_to_telegram_blockquote = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `_tool_hint_to_telegram_blockquote` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    text: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     return f"<blockquote expandable>{_escape_telegram_html(text)}</blockquote>" if text else ""
 
 
 def _strip_md(s: str) -> str:
-    """Strip markdown inline formatting from text."""
+    """执行辅助逻辑（_strip_md = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `_strip_md` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    s: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     s = re.sub(r'\*\*(.+?)\*\*', r'\1', s)
     s = re.sub(r'__(.+?)__', r'\1', s)
     s = re.sub(r'~~(.+?)~~', r'\1', s)
@@ -63,37 +119,73 @@ def _strip_md(s: str) -> str:
 
 
 def _strip_md_block(text: str) -> str:
-    """Strip block-level and inline markdown for readable plain-text preview.
+    """执行辅助逻辑（_strip_md_block = 原函数名）。
 
-    Used during streaming mid-edits so users see clean text instead of raw
-    markdown syntax while the response is still being generated.
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `_strip_md_block` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    text: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
     """
-    # Code blocks -> just the code
+    # 中文说明：代码块 → 只保留代码内容。
     text = re.sub(r'```[\w]*\n?([\s\S]*?)```', r'\1', text)
-    # Headers -> plain text
+    # 中文说明：标题 → 转成普通文本。
     text = re.sub(r'^#{1,6}\s+(.+)$', r'\1', text, flags=re.MULTILINE)
-    # Blockquotes
+    # 中文说明：引用块。
     text = re.sub(r'^>\s*(.*)$', r'\1', text, flags=re.MULTILINE)
-    # Bold / italic / strikethrough
+    # 中文说明：粗体 / 斜体 / 删除线。
     text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
     text = re.sub(r'__(.+?)__', r'\1', text)
     text = re.sub(r'(?<![a-zA-Z0-9])_([^_]+)_(?![a-zA-Z0-9])', r'\1', text)
     text = re.sub(r'~~(.+?)~~', r'\1', text)
-    # Inline code
+    # 中文说明：行内代码。
     text = re.sub(r'`([^`]+)`', r'\1', text)
-    # Links [text](url) -> text
+    # 中文说明：链接 → 只保留可读文本。
     text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
-    # Bullet lists
+    # 中文说明：项目符号列表。
     text = re.sub(r'^[-*]\s+', '• ', text, flags=re.MULTILINE)
-    # Numbered lists (normalize spacing)
+    # 中文说明：有序编号列表。
     text = re.sub(r'^(\d+)\.\s+', r'\1. ', text, flags=re.MULTILINE)
     return text
 
 
 def _render_table_box(table_lines: list[str]) -> str:
-    """Convert markdown pipe-table to compact aligned text for <pre> display."""
+    """渲染内容（_render_table_box = 原函数名）。
+
+    【中文名称】渲染内容
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `_render_table_box` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    table_lines: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
 
     def dw(s: str) -> int:
+        """执行辅助逻辑（dw = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `dw` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        s: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return sum(2 if unicodedata.east_asian_width(c) in ('W', 'F') else 1 for c in s)
 
     rows: list[list[str]] = []
@@ -113,6 +205,20 @@ def _render_table_box(table_lines: list[str]) -> str:
     widths = [max(dw(r[c]) for r in rows) for c in range(ncols)]
 
     def dr(cells: list[str]) -> str:
+        """执行辅助逻辑（dr = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `dr` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cells: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return '  '.join(f'{c}{" " * (w - dw(c))}' for c, w in zip(cells, widths))
 
     out = [dr(rows[0])]
@@ -123,21 +229,46 @@ def _render_table_box(table_lines: list[str]) -> str:
 
 
 def _markdown_to_telegram_html(text: str) -> str:
-    """
-    Convert markdown to Telegram-safe HTML.
+    """执行辅助逻辑（_markdown_to_telegram_html = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+    在阅读 `_markdown_to_telegram_html` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    text: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
     """
     if not text:
         return ""
 
-    # 1. Extract and protect code blocks (preserve content from other processing)
+    # 中文说明：保留。
     code_blocks: list[str] = []
     def save_code_block(m: re.Match) -> str:
+        """保存数据（save_code_block = 原函数名）。
+
+        【中文名称】保存数据
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `save_code_block` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        m: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         code_blocks.append(m.group(1))
         return f"\x00CB{len(code_blocks) - 1}\x00"
 
     text = re.sub(r'```[\w]*\n?([\s\S]*?)```', save_code_block, text)
 
-    # 1.5. Convert markdown tables to box-drawing (reuse code_block placeholders)
+    # 中文说明：这一段围绕Markdown处理，注意输入、输出和异常路径。
     lines = text.split('\n')
     rebuilt: list[str] = []
     li = 0
@@ -158,68 +289,95 @@ def _markdown_to_telegram_html(text: str) -> str:
             li += 1
     text = '\n'.join(rebuilt)
 
-    # 2. Extract and protect inline code
+    # 中文说明：行内代码。
     inline_codes: list[str] = []
     def save_inline_code(m: re.Match) -> str:
+        """保存数据（save_inline_code = 原函数名）。
+
+        【中文名称】保存数据
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `save_inline_code` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        m: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         inline_codes.append(m.group(1))
         return f"\x00IC{len(inline_codes) - 1}\x00"
 
     text = re.sub(r'`([^`]+)`', save_inline_code, text)
 
-    # 3. Headers # Title -> <b>Title</b> (preserve visual hierarchy)
+    # 中文说明：保留。
     text = re.sub(r'^#{1,6}\s+(.+)$', r'⟪B⟫\1⟪/B⟫', text, flags=re.MULTILINE)
 
-    # 4. Blockquotes > text -> just the text (before HTML escaping)
+    # 中文说明：引用块。
     text = re.sub(r'^>\s*(.*)$', r'\1', text, flags=re.MULTILINE)
 
-    # 5. Escape HTML special characters
+    # 中文说明：这一段围绕HTML处理，注意输入、输出和异常路径。
     text = _escape_telegram_html(text)
 
-    # 6. Links [text](url) - must be before bold/italic to handle nested cases
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
     text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', text)
 
-    # 7. Bold **text** or __text__
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
     text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
     text = re.sub(r'__(.+?)__', r'<b>\1</b>', text)
 
-    # 8. Italic _text_ (avoid matching inside words like some_var_name)
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
     text = re.sub(r'(?<![a-zA-Z0-9])_([^_]+)_(?![a-zA-Z0-9])', r'<i>\1</i>', text)
 
-    # 9. Strikethrough ~~text~~
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
     text = re.sub(r'~~(.+?)~~', r'<s>\1</s>', text)
 
-    # 10. Bullet lists - item -> • item
+    # 中文说明：项目符号列表。
     text = re.sub(r'^[-*]\s+', '• ', text, flags=re.MULTILINE)
 
-    # 10.5. Numbered lists  1. item -> 1. item (keep number, normalize indent)
+    # 中文说明：有序编号列表。
     text = re.sub(r'^(\d+)\.\s+', r'\1. ', text, flags=re.MULTILINE)
 
-    # 11. Restore inline code with HTML tags
+    # 中文说明：行内代码。
     for i, code in enumerate(inline_codes):
-        # Escape HTML in code content
+        # 中文说明：这一段围绕HTML处理，注意输入、输出和异常路径。
         escaped = _escape_telegram_html(code)
         text = text.replace(f"\x00IC{i}\x00", f"<code>{escaped}</code>")
 
-    # 12. Restore code blocks with HTML tags
+    # 中文说明：这一段围绕HTML处理，注意输入、输出和异常路径。
     for i, code in enumerate(code_blocks):
-        # Escape HTML in code content
+        # 中文说明：这一段围绕HTML处理，注意输入、输出和异常路径。
         escaped = _escape_telegram_html(code)
         text = text.replace(f"\x00CB{i}\x00", f"<pre><code>{escaped}</code></pre>")
 
-    # 13. Restore header bold markers (inserted in step 3, after HTML escaping)
+    # 中文说明：这一段围绕API、HTML处理，注意输入、输出和异常路径。
     text = text.replace('⟪B⟫', '<b>').replace('⟪/B⟫', '</b>')
 
     return text
 
 
 _SEND_MAX_RETRIES = 3
-_SEND_RETRY_BASE_DELAY = 0.5  # seconds, doubled each retry
-_STREAM_EDIT_INTERVAL_DEFAULT = 0.6  # min seconds between edit_message_text calls
+_SEND_RETRY_BASE_DELAY = 0.5  # 中文说明：这一段围绕重试处理，注意输入、输出和异常路径。
+_STREAM_EDIT_INTERVAL_DEFAULT = 0.6  # 中文说明：这一段围绕消息、调用处理，注意输入、输出和异常路径。
 
 
 @dataclass
 class _StreamBuf:
-    """Per-chat streaming accumulator for progressive message editing."""
+    """_StreamBuf 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】_StreamBuf
+
+    【功能说明】
+    Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    普通 Python 类。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
     text: str = ""
     message_id: int | None = None
     last_edit: float = 0.0
@@ -228,7 +386,20 @@ class _StreamBuf:
 
 @dataclass
 class _QueuedTelegramUpdate:
-    """Telegram update staged for per-session ordered processing."""
+    """_QueuedTelegramUpdate 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】_QueuedTelegramUpdate
+
+    【功能说明】
+    Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    普通 Python 类。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     kind: Literal["command", "message"]
     update: Update
@@ -237,7 +408,20 @@ class _QueuedTelegramUpdate:
 
 
 class TelegramConfig(Base):
-    """Telegram channel configuration."""
+    """TelegramConfig 类，封装 渠道适配器 的核心状态和行为。
+
+    【中文名称】TelegramConfig
+
+    【功能说明】
+    Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    Base。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     enabled: bool = False
     token: str = ""
@@ -250,7 +434,7 @@ class TelegramConfig(Base):
     connection_pool_size: int = 32
     pool_timeout: float = 5.0
     streaming: bool = True
-    # Enable inline keyboard buttons in Telegram messages.
+    # 中文说明：这一段围绕Telegram、消息处理，注意输入、输出和异常路径。
     inline_keyboards: bool = False
     stream_edit_interval: float = Field(default=_STREAM_EDIT_INTERVAL_DEFAULT, ge=0.1)
     webhook_url: str = ""
@@ -263,6 +447,21 @@ class TelegramConfig(Base):
     @field_validator("webhook_path")
     @classmethod
     def webhook_path_must_start_with_slash(cls, value: str) -> str:
+        """启动流程（webhook_path_must_start_with_slash = 原函数名）。
+
+        【中文名称】启动流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramConfig.webhook_path_must_start_with_slash` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         value = value.strip() or "/telegram"
         if not value.startswith("/"):
             raise ValueError('webhook_path must start with "/"')
@@ -270,6 +469,20 @@ class TelegramConfig(Base):
 
     @model_validator(mode="after")
     def validate_webhook_config(self) -> "TelegramConfig":
+        """校验输入（validate_webhook_config = 原函数名）。
+
+        【中文名称】校验输入
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramConfig.validate_webhook_config` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if self.mode != "webhook":
             return self
 
@@ -290,17 +503,25 @@ class TelegramConfig(Base):
 
 
 class TelegramChannel(BaseChannel):
-    """
-    Telegram channel using long polling or webhook mode.
+    """TelegramChannel 类，封装 渠道适配器 的核心状态和行为。
 
-    Long polling is the default. Webhook mode requires a public HTTPS URL and a
-    Telegram secret token.
+    【中文名称】TelegramChannel
+
+    【功能说明】
+    Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    BaseChannel。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
     """
 
     name = "telegram"
     display_name = "Telegram"
 
-    # Commands registered with Telegram's command menu
+    # 中文说明：这一段围绕Telegram处理，注意输入、输出和异常路径。
     BOT_COMMANDS = [
         BotCommand("start", "Start the bot"),
         BotCommand("new", "Start a new conversation"),
@@ -318,35 +539,79 @@ class TelegramChannel(BaseChannel):
         BotCommand("help", "Show available commands"),
     ]
 
-    # Regex for slash commands routed to AgentLoop via ``_forward_command``.
-    # Hyphenated ``dream-*`` commands stay on a separate handler (below).
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
     TELEGRAM_BUS_SLASH_COMMAND_RE = re.compile(
         r"^/(?:new|stop|restart|status|dream|history|goal|pairing|model|skill)(?:@\w+)?(?:\s+.*)?$"
     )
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
+        """执行辅助逻辑（default_config = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel.default_config` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return TelegramConfig().model_dump(by_alias=True)
 
     def __init__(self, config: Any, bus: MessageBus):
+        """初始化对象（__init__ = 原函数名）。
+
+        【中文名称】初始化对象
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel.__init__` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        config: 配置对象或配置片段，决定该逻辑如何连接外部服务。
+        bus: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if isinstance(config, dict):
             config = TelegramConfig.model_validate(config)
         super().__init__(config, bus)
         self.config: TelegramConfig = config
         self._app: Application | None = None
-        self._chat_ids: dict[str, int] = {}  # Map sender_id to chat_id for replies
-        self._typing_tasks: dict[str, asyncio.Task] = {}  # chat_id -> typing loop task
+        self._chat_ids: dict[str, int] = {}  # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+        self._typing_tasks: dict[str, asyncio.Task] = {}  # 中文说明：这里描述一次数据形态转换，左边是输入形态，右边是输出形态。
         self._media_group_buffers: dict[str, dict] = {}
         self._media_group_tasks: dict[str, asyncio.Task] = {}
         self._message_threads: dict[tuple[str, int], int] = {}
         self._bot_user_id: int | None = None
         self._bot_username: str | None = None
-        self._stream_bufs: dict[str, _StreamBuf] = {}  # chat_id -> streaming state
+        self._stream_bufs: dict[str, _StreamBuf] = {}  # 中文说明：流式输出。
         self._inbound_buffers: dict[str, list[_QueuedTelegramUpdate]] = {}
         self._inbound_workers: dict[str, asyncio.Task] = {}
 
     def is_allowed(self, sender_id: str) -> bool:
-        """Preserve Telegram's legacy id|username allowlist matching."""
+        """判断条件是否成立（is_allowed = 原函数名）。
+
+        【中文名称】判断条件是否成立
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel.is_allowed` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        sender_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if super().is_allowed(sender_id):
             return True
 
@@ -366,7 +631,20 @@ class TelegramChannel(BaseChannel):
 
     @staticmethod
     def _normalize_telegram_command(content: str) -> str:
-        """Map Telegram-safe command aliases back to canonical nanobot commands."""
+        """标准化数据（_normalize_telegram_command = 原函数名）。
+
+        【中文名称】标准化数据
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._normalize_telegram_command` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        content: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not content.startswith("/"):
             return content
         if content == "/dream_log" or content.startswith("/dream_log "):
@@ -376,7 +654,20 @@ class TelegramChannel(BaseChannel):
         return content
 
     async def start(self) -> None:
-        """Start the Telegram bot."""
+        """异步启动流程（start = 原函数名）。
+
+        【中文名称】启动流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel.start` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self.config.token:
             self.logger.error("bot token not configured")
             return
@@ -385,7 +676,7 @@ class TelegramChannel(BaseChannel):
 
         proxy = self.config.proxy or None
 
-        # Separate pools so long-polling (getUpdates) never starves outbound sends.
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         api_request = HTTPXRequest(
             connection_pool_size=self.config.connection_pool_size,
             pool_timeout=self.config.pool_timeout,
@@ -409,7 +700,7 @@ class TelegramChannel(BaseChannel):
         self._app = builder.build()
         self._app.add_error_handler(self._on_error)
 
-        # Add command handlers (using Regex to support @username suffixes before bot initialization)
+        # 中文说明：这一段围绕用户处理，注意输入、输出和异常路径。
         self._app.add_handler(MessageHandler(filters.Regex(r"^/start(?:@\w+)?$"), self._on_start))
         self._app.add_handler(
             MessageHandler(
@@ -425,7 +716,7 @@ class TelegramChannel(BaseChannel):
         )
         self._app.add_handler(MessageHandler(filters.Regex(r"^/help(?:@\w+)?$"), self._on_help))
 
-        # Add message handler for text, photos, video, voice, documents, and locations
+        # 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
         self._app.add_handler(
             MessageHandler(
                 (filters.TEXT | filters.PHOTO | filters.VIDEO | filters.VIDEO_NOTE
@@ -436,7 +727,7 @@ class TelegramChannel(BaseChannel):
             )
         )
 
-        # Conditionally register inline keyboard callback handler
+        # 中文说明：这一段围绕调用处理，注意输入、输出和异常路径。
         if self.config.inline_keyboards:
             self._app.add_handler(CallbackQueryHandler(self._on_callback_query))
             allowed_updates = ["message", "callback_query"]
@@ -449,11 +740,11 @@ class TelegramChannel(BaseChannel):
         else:
             self.logger.info("Starting bot (polling mode)...")
 
-        # Initialize and start receiving updates
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         await self._app.initialize()
         await self._app.start()
 
-        # Get bot info and register command menu
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         bot_info = await self._app.bot.get_me()
         self._bot_user_id = getattr(bot_info, "id", None)
         self._bot_username = getattr(bot_info, "username", None)
@@ -466,8 +757,8 @@ class TelegramChannel(BaseChannel):
             self.logger.warning("Failed to register bot commands: {}", e)
 
         if self.config.mode == "webhook":
-            # ``url_path`` is the local HTTP route. ``webhook_url`` is the
-            # public HTTPS URL Telegram calls; reverse proxies may rewrite it.
+            # 中文说明：这一段围绕HTTP、Webhook、路径处理，注意输入、输出和异常路径。
+            # 中文说明：这一段围绕Telegram、调用、HTTP处理，注意输入、输出和异常路径。
             await self._app.updater.start_webhook(
                 listen=self.config.webhook_listen_host,
                 port=self.config.webhook_listen_port,
@@ -479,22 +770,35 @@ class TelegramChannel(BaseChannel):
                 max_connections=self.config.webhook_max_connections,
             )
         else:
-            # Start polling (this runs until stopped)
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
             await self._app.updater.start_polling(
                 allowed_updates=allowed_updates,
-                drop_pending_updates=False,  # Process pending messages on startup
+                drop_pending_updates=False,  # 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
                 error_callback=self._on_polling_error,
             )
 
-        # Keep running until stopped
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         while self._running:
             await asyncio.sleep(1)
 
     async def stop(self) -> None:
-        """Stop the Telegram bot."""
+        """异步停止流程（stop = 原函数名）。
+
+        【中文名称】停止流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel.stop` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         self._running = False
 
-        # Cancel all typing indicators
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         for chat_id in list(self._typing_tasks):
             self._stop_typing(chat_id)
 
@@ -517,7 +821,20 @@ class TelegramChannel(BaseChannel):
 
     @staticmethod
     def _get_media_type(path: str) -> str:
-        """Guess media type from file extension."""
+        """执行辅助逻辑（_get_media_type = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._get_media_type` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        path: 文件或路径信息，代码会按安全边界读取或写入。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
         if ext in ("jpg", "jpeg", "png", "gif", "webp"):
             return "photo"
@@ -531,15 +848,43 @@ class TelegramChannel(BaseChannel):
 
     @staticmethod
     def _is_remote_media_url(path: str) -> bool:
+        """判断条件是否成立（_is_remote_media_url = 原函数名）。
+
+        【中文名称】判断条件是否成立
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._is_remote_media_url` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        path: 文件或路径信息，代码会按安全边界读取或写入。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return path.startswith(("http://", "https://"))
 
     async def send(self, msg: OutboundMessage) -> None:
-        """Send a message through Telegram."""
+        """异步发送消息（send = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel.send` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        msg: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self._app:
             self.logger.warning("bot not running")
             return
 
-        # Only stop typing indicator and remove reaction for final responses
+        # 中文说明：这一段围绕响应处理，注意输入、输出和异常路径。
         if not msg.metadata.get("_progress", False):
             self._stop_typing(msg.chat_id)
             if reply_to_message_id := msg.metadata.get("message_id"):
@@ -567,7 +912,7 @@ class TelegramChannel(BaseChannel):
                     allow_sending_without_reply=True
                 )
 
-        # Send media files
+        # 中文说明：这一段围绕媒体、文件处理，注意输入、输出和异常路径。
         for media_path in (msg.media or []):
             try:
                 media_type = self._get_media_type(media_path)
@@ -587,7 +932,7 @@ class TelegramChannel(BaseChannel):
                 if media_type == "video":
                     extra["supports_streaming"] = True
 
-                # Telegram Bot API accepts HTTP(S) URLs directly for media params.
+                # 中文说明：这一段围绕Telegram、API、HTTP、媒体处理，注意输入、输出和异常路径。
                 if self._is_remote_media_url(media_path):
                     ok, error = validate_url_target(media_path)
                     if not ok:
@@ -623,13 +968,13 @@ class TelegramChannel(BaseChannel):
                     **thread_kwargs,
                 )
 
-        # Send text content
+        # 中文说明：Send text content 相关逻辑。
         if msg.content and msg.content != "[empty message]":
             render_as_blockquote = bool(msg.metadata.get("_tool_hint"))
             buttons = getattr(msg, "buttons", None) or []
             reply_markup = self._build_keyboard(buttons) if buttons else None
             text = msg.content
-            # Fallback: no native keyboard → splice labels into the message so the choices survive.
+            # 中文说明：兜底。
             if buttons and reply_markup is None:
                 text = f"{text}\n\n{self._buttons_as_text(buttons)}"
             chunks = split_message(text, TELEGRAM_MAX_MESSAGE_LEN)
@@ -642,7 +987,23 @@ class TelegramChannel(BaseChannel):
                 )
 
     async def _call_with_retry(self, fn, *args, **kwargs):
-        """Call an async Telegram API function with retry on pool/network timeout and RetryAfter."""
+        """异步调用服务（_call_with_retry = 原函数名）。
+
+        【中文名称】调用服务
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._call_with_retry` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        fn: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        *args: 可变位置参数，承载数量不固定的输入。
+        **kwargs: 额外关键字参数，通常向下透传给 SDK 或工具函数。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         from telegram.error import RetryAfter
 
         for attempt in range(1, _SEND_MAX_RETRIES + 1):
@@ -676,7 +1037,26 @@ class TelegramChannel(BaseChannel):
         render_as_blockquote: bool = False,
         reply_markup=None,
     ) -> None:
-        """Send a plain text message with HTML fallback."""
+        """异步发送消息（_send_text = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._send_text` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        text: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        reply_params: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        thread_kwargs: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        render_as_blockquote: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        reply_markup: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         try:
             html = _tool_hint_to_telegram_blockquote(text) if render_as_blockquote else _markdown_to_telegram_html(text)
             await self._call_with_retry(
@@ -703,10 +1083,40 @@ class TelegramChannel(BaseChannel):
 
     @staticmethod
     def _is_not_modified_error(exc: Exception) -> bool:
+        """判断条件是否成立（_is_not_modified_error = 原函数名）。
+
+        【中文名称】判断条件是否成立
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._is_not_modified_error` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        exc: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return isinstance(exc, BadRequest) and "message is not modified" in str(exc).lower()
 
     async def send_delta(self, chat_id: str, delta: str, metadata: dict[str, Any] | None = None) -> None:
-        """Progressive message editing: send on first delta, edit on subsequent ones."""
+        """异步发送消息（send_delta = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel.send_delta` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        delta: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        metadata: 结构化数据负载，后续会被解析或转发。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self._app:
             return
         meta = metadata or {}
@@ -742,15 +1152,15 @@ class TelegramChannel(BaseChannel):
                     text=primary_html, parse_mode="HTML",
                 )
             except BadRequest as e:
-                # Only fall back to plain text on actual HTML parse/format errors.
-                # Network errors (TimedOut, NetworkError) should propagate immediately
-                # to avoid doubling connection demand during pool exhaustion.
+                # 中文说明：普通文本。
+                # 中文说明：这一段围绕错误、媒体处理，注意输入、输出和异常路径。
+                # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
                 if self._is_not_modified_error(e):
                     self.logger.debug("Final stream edit already applied for {}", chat_id)
                     self._stream_bufs.pop(chat_id, None)
                     return
                 self.logger.debug("Final stream edit failed (HTML), trying plain: {}", e)
-                # Fall back to raw markdown (not HTML) so users don't see raw tags.
+                # 中文说明：这一段围绕用户、Markdown、HTML处理，注意输入、输出和异常路径。
                 primary_plain = split_message(raw_text, TELEGRAM_MAX_MESSAGE_LEN)[0] if len(raw_text) > TELEGRAM_MAX_MESSAGE_LEN else raw_text
                 try:
                     await self._call_with_retry(
@@ -763,7 +1173,7 @@ class TelegramChannel(BaseChannel):
                         self.logger.debug("Final stream plain edit already applied for {}", chat_id)
                     else:
                         self.logger.warning("Final stream edit failed: {}", e2)
-                        raise  # Let ChannelManager handle retry
+                        raise  # 中文说明：这一段围绕重试处理，注意输入、输出和异常路径。
             for extra_html_chunk in extra_html_chunks:
                 try:
                     await self._call_with_retry(
@@ -773,7 +1183,7 @@ class TelegramChannel(BaseChannel):
                         **thread_kwargs,
                     )
                 except Exception:
-                    # Fall back to _send_text which handles HTML→plain gracefully.
+                    # 中文说明：这里描述一次数据形态转换，左边是输入形态，右边是输出形态。
                     await self._send_text(int_chat_id, extra_html_chunk)
             self._stream_bufs.pop(chat_id, None)
             return
@@ -805,7 +1215,7 @@ class TelegramChannel(BaseChannel):
                 buf.last_edit = now
             except Exception as e:
                 self.logger.warning("Stream initial send failed: {}", e)
-                raise  # Let ChannelManager handle retry
+                raise  # 中文说明：这一段围绕重试处理，注意输入、输出和异常路径。
         elif (now - buf.last_edit) >= self.config.stream_edit_interval:
             if len(buf.text) > TELEGRAM_MAX_MESSAGE_LEN:
                 await self._flush_stream_overflow(int_chat_id, buf, thread_kwargs)
@@ -824,7 +1234,7 @@ class TelegramChannel(BaseChannel):
                     buf.last_edit = now
                     return
                 self.logger.warning("Stream edit failed: {}", e)
-                raise  # Let ChannelManager handle retry
+                raise  # 中文说明：这一段围绕重试处理，注意输入、输出和异常路径。
 
     async def _flush_stream_overflow(
         self,
@@ -832,11 +1242,22 @@ class TelegramChannel(BaseChannel):
         buf: "_StreamBuf",
         thread_kwargs: dict,
     ) -> None:
-        """Split an oversized stream buffer mid-flight.
+        """异步流式处理（_flush_stream_overflow = 原函数名）。
 
-        Edits the current stream message with the first chunk, sends any
-        intermediate chunks as standalone messages, then opens a new message
-        for the tail so subsequent deltas continue streaming into it.
+        【中文名称】流式处理
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._flush_stream_overflow` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        buf: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        thread_kwargs: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         chunks = split_message(buf.text, TELEGRAM_MAX_MESSAGE_LEN)
         if len(chunks) <= 1:
@@ -865,7 +1286,22 @@ class TelegramChannel(BaseChannel):
         buf.text = tail
 
     async def _on_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /start command."""
+        """异步启动流程（_on_start = 原函数名）。
+
+        【中文名称】启动流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._on_start` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        update: 外部平台事件对象，包含用户输入和平台元数据。
+        context: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not update.message or not update.effective_user:
             return
 
@@ -881,7 +1317,22 @@ class TelegramChannel(BaseChannel):
         )
 
     async def _on_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /help command for allowed users only."""
+        """异步执行辅助逻辑（_on_help = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._on_help` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        update: 外部平台事件对象，包含用户输入和平台元数据。
+        context: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not update.message or not update.effective_user:
             return
         user = update.effective_user
@@ -893,11 +1344,41 @@ class TelegramChannel(BaseChannel):
 
     @staticmethod
     def _sender_id(user) -> str:
-        """Build sender_id with username for allowlist matching."""
+        """发送输出消息（_sender_id = 原函数名）。
+
+        【中文名称】发送输出消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._sender_id` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        user: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         sid = str(user.id)
         return f"{sid}|{user.username}" if user.username else sid
 
     async def _send_pairing_code_if_private(self, sender_id: str, message, user) -> None:
+        """异步发送消息（_send_pairing_code_if_private = 原函数名）。
+
+        【中文名称】发送消息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._send_pairing_code_if_private` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        sender_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        message: 消息数据，可能来自用户、频道、模型或工具调用。
+        user: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if message.chat.type != "private":
             return
         await self._handle_message(
@@ -910,7 +1391,20 @@ class TelegramChannel(BaseChannel):
 
     @staticmethod
     def _derive_topic_session_key(message) -> str | None:
-        """Derive topic-scoped session key for Telegram chats with threads."""
+        """执行辅助逻辑（_derive_topic_session_key = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._derive_topic_session_key` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        message: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         message_thread_id = getattr(message, "message_thread_id", None)
         if message_thread_id is None:
             return None
@@ -918,7 +1412,21 @@ class TelegramChannel(BaseChannel):
 
     @staticmethod
     def _build_message_metadata(message, user) -> dict:
-        """Build common Telegram inbound metadata payload."""
+        """构建对象（_build_message_metadata = 原函数名）。
+
+        【中文名称】构建对象
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._build_message_metadata` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        message: 消息数据，可能来自用户、频道、模型或工具调用。
+        user: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         reply_to = getattr(message, "reply_to_message", None)
         return {
             "message_id": message.message_id,
@@ -932,7 +1440,21 @@ class TelegramChannel(BaseChannel):
         }
 
     async def _extract_reply_context(self, message) -> str | None:
-        """Extract text from the message being replied to, if any."""
+        """异步提取信息（_extract_reply_context = 原函数名）。
+
+        【中文名称】提取信息
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._extract_reply_context` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        message: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         reply = getattr(message, "reply_to_message", None)
         if not reply:
             return None
@@ -958,7 +1480,22 @@ class TelegramChannel(BaseChannel):
     async def _download_message_media(
         self, msg, *, add_failure_content: bool = False
     ) -> tuple[list[str], list[str]]:
-        """Download media from a message (current or reply). Returns (media_paths, content_parts)."""
+        """异步下载资源（_download_message_media = 原函数名）。
+
+        【中文名称】下载资源
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._download_message_media` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        msg: 消息数据，可能来自用户、频道、模型或工具调用。
+        add_failure_content: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         media_file = None
         media_type = None
         if getattr(msg, "photo", None):
@@ -1010,7 +1547,20 @@ class TelegramChannel(BaseChannel):
             return [], []
 
     async def _ensure_bot_identity(self) -> tuple[int | None, str | None]:
-        """Load bot identity once and reuse it for mention/reply checks."""
+        """异步确保前置条件成立（_ensure_bot_identity = 原函数名）。
+
+        【中文名称】确保前置条件成立
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._ensure_bot_identity` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if self._bot_user_id is not None or self._bot_username is not None:
             return self._bot_user_id, self._bot_username
         if not self._app:
@@ -1027,7 +1577,23 @@ class TelegramChannel(BaseChannel):
         bot_username: str,
         bot_id: int | None,
     ) -> bool:
-        """Check Telegram mention entities against the bot username."""
+        """执行辅助逻辑（_has_mention_entity = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._has_mention_entity` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        text: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        entities: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        bot_username: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        bot_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         handle = f"@{bot_username}".lower()
         for entity in entities or []:
             entity_type = getattr(entity, "type", None)
@@ -1047,7 +1613,21 @@ class TelegramChannel(BaseChannel):
         return handle in text.lower()
 
     async def _is_group_message_for_bot(self, message) -> bool:
-        """Allow group messages when policy is open, @mentioned, or replying to the bot."""
+        """异步判断条件是否成立（_is_group_message_for_bot = 原函数名）。
+
+        【中文名称】判断条件是否成立
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._is_group_message_for_bot` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        message: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if message.chat.type == "private" or self.config.group_policy == "open":
             return True
 
@@ -1074,7 +1654,21 @@ class TelegramChannel(BaseChannel):
         return bool(bot_id and reply_user and reply_user.id == bot_id)
 
     def _remember_thread_context(self, message) -> None:
-        """Cache Telegram thread context by chat/message id for follow-up replies."""
+        """执行辅助逻辑（_remember_thread_context = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._remember_thread_context` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        message: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         message_thread_id = getattr(message, "message_thread_id", None)
         if message_thread_id is None:
             return
@@ -1085,12 +1679,38 @@ class TelegramChannel(BaseChannel):
 
     @staticmethod
     def _queue_key_for_message(message) -> str:
-        """Return the final nanobot session key used for ordered Telegram ingress."""
+        """执行辅助逻辑（_queue_key_for_message = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._queue_key_for_message` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        message: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return TelegramChannel._derive_topic_session_key(message) or f"telegram:{message.chat_id}"
 
     @staticmethod
     def _sort_key_for_update(update: Update) -> tuple[int, int]:
-        """Sort by chat message id first, then Telegram update id."""
+        """执行辅助逻辑（_sort_key_for_update = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._sort_key_for_update` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        update: 外部平台事件对象，包含用户输入和平台元数据。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         message = getattr(update, "message", None)
         message_id = int(getattr(message, "message_id", 0) or 0)
         update_id = int(getattr(update, "update_id", 0) or 0)
@@ -1103,7 +1723,23 @@ class TelegramChannel(BaseChannel):
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
     ) -> None:
-        """Stage a Telegram update behind a short per-session reorder window."""
+        """执行辅助逻辑（_enqueue_ordered_update = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._enqueue_ordered_update` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        kind: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        update: 外部平台事件对象，包含用户输入和平台元数据。
+        context: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         message = update.message
         key = self._queue_key_for_message(message)
         self._inbound_buffers.setdefault(key, []).append(
@@ -1120,7 +1756,21 @@ class TelegramChannel(BaseChannel):
             )
 
     async def _drain_ordered_updates(self, key: str) -> None:
-        """Drain one Telegram session buffer in stable message order."""
+        """异步执行辅助逻辑（_drain_ordered_updates = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._drain_ordered_updates` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        key: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         try:
             while self._running:
                 await asyncio.sleep(0.2)
@@ -1152,7 +1802,22 @@ class TelegramChannel(BaseChannel):
                 self._inbound_workers.pop(key, None)
 
     async def _forward_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Forward slash commands to the bus for unified handling in AgentLoop."""
+        """异步执行辅助逻辑（_forward_command = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._forward_command` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        update: 外部平台事件对象，包含用户输入和平台元数据。
+        context: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not update.message or not update.effective_user:
             return
         if not self._running:
@@ -1161,7 +1826,22 @@ class TelegramChannel(BaseChannel):
         self._enqueue_ordered_update(kind="command", update=update, context=context)
 
     async def _process_forward_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Process a queued slash command."""
+        """异步执行辅助逻辑（_process_forward_command = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._process_forward_command` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        update: 外部平台事件对象，包含用户输入和平台元数据。
+        context: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         message = update.message
         user = update.effective_user
         sender_id = self._sender_id(user)
@@ -1170,7 +1850,7 @@ class TelegramChannel(BaseChannel):
             return
         self._remember_thread_context(message)
 
-        # Strip @bot_username suffix if present
+        # 中文说明：这一段围绕用户处理，注意输入、输出和异常路径。
         content = message.text or ""
         if content.startswith("/") and "@" in content:
             cmd_part, *rest = content.split(" ", 1)
@@ -1188,7 +1868,22 @@ class TelegramChannel(BaseChannel):
         )
 
     async def _on_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle incoming messages (text, photos, voice, documents)."""
+        """异步执行辅助逻辑（_on_message = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._on_message` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        update: 外部平台事件对象，包含用户输入和平台元数据。
+        context: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not update.message or not update.effective_user:
             return
         if not self._running:
@@ -1197,7 +1892,22 @@ class TelegramChannel(BaseChannel):
         self._enqueue_ordered_update(kind="message", update=update, context=context)
 
     async def _process_message_update(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Process a queued Telegram message update."""
+        """异步执行辅助逻辑（_process_message_update = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._process_message_update` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        update: 外部平台事件对象，包含用户输入和平台元数据。
+        context: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
 
         message = update.message
         user = update.effective_user
@@ -1208,29 +1918,29 @@ class TelegramChannel(BaseChannel):
             return
         self._remember_thread_context(message)
 
-        # Store chat_id for replies
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         self._chat_ids[sender_id] = chat_id
 
         if not await self._is_group_message_for_bot(message):
             return
 
-        # Build content from text and/or media
+        # 中文说明：这一段围绕媒体处理，注意输入、输出和异常路径。
         content_parts = []
         media_paths = []
 
-        # Text content
+        # 中文说明：Text content 相关逻辑。
         if message.text:
             content_parts.append(message.text)
         if message.caption:
             content_parts.append(message.caption)
 
-        # Location content
+        # 中文说明：Location content 相关逻辑。
         if message.location:
             lat = message.location.latitude
             lon = message.location.longitude
             content_parts.append(f"[location: {lat}, {lon}]")
 
-        # Download current message media
+        # 中文说明：这一段围绕消息、媒体处理，注意输入、输出和异常路径。
         current_media_paths, current_media_parts = await self._download_message_media(
             message, add_failure_content=True
         )
@@ -1239,7 +1949,7 @@ class TelegramChannel(BaseChannel):
         if current_media_paths:
             self.logger.debug("Downloaded message media to {}", current_media_paths[0])
 
-        # Reply context: text and/or media from the replied-to message
+        # 中文说明：这一段围绕消息、上下文、媒体处理，注意输入、输出和异常路径。
         reply = getattr(message, "reply_to_message", None)
         if reply is not None:
             reply_ctx = await self._extract_reply_context(message)
@@ -1258,7 +1968,7 @@ class TelegramChannel(BaseChannel):
         metadata = self._build_message_metadata(message, user)
         session_key = self._derive_topic_session_key(message)
 
-        # Telegram media groups: buffer briefly, forward as one aggregated turn.
+        # 中文说明：这一段围绕Telegram、媒体处理，注意输入、输出和异常路径。
         if media_group_id := getattr(message, "media_group_id", None):
             key = f"{str_chat_id}:{media_group_id}"
             if key not in self._media_group_buffers:
@@ -1278,11 +1988,11 @@ class TelegramChannel(BaseChannel):
                 self._media_group_tasks[key] = asyncio.create_task(self._flush_media_group(key))
             return
 
-        # Start typing indicator before processing
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         self._start_typing(str_chat_id)
         await self._add_reaction(str_chat_id, message.message_id, self.config.react_emoji)
 
-        # Forward to the message bus
+        # 中文说明：这一段围绕消息处理，注意输入、输出和异常路径。
         await self._handle_message(
             sender_id=sender_id,
             chat_id=str_chat_id,
@@ -1293,7 +2003,21 @@ class TelegramChannel(BaseChannel):
         )
 
     async def _flush_media_group(self, key: str) -> None:
-        """Wait briefly, then forward buffered media-group as one turn."""
+        """异步执行辅助逻辑（_flush_media_group = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._flush_media_group` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        key: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         try:
             await asyncio.sleep(0.6)
             if not (buf := self._media_group_buffers.pop(key, None)):
@@ -1309,19 +2033,63 @@ class TelegramChannel(BaseChannel):
             self._media_group_tasks.pop(key, None)
 
     def _start_typing(self, chat_id: str) -> None:
-        """Start sending 'typing...' indicator for a chat."""
-        # Cancel any existing typing task for this chat
+        """启动流程（_start_typing = 原函数名）。
+
+        【中文名称】启动流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._start_typing` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         self._stop_typing(chat_id)
         self._typing_tasks[chat_id] = asyncio.create_task(self._typing_loop(chat_id))
 
     def _stop_typing(self, chat_id: str) -> None:
-        """Stop the typing indicator for a chat."""
+        """停止流程（_stop_typing = 原函数名）。
+
+        【中文名称】停止流程
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._stop_typing` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         task = self._typing_tasks.pop(chat_id, None)
         if task and not task.done():
             task.cancel()
 
     async def _add_reaction(self, chat_id: str, message_id: int, emoji: str) -> None:
-        """Add emoji reaction to a message (best-effort, non-blocking)."""
+        """异步执行辅助逻辑（_add_reaction = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._add_reaction` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        message_id: 消息数据，可能来自用户、频道、模型或工具调用。
+        emoji: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self._app or not emoji:
             return
         try:
@@ -1334,7 +2102,22 @@ class TelegramChannel(BaseChannel):
             self.logger.debug("reaction failed: {}", e)
 
     async def _remove_reaction(self, chat_id: str, message_id: int) -> None:
-        """Remove emoji reaction from a message (best-effort, non-blocking)."""
+        """异步执行辅助逻辑（_remove_reaction = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._remove_reaction` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        message_id: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not self._app:
             return
         try:
@@ -1347,7 +2130,21 @@ class TelegramChannel(BaseChannel):
             self.logger.debug("reaction removal failed: {}", e)
 
     async def _typing_loop(self, chat_id: str) -> None:
-        """Repeatedly send 'typing' action until cancelled."""
+        """异步执行辅助逻辑（_typing_loop = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._typing_loop` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chat_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         try:
             with suppress(asyncio.CancelledError):
                 while self._app:
@@ -1358,7 +2155,20 @@ class TelegramChannel(BaseChannel):
 
     @staticmethod
     def _format_telegram_error(exc: Exception) -> str:
-        """Return a short, readable error summary for logs."""
+        """格式化内容（_format_telegram_error = 原函数名）。
+
+        【中文名称】格式化内容
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._format_telegram_error` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        exc: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         text = str(exc).strip()
         if text:
             return text
@@ -1371,7 +2181,21 @@ class TelegramChannel(BaseChannel):
         return exc.__class__.__name__
 
     def _on_polling_error(self, exc: Exception) -> None:
-        """Keep long-polling network failures to a single readable line."""
+        """执行辅助逻辑（_on_polling_error = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._on_polling_error` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        exc: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         summary = self._format_telegram_error(exc)
         if isinstance(exc, (NetworkError, TimedOut)):
             self.logger.warning("polling network issue: {}", summary)
@@ -1379,7 +2203,22 @@ class TelegramChannel(BaseChannel):
             self.logger.error("polling error: {}", summary)
 
     async def _on_error(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Log polling / handler errors instead of silently swallowing them."""
+        """异步执行辅助逻辑（_on_error = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._on_error` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        update: 外部平台事件对象，包含用户输入和平台元数据。
+        context: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         summary = self._format_telegram_error(context.error)
 
         if isinstance(context.error, (NetworkError, TimedOut)):
@@ -1393,7 +2232,23 @@ class TelegramChannel(BaseChannel):
         mime_type: str | None,
         filename: str | None = None,
     ) -> str:
-        """Get file extension based on media type or original filename."""
+        """执行辅助逻辑（_get_extension = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._get_extension` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        media_type: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        mime_type: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        filename: 文件或路径信息，代码会按安全边界读取或写入。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if mime_type:
             ext_map = {
                 "image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif",
@@ -1415,7 +2270,21 @@ class TelegramChannel(BaseChannel):
         return ""
 
     def _build_keyboard(self, buttons: list) -> InlineKeyboardMarkup | None:
-        """Build inline keyboard markup if inline_keyboards is enabled."""
+        """构建对象（_build_keyboard = 原函数名）。
+
+        【中文名称】构建对象
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._build_keyboard` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        buttons: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not buttons or not self.config.inline_keyboards:
             return None
         keyboard = [
@@ -1426,7 +2295,21 @@ class TelegramChannel(BaseChannel):
 
     @staticmethod
     def _safe_callback_data(label: str) -> str:
-        # Telegram caps callback_data at 64 bytes UTF-8; truncate at a char boundary so the keyboard still sends.
+        # 中文说明：这一段围绕Telegram、调用处理，注意输入、输出和异常路径。
+        """执行辅助逻辑（_safe_callback_data = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._safe_callback_data` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        label: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         encoded = label.encode("utf-8")
         if len(encoded) <= 64:
             return label
@@ -1434,11 +2317,40 @@ class TelegramChannel(BaseChannel):
 
     @staticmethod
     def _buttons_as_text(buttons: list[list[str]]) -> str:
-        # Buttons are semantic options; when we can't render a keyboard, the user still needs to see them.
+        # 中文说明：这一段围绕用户处理，注意输入、输出和异常路径。
+        """执行辅助逻辑（_buttons_as_text = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._buttons_as_text` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        buttons: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return "\n".join(" ".join(f"[{label}]" for label in row) for row in buttons if row)
 
     async def _on_callback_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle inline keyboard button clicks (callback queries)."""
+        """异步执行辅助逻辑（_on_callback_query = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 渠道适配器 中的一个关键步骤。Telegram 渠道适配器，负责把外部平台消息接入 nanobot，并把 Agent 回复发送回该平台。
+        在阅读 `TelegramChannel._on_callback_query` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        update: 外部平台事件对象，包含用户输入和平台元数据。
+        context: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not update.callback_query or not update.effective_user:
             return
         query = update.callback_query
@@ -1470,3 +2382,4 @@ class TelegramChannel(BaseChannel):
                 "is_callback": True,
             },
         )
+

@@ -1,4 +1,21 @@
-"""AWS Bedrock Converse provider."""
+"""AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+
+【中文名称】Provider 实现：nanobot/providers/bedrock_provider.py
+
+【功能说明】
+本文件属于 P1 学习范围，重点帮助初学者理解“外部系统 ↔ nanobot 后端”之间的适配层。
+阅读时可以先看类和函数的中文说明，再沿着消息、配置、异常和返回值四条线索跟代码。
+
+【主要职责】
+1. 接收配置或输入数据，整理成后端内部统一使用的结构。
+2. 调用第三方 SDK、HTTP API 或公共工具函数完成实际工作。
+3. 把外部返回值、错误和流式事件转换成 nanobot 可继续处理的数据。
+4. 在边界处处理鉴权、限流、媒体文件、重试和日志，避免复杂度泄漏到核心 Agent。
+
+【学习提示】
+如果你是 Agent 或后端初学者，可以把本文件看成“翻译器”：它不改变核心 Agent 思路，
+而是负责理解某个平台或服务商的协议，并把它翻译成项目内部约定的数据形状。
+"""
 
 from __future__ import annotations
 
@@ -26,6 +43,21 @@ _NOOP_TOOL_NAME = "nanobot_noop"
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """合并内容（_deep_merge = 原函数名）。
+
+    【中文名称】合并内容
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_deep_merge` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    base: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    override: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     merged = dict(base)
     for key, value in override.items():
         if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
@@ -36,6 +68,20 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
 
 
 def _next_or_none(iterator: Iterator[dict[str, Any]]) -> dict[str, Any] | None:
+    """执行辅助逻辑（_next_or_none = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_next_or_none` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    iterator: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     try:
         return next(iterator)
     except StopIteration:
@@ -43,7 +89,20 @@ def _next_or_none(iterator: Iterator[dict[str, Any]]) -> dict[str, Any] | None:
 
 
 class BedrockProvider(LLMProvider):
-    """LLM provider using AWS Bedrock Runtime's Converse APIs."""
+    """BedrockProvider 类，封装 Provider 实现 的核心状态和行为。
+
+    【中文名称】BedrockProvider
+
+    【功能说明】
+    AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    LLMProvider。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
+    """
 
     def __init__(
         self,
@@ -56,6 +115,27 @@ class BedrockProvider(LLMProvider):
         extra_body: dict[str, Any] | None = None,
         client: Any | None = None,
     ):
+        """初始化对象（__init__ = 原函数名）。
+
+        【中文名称】初始化对象
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider.__init__` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        api_key: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        api_base: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        default_model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        region: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        profile: 文件或路径信息，代码会按安全边界读取或写入。
+        extra_body: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        client: 第三方 SDK 或 HTTP 客户端实例。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         super().__init__(api_key, api_base)
         self.default_model = default_model
         self.region = region or os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
@@ -64,6 +144,20 @@ class BedrockProvider(LLMProvider):
         self._client = client if client is not None else self._make_client()
 
     def _make_client(self) -> Any:
+        """执行辅助逻辑（_make_client = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider._make_client` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if self.api_key:
             os.environ["AWS_BEARER_TOKEN_BEDROCK"] = self.api_key
         try:
@@ -87,25 +181,98 @@ class BedrockProvider(LLMProvider):
 
     @staticmethod
     def _strip_prefix(model: str) -> str:
+        """执行辅助逻辑（_strip_prefix = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider._strip_prefix` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if model.startswith("bedrock/"):
             return model[len("bedrock/"):]
         return model
 
     @staticmethod
     def _matches_model_token(model: str, tokens: tuple[str, ...]) -> bool:
+        """执行辅助逻辑（_matches_model_token = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider._matches_model_token` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        tokens: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         model_lower = model.lower()
         return any(token in model_lower for token in tokens)
 
     @classmethod
     def _supports_temperature(cls, model: str) -> bool:
+        """执行辅助逻辑（_supports_temperature = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider._supports_temperature` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return not cls._matches_model_token(model, _TEMPERATURE_UNSUPPORTED_MODEL_TOKENS)
 
     @classmethod
     def _uses_adaptive_thinking_only(cls, model: str) -> bool:
+        """执行辅助逻辑（_uses_adaptive_thinking_only = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider._uses_adaptive_thinking_only` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return cls._matches_model_token(model, _ADAPTIVE_THINKING_ONLY_MODEL_TOKENS)
 
     @staticmethod
     def _image_url_block(block: dict[str, Any]) -> dict[str, Any] | None:
+        """执行辅助逻辑（_image_url_block = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider._image_url_block` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        block: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         url = (block.get("image_url") or {}).get("url", "")
         if not isinstance(url, str) or not url:
             return None
@@ -123,6 +290,22 @@ class BedrockProvider(LLMProvider):
 
     @classmethod
     def _content_blocks(cls, content: Any, *, for_tool_result: bool = False) -> list[dict[str, Any]]:
+        """执行辅助逻辑（_content_blocks = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider._content_blocks` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        content: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        for_tool_result: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if isinstance(content, str) or content is None:
             return [{"text": content or "(empty)"}]
         if not isinstance(content, list):
@@ -148,7 +331,7 @@ class BedrockProvider(LLMProvider):
                     blocks.append(converted)
                 continue
 
-            # Preserve already-Bedrock-shaped content where possible.
+            # 中文说明：保留。
             for key in ("text", "image", "document", "video", "json", "searchResult"):
                 if key in item:
                     blocks.append({key: item[key]})
@@ -160,6 +343,21 @@ class BedrockProvider(LLMProvider):
 
     @classmethod
     def _system_blocks(cls, content: Any) -> list[dict[str, Any]]:
+        """执行辅助逻辑（_system_blocks = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider._system_blocks` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        content: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return [
             block for block in cls._content_blocks(content)
             if "text" in block or "cachePoint" in block or "guardContent" in block
@@ -167,6 +365,21 @@ class BedrockProvider(LLMProvider):
 
     @classmethod
     def _tool_result_block(cls, msg: dict[str, Any]) -> dict[str, Any]:
+        """执行辅助逻辑（_tool_result_block = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider._tool_result_block` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        msg: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return {
             "toolResult": {
                 "toolUseId": str(msg.get("tool_call_id") or ""),
@@ -177,6 +390,20 @@ class BedrockProvider(LLMProvider):
 
     @staticmethod
     def _tool_use_block(tool_call: dict[str, Any]) -> dict[str, Any] | None:
+        """执行辅助逻辑（_tool_use_block = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider._tool_use_block` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        tool_call: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         function = tool_call.get("function")
         if not isinstance(function, dict):
             return None
@@ -191,6 +418,20 @@ class BedrockProvider(LLMProvider):
 
     @staticmethod
     def _reasoning_block(block: dict[str, Any]) -> dict[str, Any] | None:
+        """执行辅助逻辑（_reasoning_block = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider._reasoning_block` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        block: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if block.get("type") not in {"thinking", "reasoning", "redacted_thinking"}:
             return None
         text = block.get("thinking") or block.get("text")
@@ -213,6 +454,21 @@ class BedrockProvider(LLMProvider):
 
     @classmethod
     def _assistant_blocks(cls, msg: dict[str, Any]) -> list[dict[str, Any]]:
+        """执行辅助逻辑（_assistant_blocks = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider._assistant_blocks` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        msg: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         blocks: list[dict[str, Any]] = []
 
         for thinking in msg.get("thinking_blocks") or []:
@@ -237,6 +493,20 @@ class BedrockProvider(LLMProvider):
 
     @staticmethod
     def _has_tool_use(msg: dict[str, Any]) -> bool:
+        """执行辅助逻辑（_has_tool_use = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider._has_tool_use` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        msg: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         content = msg.get("content")
         return isinstance(content, list) and any(
             isinstance(block, dict) and "toolUse" in block for block in content
@@ -244,6 +514,20 @@ class BedrockProvider(LLMProvider):
 
     @staticmethod
     def _merge_consecutive(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """合并内容（_merge_consecutive = 原函数名）。
+
+        【中文名称】合并内容
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider._merge_consecutive` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        messages: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         merged: list[dict[str, Any]] = []
         for msg in messages:
             if merged and merged[-1].get("role") == msg.get("role"):
@@ -272,6 +556,21 @@ class BedrockProvider(LLMProvider):
         self,
         messages: list[dict[str, Any]],
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """转换格式（_convert_messages = 原函数名）。
+
+        【中文名称】转换格式
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider._convert_messages` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        messages: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         system: list[dict[str, Any]] = []
         converted: list[dict[str, Any]] = []
 
@@ -298,6 +597,20 @@ class BedrockProvider(LLMProvider):
 
     @staticmethod
     def _convert_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
+        """转换格式（_convert_tools = 原函数名）。
+
+        【中文名称】转换格式
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider._convert_tools` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        tools: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not tools:
             return None
         result: list[dict[str, Any]] = []
@@ -325,6 +638,20 @@ class BedrockProvider(LLMProvider):
 
     @staticmethod
     def _contains_tool_blocks(messages: list[dict[str, Any]]) -> bool:
+        """执行辅助逻辑（_contains_tool_blocks = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider._contains_tool_blocks` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        messages: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         for msg in messages:
             content = msg.get("content")
             if not isinstance(content, list):
@@ -336,6 +663,20 @@ class BedrockProvider(LLMProvider):
 
     @staticmethod
     def _noop_tool() -> dict[str, Any]:
+        """执行辅助逻辑（_noop_tool = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider._noop_tool` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        无显式参数。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return {
             "toolSpec": {
                 "name": _NOOP_TOOL_NAME,
@@ -348,6 +689,20 @@ class BedrockProvider(LLMProvider):
     def _convert_tool_choice(
         tool_choice: str | dict[str, Any] | None,
     ) -> dict[str, Any] | None:
+        """转换格式（_convert_tool_choice = 原函数名）。
+
+        【中文名称】转换格式
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider._convert_tool_choice` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        tool_choice: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if tool_choice is None or tool_choice == "auto":
             return {"auto": {}}
         if tool_choice == "required":
@@ -362,6 +717,20 @@ class BedrockProvider(LLMProvider):
 
     @staticmethod
     def _adaptive_thinking(reasoning_effort: str | None) -> dict[str, Any] | None:
+        """执行辅助逻辑（_adaptive_thinking = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider._adaptive_thinking` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        reasoning_effort: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not reasoning_effort:
             return None
         effort = reasoning_effort.lower()
@@ -382,6 +751,27 @@ class BedrockProvider(LLMProvider):
         reasoning_effort: str | None,
         tool_choice: str | dict[str, Any] | None,
     ) -> dict[str, Any]:
+        """构建对象（_build_kwargs = 原函数名）。
+
+        【中文名称】构建对象
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider._build_kwargs` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        messages: 消息数据，可能来自用户、频道、模型或工具调用。
+        tools: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        max_tokens: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        temperature: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        reasoning_effort: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        tool_choice: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         model_id = self._strip_prefix(model or self.default_model)
         system, bedrock_messages = self._convert_messages(self._sanitize_empty_content(messages))
         if not bedrock_messages:
@@ -424,6 +814,20 @@ class BedrockProvider(LLMProvider):
 
     @staticmethod
     def _finish_reason(stop_reason: str | None) -> str:
+        """执行辅助逻辑（_finish_reason = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider._finish_reason` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        stop_reason: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return {
             "end_turn": "stop",
             "tool_use": "tool_calls",
@@ -432,6 +836,20 @@ class BedrockProvider(LLMProvider):
 
     @staticmethod
     def _usage(usage: dict[str, Any] | None) -> dict[str, int]:
+        """执行辅助逻辑（_usage = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider._usage` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        usage: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not usage:
             return {}
         prompt = int(usage.get("inputTokens") or 0)
@@ -453,6 +871,20 @@ class BedrockProvider(LLMProvider):
 
     @staticmethod
     def _parse_reasoning(block: dict[str, Any]) -> tuple[str | None, dict[str, Any] | None]:
+        """解析数据（_parse_reasoning = 原函数名）。
+
+        【中文名称】解析数据
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider._parse_reasoning` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        block: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         reasoning = block.get("reasoningContent")
         if not isinstance(reasoning, dict):
             return None, None
@@ -475,6 +907,21 @@ class BedrockProvider(LLMProvider):
 
     @classmethod
     def _parse_response(cls, response: dict[str, Any]) -> LLMResponse:
+        """解析数据（_parse_response = 原函数名）。
+
+        【中文名称】解析数据
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider._parse_response` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        response: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
         tool_calls: list[ToolCallRequest] = []
@@ -520,6 +967,26 @@ class BedrockProvider(LLMProvider):
         tool_buffers: dict[int, dict[str, Any]],
         state: dict[str, Any],
     ) -> str | None:
+        """解析数据（_parse_stream_event = 原函数名）。
+
+        【中文名称】解析数据
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider._parse_stream_event` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        event: 外部平台事件对象，包含用户输入和平台元数据。
+        content_parts: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        reasoning_parts: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        thinking_blocks: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        tool_buffers: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        state: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if "contentBlockStart" in event:
             data = event["contentBlockStart"]
             idx = int(data.get("contentBlockIndex") or 0)
@@ -609,6 +1076,25 @@ class BedrockProvider(LLMProvider):
         tool_buffers: dict[int, dict[str, Any]],
         state: dict[str, Any],
     ) -> LLMResponse:
+        """流式处理（_stream_result = 原函数名）。
+
+        【中文名称】流式处理
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider._stream_result` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        content_parts: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        reasoning_parts: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        thinking_blocks: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        tool_buffers: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        state: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         tool_calls: list[ToolCallRequest] = []
         for buf in tool_buffers.values():
             args: Any = {}
@@ -630,6 +1116,21 @@ class BedrockProvider(LLMProvider):
 
     @classmethod
     def _handle_error(cls, e: Exception) -> LLMResponse:
+        """处理事件（_handle_error = 原函数名）。
+
+        【中文名称】处理事件
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider._handle_error` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        e: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         response = getattr(e, "response", None)
         metadata = response.get("ResponseMetadata", {}) if isinstance(response, dict) else {}
         headers = metadata.get("HTTPHeaders") if isinstance(metadata, dict) else None
@@ -678,6 +1179,27 @@ class BedrockProvider(LLMProvider):
         reasoning_effort: str | None = None,
         tool_choice: str | dict[str, Any] | None = None,
     ) -> LLMResponse:
+        """异步执行辅助逻辑（chat = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider.chat` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        messages: 消息数据，可能来自用户、频道、模型或工具调用。
+        tools: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        max_tokens: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        temperature: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        reasoning_effort: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        tool_choice: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         try:
             kwargs = self._build_kwargs(
                 messages, tools, model, max_tokens, temperature, reasoning_effort, tool_choice
@@ -700,6 +1222,30 @@ class BedrockProvider(LLMProvider):
         on_thinking_delta: Callable[[str], Awaitable[None]] | None = None,
         on_tool_call_delta: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> LLMResponse:
+        """异步流式处理（chat_stream = 原函数名）。
+
+        【中文名称】流式处理
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider.chat_stream` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        messages: 消息数据，可能来自用户、频道、模型或工具调用。
+        tools: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        max_tokens: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        temperature: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        reasoning_effort: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        tool_choice: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        on_content_delta: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        on_thinking_delta: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        on_tool_call_delta: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         _ = on_thinking_delta, on_tool_call_delta
         idle_timeout_s = int(os.environ.get("NANOBOT_STREAM_IDLE_TIMEOUT_S", "90"))
         content_parts: list[str] = []
@@ -751,4 +1297,19 @@ class BedrockProvider(LLMProvider):
             return self._handle_error(e)
 
     def get_default_model(self) -> str:
+        """执行辅助逻辑（get_default_model = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。AWS Bedrock Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `BedrockProvider.get_default_model` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return self.default_model
+

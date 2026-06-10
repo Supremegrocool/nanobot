@@ -1,10 +1,20 @@
-"""根据配置创建 LLM Provider。
+"""Provider 工厂 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
 
-这个模块负责把“配置层的 provider 信息”真正变成“可用的 Provider 实例”。
-它还负责：
-- 应用 model preset
-- 构建 fallback provider 链
-- 生成 runtime snapshot
+【中文名称】Provider 实现：nanobot/providers/factory.py
+
+【功能说明】
+本文件属于 P1 学习范围，重点帮助初学者理解“外部系统 ↔ nanobot 后端”之间的适配层。
+阅读时可以先看类和函数的中文说明，再沿着消息、配置、异常和返回值四条线索跟代码。
+
+【主要职责】
+1. 接收配置或输入数据，整理成后端内部统一使用的结构。
+2. 调用第三方 SDK、HTTP API 或公共工具函数完成实际工作。
+3. 把外部返回值、错误和流式事件转换成 nanobot 可继续处理的数据。
+4. 在边界处处理鉴权、限流、媒体文件、重试和日志，避免复杂度泄漏到核心 Agent。
+
+【学习提示】
+如果你是 Agent 或后端初学者，可以把本文件看成“翻译器”：它不改变核心 Agent 思路，
+而是负责理解某个平台或服务商的协议，并把它翻译成项目内部约定的数据形状。
 """
 
 from __future__ import annotations
@@ -20,10 +30,19 @@ from nanobot.providers.registry import find_by_name
 
 @dataclass(frozen=True)
 class ProviderSnapshot:
-    """Provider 运行时快照。
+    """ProviderSnapshot 类，封装 Provider 实现 的核心状态和行为。
 
-    它把当前生效的 provider、model、上下文窗口和签名打包在一起，
-    方便 AgentLoop 在运行时热切换模型配置。
+    【中文名称】ProviderSnapshot
+
+    【功能说明】
+    Provider 工厂 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    普通 Python 类。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
     """
     provider: LLMProvider
     model: str
@@ -37,7 +56,22 @@ def _resolve_model_preset(
     preset_name: str | None = None,
     preset: ModelPresetConfig | None = None,
 ) -> ModelPresetConfig:
-    """解析本次要使用的模型预设。"""
+    """解析目标（_resolve_model_preset = 原函数名）。
+
+    【中文名称】解析目标
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。Provider 工厂 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_resolve_model_preset` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    config: 配置对象或配置片段，决定该逻辑如何连接外部服务。
+    preset_name: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    preset: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     return preset if preset is not None else config.resolve_preset(preset_name)
 
 
@@ -48,7 +82,23 @@ def _make_provider_core(
     preset: ModelPresetConfig | None = None,
     model: str | None = None,
 ) -> LLMProvider:
-    """创建一个“纯 Provider”，不包 fallback 逻辑。"""
+    """执行辅助逻辑（_make_provider_core = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。Provider 工厂 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_make_provider_core` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    config: 配置对象或配置片段，决定该逻辑如何连接外部服务。
+    preset_name: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    preset: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    model: 模型名称或模型配置，用于选择具体 LLM 能力。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     resolved = _resolve_model_preset(config, preset_name=preset_name, preset=preset)
     model = model or resolved.model
     provider_name = config.get_provider_name(model, preset=resolved)
@@ -58,7 +108,7 @@ def _make_provider_core(
         raise ValueError(f"Provider '{provider_name}' only supports transcription.")
     backend = spec.backend if spec else "openai_compat"
 
-    # 这里先做 provider 级基本校验，再进入具体实现分支。
+    # 中文说明：这一段围绕Provider处理，注意输入、输出和异常路径。
     if backend == "azure_openai":
         if not p or not p.api_base:
             raise ValueError("Azure OpenAI requires api_base in config.")
@@ -126,7 +176,21 @@ def _inline_fallback_preset(
     primary: ModelPresetConfig,
     fallback: InlineFallbackConfig,
 ) -> ModelPresetConfig:
-    """把内联 fallback 配置扩展成完整的 ``ModelPresetConfig``。"""
+    """执行辅助逻辑（_inline_fallback_preset = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。Provider 工厂 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_inline_fallback_preset` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    primary: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    fallback: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     return ModelPresetConfig(
         model=fallback.model,
         provider=fallback.provider,
@@ -144,7 +208,21 @@ def _inline_fallback_preset(
 
 
 def _resolve_fallback_presets(config: Config, primary: ModelPresetConfig) -> list[ModelPresetConfig]:
-    """解析主预设对应的所有 fallback 预设。"""
+    """解析目标（_resolve_fallback_presets = 原函数名）。
+
+    【中文名称】解析目标
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。Provider 工厂 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_resolve_fallback_presets` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    config: 配置对象或配置片段，决定该逻辑如何连接外部服务。
+    primary: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     presets: list[ModelPresetConfig] = []
     for fallback in config.agents.defaults.fallback_models:
         if isinstance(fallback, str):
@@ -161,10 +239,22 @@ def make_provider(
     preset: ModelPresetConfig | None = None,
     model: str | None = None,
 ) -> LLMProvider:
-    """创建最终对外可用的 Provider。
+    """执行辅助逻辑（make_provider = 原函数名）。
 
-    如果配置了 fallback_models，这里返回的可能不是单个 provider，
-    而是包了一层 ``FallbackProvider`` 的组合对象。
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。Provider 工厂 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `make_provider` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    config: 配置对象或配置片段，决定该逻辑如何连接外部服务。
+    preset_name: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    preset: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    model: 模型名称或模型配置，用于选择具体 LLM 能力。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
     """
     resolved = _resolve_model_preset(config, preset_name=preset_name, preset=preset)
     provider = _make_provider_core(config, preset_name=preset_name, preset=preset, model=model)
@@ -188,16 +278,41 @@ def provider_signature(
     preset_name: str | None = None,
     preset: ModelPresetConfig | None = None,
 ) -> tuple[object, ...]:
-    """返回足以标识当前 provider 链配置的签名元组。
+    """执行辅助逻辑（provider_signature = 原函数名）。
 
-    这个签名会被用来判断：
-    “当前运行时 provider 配置是否真的变化了，需要热更新吗？”
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。Provider 工厂 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `provider_signature` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    config: 配置对象或配置片段，决定该逻辑如何连接外部服务。
+    preset_name: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    preset: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
     """
     resolved = _resolve_model_preset(config, preset_name=preset_name, preset=preset)
     p = config.get_provider(resolved.model, preset=resolved)
     fallback_presets = _resolve_fallback_presets(config, resolved)
 
     def _fallback_signature(fallback: ModelPresetConfig) -> tuple[object, ...]:
+        """执行辅助逻辑（_fallback_signature = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。Provider 工厂 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `_fallback_signature` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        fallback: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         fp = config.get_provider(fallback.model, preset=fallback)
         return (
             fallback.model,
@@ -243,7 +358,22 @@ def build_provider_snapshot(
     preset_name: str | None = None,
     preset: ModelPresetConfig | None = None,
 ) -> ProviderSnapshot:
-    """构建完整 ProviderSnapshot。"""
+    """构建对象（build_provider_snapshot = 原函数名）。
+
+    【中文名称】构建对象
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。Provider 工厂 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `build_provider_snapshot` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    config: 配置对象或配置片段，决定该逻辑如何连接外部服务。
+    preset_name: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    preset: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     resolved = _resolve_model_preset(config, preset_name=preset_name, preset=preset)
     fallback_windows = [
         fallback.context_window_tokens
@@ -262,10 +392,25 @@ def load_provider_snapshot(
     *,
     preset_name: str | None = None,
 ) -> ProviderSnapshot:
-    """从磁盘配置文件加载并构建 ProviderSnapshot。"""
+    """加载数据（load_provider_snapshot = 原函数名）。
+
+    【中文名称】加载数据
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。Provider 工厂 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `load_provider_snapshot` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    config_path: 配置对象或配置片段，决定该逻辑如何连接外部服务。
+    preset_name: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     from nanobot.config.loader import load_config, resolve_config_env_vars
 
     return build_provider_snapshot(
         resolve_config_env_vars(load_config(config_path)),
         preset_name=preset_name,
     )
+

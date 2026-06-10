@@ -1,4 +1,21 @@
-"""Document text extraction utilities for nanobot."""
+"""从 PDF、Word、PPT、表格和文本文件中抽取可供 Agent 阅读的内容。
+
+【中文名称】工具模块：nanobot/utils/document.py
+
+【功能说明】
+本文件属于 P1 学习范围，重点帮助初学者理解“外部系统 ↔ nanobot 后端”之间的适配层。
+阅读时可以先看类和函数的中文说明，再沿着消息、配置、异常和返回值四条线索跟代码。
+
+【主要职责】
+1. 接收配置或输入数据，整理成后端内部统一使用的结构。
+2. 调用第三方 SDK、HTTP API 或公共工具函数完成实际工作。
+3. 把外部返回值、错误和流式事件转换成 nanobot 可继续处理的数据。
+4. 在边界处处理鉴权、限流、媒体文件、重试和日志，避免复杂度泄漏到核心 Agent。
+
+【学习提示】
+如果你是 Agent 或后端初学者，可以把本文件看成“翻译器”：它不改变核心 Agent 思路，
+而是负责理解某个平台或服务商的协议，并把它翻译成项目内部约定的数据形状。
+"""
 
 import mimetypes
 from pathlib import Path
@@ -7,14 +24,14 @@ from loguru import logger
 
 from nanobot.utils.helpers import detect_image_mime
 
-# Supported file extensions for text extraction
+# 中文说明：提取。
 SUPPORTED_EXTENSIONS: set[str] = {
-    # Document formats
+    # 中文说明：这一段围绕格式处理，注意输入、输出和异常路径。
     ".pdf",
     ".docx",
     ".xlsx",
     ".pptx",
-    # Text formats
+    # 中文说明：这一段围绕格式处理，注意输入、输出和异常路径。
     ".txt",
     ".md",
     ".csv",
@@ -28,7 +45,7 @@ SUPPORTED_EXTENSIONS: set[str] = {
     ".toml",
     ".ini",
     ".cfg",
-    # Image formats (for future OCR support)
+    # 中文说明：这一段围绕图片、格式处理，注意输入、输出和异常路径。
     ".png",
     ".jpg",
     ".jpeg",
@@ -40,14 +57,19 @@ _MAX_TEXT_LENGTH = 200_000
 
 
 def extract_text(path: Path) -> str | None:
-    """Extract text from a file.
+    """提取信息（extract_text = 原函数名）。
 
-    Args:
-        path: Path to the file.
+    【中文名称】提取信息
 
-    Returns:
-        Extracted text as string, None for unsupported types,
-        or error string for failures.
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。从 PDF、Word、PPT、表格和文本文件中抽取可供 Agent 阅读的内容。
+    在阅读 `extract_text` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    path: 文件或路径信息，代码会按安全边界读取或写入。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
     """
     if not isinstance(path, Path):
         path = Path(path)
@@ -57,9 +79,9 @@ def extract_text(path: Path) -> str | None:
 
     ext = path.suffix.lower()
 
-    # Document formats -- each branch lazily imports its parser so that
-    # startup does not pay the ~25 MB cost of loading openpyxl /
-    # python-docx / python-pptx / pypdf up front (see issue #3422).
+    # 中文说明：这一段围绕格式处理，注意输入、输出和异常路径。
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+    # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
     if ext == ".pdf":
         return _extract_pdf(path)
     elif ext == ".docx":
@@ -71,15 +93,28 @@ def extract_text(path: Path) -> str | None:
     elif _is_text_extension(ext):
         return _extract_text_file(path)
     elif ext in {".png", ".jpg", ".jpeg", ".gif", ".webp"}:
-        # Image files - for future OCR support
+        # 中文说明：这一段围绕图片、文件处理，注意输入、输出和异常路径。
         return f"[image: {path.name}]"
     else:
-        # Unsupported extension
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         return None
 
 
 def _extract_pdf(path: Path) -> str:
-    """Extract text from PDF using pypdf."""
+    """提取信息（_extract_pdf = 原函数名）。
+
+    【中文名称】提取信息
+
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。从 PDF、Word、PPT、表格和文本文件中抽取可供 Agent 阅读的内容。
+    在阅读 `_extract_pdf` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    path: 文件或路径信息，代码会按安全边界读取或写入。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     try:
         from pypdf import PdfReader
     except ImportError:
@@ -97,7 +132,20 @@ def _extract_pdf(path: Path) -> str:
 
 
 def _extract_docx(path: Path) -> str:
-    """Extract text from DOCX using python-docx."""
+    """提取信息（_extract_docx = 原函数名）。
+
+    【中文名称】提取信息
+
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。从 PDF、Word、PPT、表格和文本文件中抽取可供 Agent 阅读的内容。
+    在阅读 `_extract_docx` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    path: 文件或路径信息，代码会按安全边界读取或写入。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     try:
         from docx import Document as DocxDocument
     except ImportError:
@@ -112,7 +160,20 @@ def _extract_docx(path: Path) -> str:
 
 
 def _extract_xlsx(path: Path) -> str:
-    """Extract text from XLSX using openpyxl."""
+    """提取信息（_extract_xlsx = 原函数名）。
+
+    【中文名称】提取信息
+
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。从 PDF、Word、PPT、表格和文本文件中抽取可供 Agent 阅读的内容。
+    在阅读 `_extract_xlsx` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    path: 文件或路径信息，代码会按安全边界读取或写入。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     try:
         from openpyxl import load_workbook
     except ImportError:
@@ -139,7 +200,20 @@ def _extract_xlsx(path: Path) -> str:
 
 
 def _extract_pptx(path: Path) -> str:
-    """Extract text from PPTX using python-pptx."""
+    """提取信息（_extract_pptx = 原函数名）。
+
+    【中文名称】提取信息
+
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。从 PDF、Word、PPT、表格和文本文件中抽取可供 Agent 阅读的内容。
+    在阅读 `_extract_pptx` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    path: 文件或路径信息，代码会按安全边界读取或写入。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     try:
         from pptx import Presentation as PptxPresentation
     except ImportError:
@@ -160,10 +234,20 @@ def _extract_pptx(path: Path) -> str:
 
 
 def _collect_pptx_shape_text(shape, out: list[str]) -> None:
-    """Collect text from a PPTX shape, recursing into groups and tables.
+    """执行辅助逻辑（_collect_pptx_shape_text = 原函数名）。
 
-    Groups have ``has_text_frame=False`` and must be walked via ``.shapes``;
-    tables are GraphicFrame objects whose cell text lives under ``.table``.
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。从 PDF、Word、PPT、表格和文本文件中抽取可供 Agent 阅读的内容。
+    在阅读 `_collect_pptx_shape_text` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    shape: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    out: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
     """
     sub_shapes = getattr(shape, "shapes", None)
     if sub_shapes is not None:
@@ -185,9 +269,22 @@ def _collect_pptx_shape_text(shape, out: list[str]) -> None:
 
 
 def _extract_text_file(path: Path) -> str:
-    """Extract text from a plain text file."""
+    """提取信息（_extract_text_file = 原函数名）。
+
+    【中文名称】提取信息
+
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。从 PDF、Word、PPT、表格和文本文件中抽取可供 Agent 阅读的内容。
+    在阅读 `_extract_text_file` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    path: 文件或路径信息，代码会按安全边界读取或写入。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     try:
-        # Try UTF-8 first, then latin-1 fallback
+        # 中文说明：兜底。
         try:
             content = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
@@ -199,14 +296,41 @@ def _extract_text_file(path: Path) -> str:
 
 
 def _truncate(text: str, max_length: int) -> str:
-    """Truncate text with a suffix indicating truncation."""
+    """执行辅助逻辑（_truncate = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。从 PDF、Word、PPT、表格和文本文件中抽取可供 Agent 阅读的内容。
+    在阅读 `_truncate` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    text: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    max_length: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     if len(text) <= max_length:
         return text
     return text[:max_length] + f"... (truncated, {len(text)} chars total)"
 
 
 def _is_text_extension(ext: str) -> bool:
-    """Check if extension is a text format."""
+    """判断条件是否成立（_is_text_extension = 原函数名）。
+
+    【中文名称】判断条件是否成立
+
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。从 PDF、Word、PPT、表格和文本文件中抽取可供 Agent 阅读的内容。
+    在阅读 `_is_text_extension` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    ext: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     return ext in {
         ".txt",
         ".md",
@@ -224,18 +348,27 @@ def _is_text_extension(ext: str) -> bool:
     }
 
 
-# ---------------------------------------------------------------------------
-# High-level helper: split media into images + extracted document text
-# ---------------------------------------------------------------------------
+# ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
+# 中文说明：提取。
+# ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
-_MAX_EXTRACT_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
+_MAX_EXTRACT_FILE_SIZE = 50 * 1024 * 1024  # 中文说明：50 MB 相关逻辑。
 
 
 def is_image_file(path: str) -> bool:
-    """Check whether *path* looks like an image file.
+    """判断条件是否成立（is_image_file = 原函数名）。
 
-    Uses magic-byte detection (reads first 16 bytes) with a ``mimetypes``
-    extension-based fallback.
+    【中文名称】判断条件是否成立
+
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。从 PDF、Word、PPT、表格和文本文件中抽取可供 Agent 阅读的内容。
+    在阅读 `is_image_file` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    path: 文件或路径信息，代码会按安全边界读取或写入。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
     """
     p = Path(path)
     mime: str | None = None
@@ -253,10 +386,20 @@ def is_image_file(path: str) -> bool:
 def reference_non_image_attachments(
     content: str, media: list[str],
 ) -> tuple[str, list[str]]:
-    """Separate images from non-image attachments without reading file content.
+    """执行辅助逻辑（reference_non_image_attachments = 原函数名）。
 
-    Image paths are preserved for downstream vision-block construction.
-    Non-image paths are appended as ``[Attachment: path]`` references.
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。从 PDF、Word、PPT、表格和文本文件中抽取可供 Agent 阅读的内容。
+    在阅读 `reference_non_image_attachments` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    content: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    media: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
     """
     image_paths: list[str] = []
     attachment_refs: list[str] = []
@@ -277,15 +420,21 @@ def extract_documents(
     *,
     max_file_size: int = _MAX_EXTRACT_FILE_SIZE,
 ) -> tuple[str, list[str]]:
-    """Separate images from documents in *media_paths*.
+    """提取信息（extract_documents = 原函数名）。
 
-    Documents (PDF, DOCX, XLSX, PPTX, plain-text, …) have their text
-    extracted and appended to *text*.  Only image paths are kept in the
-    returned list so that downstream layers only need to handle vision
-    blocks.
+    【中文名称】提取信息
 
-    Files larger than *max_file_size* bytes are skipped with a warning
-    to avoid unbounded memory / CPU usage.
+    【功能说明】
+    这是 工具模块 中的一个关键步骤。从 PDF、Word、PPT、表格和文本文件中抽取可供 Agent 阅读的内容。
+    在阅读 `extract_documents` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    text: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    media_paths: 文件或路径信息，代码会按安全边界读取或写入。
+    max_file_size: 文件或路径信息，代码会按安全边界读取或写入。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
     """
     image_paths: list[str] = []
     doc_texts: list[str] = []
@@ -317,3 +466,4 @@ def extract_documents(
         text = text + "\n\n" + "\n\n".join(doc_texts)
 
     return text, image_paths
+

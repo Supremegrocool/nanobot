@@ -1,4 +1,21 @@
-"""OpenAI-compatible provider for all non-Anthropic LLM APIs."""
+"""OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+
+【中文名称】Provider 实现：nanobot/providers/openai_compat_provider.py
+
+【功能说明】
+本文件属于 P1 学习范围，重点帮助初学者理解“外部系统 ↔ nanobot 后端”之间的适配层。
+阅读时可以先看类和函数的中文说明，再沿着消息、配置、异常和返回值四条线索跟代码。
+
+【主要职责】
+1. 接收配置或输入数据，整理成后端内部统一使用的结构。
+2. 调用第三方 SDK、HTTP API 或公共工具函数完成实际工作。
+3. 把外部返回值、错误和流式事件转换成 nanobot 可继续处理的数据。
+4. 在边界处处理鉴权、限流、媒体文件、重试和日志，避免复杂度泄漏到核心 Agent。
+
+【学习提示】
+如果你是 Agent 或后端初学者，可以把本文件看成“翻译器”：它不改变核心 Agent 思路，
+而是负责理解某个平台或服务商的协议，并把它翻译成项目内部约定的数据形状。
+"""
 
 from __future__ import annotations
 
@@ -38,9 +55,9 @@ if TYPE_CHECKING:
 
     from nanobot.providers.registry import ProviderSpec
 
-# Module-level placeholder — set lazily by _ensure_client on first real
-# use, or replaced by tests via ``patch(...)``.  Kept as a plain name so
-# that ``unittest.mock.patch`` can find and replace it.
+# 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+# 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+# 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
 AsyncOpenAI: Any = None
 
 _ALLOWED_MSG_KEYS = frozenset({
@@ -61,9 +78,9 @@ _KIMI_THINKING_MODELS: frozenset[str] = frozenset({
     "kimi-k2.6",
     "k2.6-code-preview",
 })
-# Thinking-capable MiMo models per Xiaomi docs (see
-# tests/providers/test_xiaomi_mimo_thinking.py). mimo-v2-flash is omitted
-# because it does not support thinking.
+# 中文说明：这一段围绕模型处理，注意输入、输出和异常路径。
+# 中文说明：这一段围绕Provider处理，注意输入、输出和异常路径。
+# 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
 _MIMO_THINKING_MODELS: frozenset[str] = frozenset({
     "mimo-v2.5-pro",
     "mimo-v2.5",
@@ -72,9 +89,9 @@ _MIMO_THINKING_MODELS: frozenset[str] = frozenset({
 })
 _OPENAI_COMPAT_REQUEST_TIMEOUT_S = 120.0
 
-# Maps ProviderSpec.thinking_style → extra_body builder.
-# Each builder takes a bool (thinking_enabled) and returns the dict to
-# merge into extra_body, keeping the style→wire-format mapping in one place.
+# 中文说明：这里描述一次数据形态转换，左边是输入形态，右边是输出形态。
+# 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+# 中文说明：这里描述一次数据形态转换，左边是输入形态，右边是输出形态。
 _THINKING_STYLE_MAP: dict[str, Any] = {
     "thinking_type": lambda on: {"thinking": {"type": "enabled" if on else "disabled"}},
     "enable_thinking": lambda on: {"enable_thinking": on},
@@ -94,7 +111,20 @@ def _model_slug(model_name: str) -> str:
 
 
 def _requires_max_completion_tokens(model_name: str) -> bool:
-    """Return True for models that reject ``max_tokens`` (GPT-5 family, o-series)."""
+    """执行辅助逻辑（_requires_max_completion_tokens = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_requires_max_completion_tokens` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    model_name: 模型名称或模型配置，用于选择具体 LLM 能力。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     slug = _model_slug(model_name)
     return "gpt-5" in slug or any(
         slug == p or slug.startswith((p + "-", p + ".")) for p in ("o1", "o3", "o4")
@@ -106,6 +136,21 @@ def _model_thinking_style(model_name: str) -> str:
 
 
 def _thinking_styles_for(spec: ProviderSpec | None, model_name: str) -> list[str]:
+    """执行辅助逻辑（_thinking_styles_for = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_thinking_styles_for` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    spec: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    model_name: 模型名称或模型配置，用于选择具体 LLM 能力。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     styles: list[str] = []
     if spec and spec.thinking_style:
         styles.append(spec.thinking_style)
@@ -116,11 +161,41 @@ def _thinking_styles_for(spec: ProviderSpec | None, model_name: str) -> list[str
 
 
 def _thinking_extra_body(style: str, thinking_enabled: bool) -> dict[str, Any] | None:
+    """执行辅助逻辑（_thinking_extra_body = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_thinking_extra_body` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    style: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    thinking_enabled: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     builder = _THINKING_STYLE_MAP.get(style)
     return builder(thinking_enabled) if builder else None
 
 
 def _gateway_reasoning_extra_body(style: str, effort: str | None) -> dict[str, Any] | None:
+    """执行辅助逻辑（_gateway_reasoning_extra_body = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_gateway_reasoning_extra_body` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    style: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    effort: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     if not effort:
         return None
     builder = _GATEWAY_REASONING_STYLE_MAP.get(style)
@@ -128,11 +203,39 @@ def _gateway_reasoning_extra_body(style: str, effort: str | None) -> dict[str, A
 
 
 def _openai_compat_timeout_s() -> float:
-    """Return the bounded request timeout used for OpenAI-compatible providers."""
+    """执行辅助逻辑（_openai_compat_timeout_s = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_openai_compat_timeout_s` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    无显式参数。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     return _float_env("NANOBOT_OPENAI_COMPAT_TIMEOUT_S", _OPENAI_COMPAT_REQUEST_TIMEOUT_S)
 
 
 def _float_env(name: str, default: float) -> float:
+    """执行辅助逻辑（_float_env = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_float_env` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    name: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    default: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     raw = os.environ.get(name)
     if raw is None or not raw.strip():
         return default
@@ -148,19 +251,59 @@ def _float_env(name: str, default: float) -> float:
 
 
 def _short_tool_id() -> str:
-    """9-char alphanumeric ID compatible with all providers (incl. Mistral)."""
+    """执行辅助逻辑（_short_tool_id = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_short_tool_id` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    无显式参数。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     return "".join(secrets.choice(_ALNUM) for _ in range(9))
 
 
 def _get(obj: Any, key: str) -> Any:
-    """Get a value from dict or object attribute, returning None if absent."""
+    """执行辅助逻辑（_get = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_get` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    obj: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    key: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     if isinstance(obj, dict):
         return obj.get(key)
     return getattr(obj, key, None)
 
 
 def _coerce_dict(value: Any) -> dict[str, Any] | None:
-    """Try to coerce *value* to a dict; return None if not possible or empty."""
+    """执行辅助逻辑（_coerce_dict = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_coerce_dict` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     if value is None:
         return None
     if isinstance(value, dict):
@@ -178,10 +321,19 @@ def _extract_tc_extras(tc: Any) -> tuple[
     dict[str, Any] | None,
     dict[str, Any] | None,
 ]:
-    """Extract (extra_content, provider_specific_fields, fn_provider_specific_fields).
+    """提取信息（_extract_tc_extras = 原函数名）。
 
-    Works for both SDK objects and dicts.  Captures Gemini ``extra_content``
-    verbatim and any non-standard keys on the tool-call / function.
+    【中文名称】提取信息
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_extract_tc_extras` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    tc: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
     """
     extra_content = _coerce_dict(_get(tc, "extra_content"))
 
@@ -209,25 +361,48 @@ def _extract_tc_extras(tc: Any) -> tuple[
 
 
 def _uses_openrouter_attribution(spec: "ProviderSpec | None", api_base: str | None) -> bool:
-    """Apply Nanobot attribution headers to OpenRouter requests by default."""
+    """执行辅助逻辑（_uses_openrouter_attribution = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_uses_openrouter_attribution` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    spec: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    api_base: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     if spec and spec.name == "openrouter":
         return True
     return bool(api_base and "openrouter" in api_base.lower())
 
 
 _RESPONSES_FAILURE_THRESHOLD = 3
-_RESPONSES_PROBE_INTERVAL_S = 300  # 5 minutes
+_RESPONSES_PROBE_INTERVAL_S = 300  # 中文说明：5 minutes 相关逻辑。
 
 
 def _is_local_endpoint(
     spec: "ProviderSpec | None",
     api_base: str | None,
 ) -> bool:
-    """Return True when the endpoint is a local or LAN model server.
+    """判断条件是否成立（_is_local_endpoint = 原函数名）。
 
-    Matches either the provider spec's ``is_local`` flag or common private-
-    network patterns in the base URL (localhost, 127.x, 192.168.x, 10.x,
-    172.16-31.x, Docker ``host.docker.internal``).
+    【中文名称】判断条件是否成立
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_is_local_endpoint` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    spec: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    api_base: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
     """
     if spec and spec.is_local:
         return True
@@ -251,7 +426,20 @@ def _is_local_endpoint(
 
 
 def _is_direct_openai_base(api_base: str | None) -> bool:
-    """Return True for direct OpenAI endpoints, not generic OpenAI-compatible gateways."""
+    """判断条件是否成立（_is_direct_openai_base = 原函数名）。
+
+    【中文名称】判断条件是否成立
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_is_direct_openai_base` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    api_base: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     if not api_base:
         return True
     normalized = api_base.strip().lower().rstrip("/")
@@ -263,16 +451,42 @@ def _responses_circuit_key(
     default_model: str,
     reasoning_effort: str | None,
 ) -> str:
+    """执行辅助逻辑（_responses_circuit_key = 原函数名）。
+
+    【中文名称】执行辅助逻辑
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_responses_circuit_key` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    model: 模型名称或模型配置，用于选择具体 LLM 能力。
+    default_model: 模型名称或模型配置，用于选择具体 LLM 能力。
+    reasoning_effort: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     model_name = (model or default_model).lower()
     effort = reasoning_effort.lower() if isinstance(reasoning_effort, str) else ""
     return f"{model_name}:{effort}"
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
-    """Recursively merge *override* into *base*, returning a new dict.
+    """合并内容（_deep_merge = 原函数名）。
 
-    Nested dicts are merged key-by-key; all other types in *override*
-    replace the corresponding key in *base*.
+    【中文名称】合并内容
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_deep_merge` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    base: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    override: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
     """
     merged = dict(base)
     for key, value in override.items():
@@ -288,7 +502,21 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
 
 
 def _merge_unique_list(base: Any, override: Any) -> Any:
-    """Append list values while preserving order and removing duplicates."""
+    """合并内容（_merge_unique_list = 原函数名）。
+
+    【中文名称】合并内容
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_merge_unique_list` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    base: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    override: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     if not isinstance(base, list) or not isinstance(override, list):
         return override
     result: list[Any] = []
@@ -309,7 +537,21 @@ def _merge_responses_extra_body(
     body: dict[str, Any],
     extra_body: dict[str, Any],
 ) -> dict[str, Any]:
-    """Merge configured Responses API body fields without clobbering tools."""
+    """合并内容（_merge_responses_extra_body = 原函数名）。
+
+    【中文名称】合并内容
+
+    【功能说明】
+    这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+    在阅读 `_merge_responses_extra_body` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+    【参数说明】
+    body: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+    extra_body: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+    【返回值】
+    返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+    """
     reserved = {"include", "tools"}
     regular_extra = {key: value for key, value in extra_body.items() if key not in reserved}
     merged = _deep_merge(body, regular_extra)
@@ -329,10 +571,19 @@ def _merge_responses_extra_body(
 
 
 class OpenAICompatProvider(LLMProvider):
-    """Unified provider for all OpenAI-compatible APIs.
+    """OpenAICompatProvider 类，封装 Provider 实现 的核心状态和行为。
 
-    Receives a resolved ``ProviderSpec`` from the caller — no internal
-    registry lookups needed.
+    【中文名称】OpenAICompatProvider
+
+    【功能说明】
+    OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。 这个类把相关配置、客户端连接和消息处理方法放在一起，
+    让外层代码只需要通过统一接口调用，而不用关心平台或服务商的协议细节。
+
+    【继承关系】
+    LLMProvider。继承关系决定它需要实现哪些项目约定的方法。
+
+    【学习提示】
+    先看 __init__ 如何保存配置，再看 start/stop 或 send/handle 类方法如何连接外部世界。
     """
 
     def __init__(
@@ -346,6 +597,28 @@ class OpenAICompatProvider(LLMProvider):
         api_type: str = "auto",
         extra_query: dict[str, str] | None = None,
     ):
+        """初始化对象（__init__ = 原函数名）。
+
+        【中文名称】初始化对象
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenAICompatProvider.__init__` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        api_key: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        api_base: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        default_model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        extra_headers: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        spec: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        extra_body: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        api_type: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        extra_query: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         super().__init__(api_key, api_base)
         self.default_model = default_model
         self.extra_headers = extra_headers or {}
@@ -367,32 +640,45 @@ class OpenAICompatProvider(LLMProvider):
         self._api_key_for_client = api_key or "no-key"
         self._is_local = _is_local_endpoint(spec, effective_base)
 
-        # Lazy-init: the OpenAI client and its httpx transport are expensive
-        # to create (~700 ms on Windows). Defer until first use.
+        # 中文说明：这一段围绕HTTP处理，注意输入、输出和异常路径。
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         self._client: AsyncOpenAIType | None = None
         self._client_lock = asyncio.Lock()
 
-        # Responses API circuit breaker: skip after repeated failures,
-        # probe again after _RESPONSES_PROBE_INTERVAL_S seconds.
+        # 中文说明：这一段围绕响应、API处理，注意输入、输出和异常路径。
+        # 中文说明：这一段围绕响应处理，注意输入、输出和异常路径。
         self._responses_failures: dict[str, int] = {}
         self._responses_tripped_at: dict[str, float] = {}
 
     def _build_client(self) -> None:
-        """Create the OpenAI client using the current module-level AsyncOpenAI."""
+        """构建对象（_build_client = 原函数名）。
+
+        【中文名称】构建对象
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenAICompatProvider._build_client` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         import httpx
 
         timeout_s = _openai_compat_timeout_s()
         http_client: httpx.AsyncClient | None = None
         if self._is_local:
-            # Local model servers (Ollama, llama.cpp, vLLM) often close idle
-            # HTTP connections before the client-side keepalive expires. When
-            # two LLM calls happen seconds apart (e.g. heartbeat _decide then
-            # process_direct), the second call may grab a now-dead pooled
-            # connection, causing a transient APIConnectionError on every first
-            # attempt. Disabling keepalive for local endpoints avoids this by
-            # opening a fresh connection for each request, which is cheap on a
-            # LAN. Cloud providers benefit from keepalive, so we leave the
-            # default pool settings for them.
+            # 中文说明：这一段围绕模型处理，注意输入、输出和异常路径。
+            # 中文说明：这一段围绕HTTP处理，注意输入、输出和异常路径。
+            # 中文说明：这一段围绕调用处理，注意输入、输出和异常路径。
+            # 中文说明：这一段围绕调用处理，注意输入、输出和异常路径。
+            # 中文说明：这一段围绕API、错误处理，注意输入、输出和异常路径。
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+            # 中文说明：这一段围绕请求处理，注意输入、输出和异常路径。
+            # 中文说明：这一段围绕Provider处理，注意输入、输出和异常路径。
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
             http_client = httpx.AsyncClient(
                 limits=httpx.Limits(keepalive_expiry=0),
                 timeout=timeout_s,
@@ -408,7 +694,20 @@ class OpenAICompatProvider(LLMProvider):
         )
 
     async def _ensure_client(self):
-        """Return the shared OpenAI client, creating it on first call."""
+        """异步确保前置条件成立（_ensure_client = 原函数名）。
+
+        【中文名称】确保前置条件成立
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenAICompatProvider._ensure_client` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if self._client is not None:
             return self._client
         async with self._client_lock:
@@ -431,7 +730,22 @@ class OpenAICompatProvider(LLMProvider):
             return self._client
 
     def _setup_env(self, api_key: str, api_base: str | None) -> None:
-        """Set environment variables based on provider spec."""
+        """执行辅助逻辑（_setup_env = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenAICompatProvider._setup_env` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        api_key: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        api_base: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         spec = self._spec
         if not spec or not spec.env_key:
             return
@@ -450,11 +764,40 @@ class OpenAICompatProvider(LLMProvider):
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]] | None]:
-        """Inject cache_control markers for prompt caching."""
+        """执行辅助逻辑（_apply_cache_control = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenAICompatProvider._apply_cache_control` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        messages: 消息数据，可能来自用户、频道、模型或工具调用。
+        tools: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         cache_marker = {"type": "ephemeral"}
         new_messages = list(messages)
 
         def _mark(msg: dict[str, Any]) -> dict[str, Any]:
+            """执行辅助逻辑（_mark = 原函数名）。
+
+            【中文名称】执行辅助逻辑
+
+            【功能说明】
+            这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+            在阅读 `OpenAICompatProvider._mark` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            msg: 消息数据，可能来自用户、频道、模型或工具调用。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             content = msg.get("content")
             if isinstance(content, str):
                 return {**msg, "content": [
@@ -480,7 +823,20 @@ class OpenAICompatProvider(LLMProvider):
 
     @staticmethod
     def _normalize_tool_call_id(tool_call_id: Any) -> Any:
-        """Normalize to a provider-safe 9-char alphanumeric form."""
+        """标准化数据（_normalize_tool_call_id = 原函数名）。
+
+        【中文名称】标准化数据
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenAICompatProvider._normalize_tool_call_id` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        tool_call_id: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if not isinstance(tool_call_id, str):
             return tool_call_id
         if len(tool_call_id) == 9 and tool_call_id.isalnum():
@@ -488,12 +844,38 @@ class OpenAICompatProvider(LLMProvider):
         return hashlib.sha1(tool_call_id.encode()).hexdigest()[:9]
 
     def _should_normalize_tool_call_ids(self) -> bool:
-        """Return True for providers that reject normal OpenAI tool call IDs."""
+        """标准化数据（_should_normalize_tool_call_ids = 原函数名）。
+
+        【中文名称】标准化数据
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenAICompatProvider._should_normalize_tool_call_ids` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         return bool(self._spec and self._spec.name == "mistral")
 
     @staticmethod
     def _coerce_content_to_string(content: Any) -> str | None:
-        """Coerce block/list content into plain text for strict string-only APIs."""
+        """执行辅助逻辑（_coerce_content_to_string = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenAICompatProvider._coerce_content_to_string` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        content: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if content is None or isinstance(content, str):
             return content
         text = OpenAICompatProvider._extract_text_content(content)
@@ -506,7 +888,21 @@ class OpenAICompatProvider(LLMProvider):
         return dumped or "(empty)"
 
     def _sanitize_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Strip non-standard keys, normalize tool_call IDs."""
+        """执行辅助逻辑（_sanitize_messages = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenAICompatProvider._sanitize_messages` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        messages: 消息数据，可能来自用户、频道、模型或工具调用。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         sanitized = LLMProvider._sanitize_request_messages(messages, _ALLOWED_MSG_KEYS)
         id_map: dict[str, str] = {}
         pending_tool_ids: dict[str, deque[str]] = {}
@@ -514,6 +910,20 @@ class OpenAICompatProvider(LLMProvider):
         normalize_tool_ids = self._should_normalize_tool_call_ids()
 
         def map_id(value: Any) -> Any:
+            """执行辅助逻辑（map_id = 原函数名）。
+
+            【中文名称】执行辅助逻辑
+
+            【功能说明】
+            这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+            在阅读 `OpenAICompatProvider.map_id` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             if not isinstance(value, str):
                 return value
             if not normalize_tool_ids:
@@ -521,6 +931,22 @@ class OpenAICompatProvider(LLMProvider):
             return id_map.setdefault(value, self._normalize_tool_call_id(value))
 
         def unique_tool_id(value: Any, used_ids: set[str], idx: int) -> str:
+            """执行辅助逻辑（unique_tool_id = 原函数名）。
+
+            【中文名称】执行辅助逻辑
+
+            【功能说明】
+            这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+            在阅读 `OpenAICompatProvider.unique_tool_id` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+            used_ids: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+            idx: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             if isinstance(value, str) and value:
                 base = map_id(value)
             else:
@@ -538,6 +964,20 @@ class OpenAICompatProvider(LLMProvider):
                 salt += 1
 
         def map_tool_result_id(value: Any) -> Any:
+            """执行辅助逻辑（map_tool_result_id = 原函数名）。
+
+            【中文名称】执行辅助逻辑
+
+            【功能说明】
+            这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+            在阅读 `OpenAICompatProvider.map_tool_result_id` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             if not isinstance(value, str):
                 return value
             queue = pending_tool_ids.get(value)
@@ -576,8 +1016,8 @@ class OpenAICompatProvider(LLMProvider):
                     normalized.append(tc_clean)
                 clean["tool_calls"] = normalized
                 if clean.get("role") == "assistant":
-                    # Some OpenAI-compatible gateways reject assistant messages
-                    # that mix non-empty content with tool_calls.
+                    # 中文说明：这一段围绕消息、助手处理，注意输入、输出和异常路径。
+                    # 中文说明：这一段围绕工具、调用处理，注意输入、输出和异常路径。
                     clean["content"] = None
             if "tool_call_id" in clean and clean["tool_call_id"]:
                 clean["tool_call_id"] = map_tool_result_id(clean["tool_call_id"])
@@ -588,19 +1028,29 @@ class OpenAICompatProvider(LLMProvider):
                 clean["content"] = self._coerce_content_to_string(clean.get("content"))
         return self._enforce_role_alternation(sanitized)
 
-    # ------------------------------------------------------------------
-    # Build kwargs
-    # ------------------------------------------------------------------
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
+    # 中文说明：Build kwargs 相关逻辑。
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
     @staticmethod
     def _supports_temperature(
         model_name: str,
         reasoning_effort: str | None = None,
     ) -> bool:
-        """Return True when the model accepts a temperature parameter.
+        """执行辅助逻辑（_supports_temperature = 原函数名）。
 
-        GPT-5 family and reasoning models (o1/o3/o4) reject temperature
-        when reasoning_effort is set to anything other than ``"none"``.
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenAICompatProvider._supports_temperature` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        model_name: 模型名称或模型配置，用于选择具体 LLM 能力。
+        reasoning_effort: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         if reasoning_effort and reasoning_effort.lower() != "none":
             return False
@@ -617,6 +1067,27 @@ class OpenAICompatProvider(LLMProvider):
         reasoning_effort: str | None,
         tool_choice: str | dict[str, Any] | None,
     ) -> dict[str, Any]:
+        """构建对象（_build_kwargs = 原函数名）。
+
+        【中文名称】构建对象
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenAICompatProvider._build_kwargs` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        messages: 消息数据，可能来自用户、频道、模型或工具调用。
+        tools: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        max_tokens: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        temperature: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        reasoning_effort: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        tool_choice: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         model_name = model or self.default_model
         spec = self._spec
 
@@ -633,8 +1104,8 @@ class OpenAICompatProvider(LLMProvider):
             "messages": self._sanitize_messages(self._sanitize_empty_content(messages)),
         }
 
-        # GPT-5 and reasoning models (o1/o3/o4) reject temperature when
-        # reasoning_effort is active.  Only include it when safe.
+        # 中文说明：这一段围绕模型处理，注意输入、输出和异常路径。
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         if self._supports_temperature(model_name, reasoning_effort):
             kwargs["temperature"] = temperature
 
@@ -652,9 +1123,9 @@ class OpenAICompatProvider(LLMProvider):
                     kwargs.update(overrides)
                     break
 
-        # Normalize reasoning_effort into a semantic form (OpenAI vocab)
-        # used for internal decisions, and a wire form actually sent out.
-        # "minimum" is accepted as a DashScope-native alias for "minimal".
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         semantic_effort: str | None = None
         if isinstance(reasoning_effort, str):
             semantic_effort = reasoning_effort.lower()
@@ -663,14 +1134,14 @@ class OpenAICompatProvider(LLMProvider):
 
         wire_effort = reasoning_effort
         if spec and spec.name == "dashscope" and semantic_effort == "minimal":
-            # DashScope accepts none/minimum/low/medium/high/xhigh; "minimal" 400s.
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
             wire_effort = "minimum"
 
         if wire_effort and semantic_effort != "none":
             kwargs["reasoning_effort"] = wire_effort
 
-        # Only send thinking controls when reasoning_effort is explicit so
-        # omitting the config preserves each provider's default.
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+        # 中文说明：保留。
         if reasoning_effort is not None:
             thinking_enabled = semantic_effort not in ("none", "minimal")
             for thinking_style in _thinking_styles_for(spec, model_name):
@@ -683,11 +1154,11 @@ class OpenAICompatProvider(LLMProvider):
                 if extra:
                     kwargs.setdefault("extra_body", {}).update(extra)
 
-            # Moonshot rejects requests that carry both 'reasoning_effort'
-            # and the native 'thinking' param.  We already expressed the
-            # user's intent via the provider-native shape, so drop the
-            # redundant wire-level kwarg.  Only kimi models need this —
-            # Xiaomi's API accepts both params.
+            # 中文说明：这一段围绕请求处理，注意输入、输出和异常路径。
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+            # 中文说明：这一段围绕Provider、用户处理，注意输入、输出和异常路径。
+            # 中文说明：这一段围绕模型处理，注意输入、输出和异常路径。
+            # 中文说明：这一段围绕API处理，注意输入、输出和异常路径。
             if _model_slug(model_name) in _KIMI_THINKING_MODELS:
                 kwargs.pop("reasoning_effort", None)
 
@@ -695,10 +1166,10 @@ class OpenAICompatProvider(LLMProvider):
             kwargs["tools"] = tools
             kwargs["tool_choice"] = tool_choice or "auto"
 
-        # Backfill reasoning_content="" on assistants missing it: DeepSeek
-        # thinking mode rejects history otherwise (#3554, #3584); "" reads
-        # as "no thinking that turn". DeepSeek-V4/reasoner reason natively,
-        # so backfill even without explicit reasoning_effort.
+        # 中文说明：这一段围绕助手处理，注意输入、输出和异常路径。
+        # 中文说明：这一段围绕历史记录处理，注意输入、输出和异常路径。
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         explicit_thinking = (
             reasoning_effort is not None
             and semantic_effort not in ("none", "minimal")
@@ -718,11 +1189,11 @@ class OpenAICompatProvider(LLMProvider):
                 if msg.get("role") == "assistant" and "reasoning_content" not in msg:
                     msg["reasoning_content"] = ""
 
-        # Merge user-configured extra_body last so it can override or
-        # extend provider-specific defaults (e.g. chat_template_kwargs,
-        # guided_json, repetition_penalty).  Uses recursive merge so
-        # nested dicts like {"chat_template_kwargs": {"enable_thinking": false}}
-        # do not clobber sibling keys already set by thinking-style logic.
+        # 中文说明：这一段围绕用户、配置处理，注意输入、输出和异常路径。
+        # 中文说明：这一段围绕Provider处理，注意输入、输出和异常路径。
+        # 中文说明：这一段围绕JSON处理，注意输入、输出和异常路径。
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         if self._extra_body:
             existing = kwargs.get("extra_body", {})
             kwargs["extra_body"] = _deep_merge(existing, self._extra_body)
@@ -734,14 +1205,29 @@ class OpenAICompatProvider(LLMProvider):
         model: str | None,
         reasoning_effort: str | None,
     ) -> bool:
-        """Use Responses API only for direct OpenAI requests that benefit from it."""
+        """执行辅助逻辑（_should_use_responses_api = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenAICompatProvider._should_use_responses_api` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        reasoning_effort: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if self._api_type == "chat_completions":
             return False
         if self._spec and self._spec.name not in ("openai", "github_copilot"):
             return False
         if self._api_type == "responses":
-            # Explicit configuration means Responses is mandatory; do not
-            # consult the circuit breaker or fall back to Chat Completions.
+            # 中文说明：这一段围绕响应、配置处理，注意输入、输出和异常路径。
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
             return True
         if self._spec is None or self._spec.name != "github_copilot":
             if not _is_direct_openai_base(self._effective_base):
@@ -763,17 +1249,48 @@ class OpenAICompatProvider(LLMProvider):
         model: str | None,
         reasoning_effort: str | None,
     ) -> bool:
-        """Return False when the Responses API circuit breaker is open."""
+        """执行辅助逻辑（_responses_circuit_allows_probe = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenAICompatProvider._responses_circuit_allows_probe` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        reasoning_effort: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         key = _responses_circuit_key(model, self.default_model, reasoning_effort)
         failures = self._responses_failures.get(key, 0)
         if failures >= _RESPONSES_FAILURE_THRESHOLD:
             tripped = self._responses_tripped_at.get(key, 0.0)
             if (time.monotonic() - tripped) < _RESPONSES_PROBE_INTERVAL_S:
                 return False
-            # Half-open: allow one probe attempt
+            # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         return True
 
     def _record_responses_failure(self, model: str | None, reasoning_effort: str | None) -> None:
+        """执行辅助逻辑（_record_responses_failure = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenAICompatProvider._record_responses_failure` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        reasoning_effort: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         key = _responses_circuit_key(model, self.default_model, reasoning_effort)
         count = self._responses_failures.get(key, 0) + 1
         self._responses_failures[key] = count
@@ -785,13 +1302,42 @@ class OpenAICompatProvider(LLMProvider):
             )
 
     def _record_responses_success(self, model: str | None, reasoning_effort: str | None) -> None:
+        """执行辅助逻辑（_record_responses_success = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenAICompatProvider._record_responses_success` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        reasoning_effort: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         key = _responses_circuit_key(model, self.default_model, reasoning_effort)
         self._responses_failures.pop(key, None)
         self._responses_tripped_at.pop(key, None)
 
     @staticmethod
     def _should_fallback_from_responses_error(e: Exception) -> bool:
-        """Fallback only for likely Responses API compatibility errors."""
+        """执行辅助逻辑（_should_fallback_from_responses_error = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenAICompatProvider._should_fallback_from_responses_error` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        e: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         response = getattr(e, "response", None)
         status_code = getattr(e, "status_code", None)
         if status_code is None and response is not None:
@@ -828,7 +1374,27 @@ class OpenAICompatProvider(LLMProvider):
         reasoning_effort: str | None,
         tool_choice: str | dict[str, Any] | None,
     ) -> dict[str, Any]:
-        """Build a Responses API body for direct OpenAI requests."""
+        """构建对象（_build_responses_body = 原函数名）。
+
+        【中文名称】构建对象
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenAICompatProvider._build_responses_body` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        messages: 消息数据，可能来自用户、频道、模型或工具调用。
+        tools: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        max_tokens: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        temperature: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        reasoning_effort: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        tool_choice: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         model_name = model or self.default_model
         if self._spec and self._spec.strip_model_prefix:
             model_name = model_name.split("/")[-1]
@@ -861,12 +1427,26 @@ class OpenAICompatProvider(LLMProvider):
 
         return body
 
-    # ------------------------------------------------------------------
-    # Response parsing
-    # ------------------------------------------------------------------
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
+    # 中文说明：这一段围绕响应处理，注意输入、输出和异常路径。
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
     @staticmethod
     def _maybe_mapping(value: Any) -> dict[str, Any] | None:
+        """执行辅助逻辑（_maybe_mapping = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenAICompatProvider._maybe_mapping` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if isinstance(value, dict):
             return value
         model_dump = getattr(value, "model_dump", None)
@@ -878,6 +1458,21 @@ class OpenAICompatProvider(LLMProvider):
 
     @classmethod
     def _extract_text_content(cls, value: Any) -> str | None:
+        """提取信息（_extract_text_content = 原函数名）。
+
+        【中文名称】提取信息
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenAICompatProvider._extract_text_content` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        value: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if value is None:
             return None
         if isinstance(value, str):
@@ -902,13 +1497,22 @@ class OpenAICompatProvider(LLMProvider):
 
     @classmethod
     def _extract_usage(cls, response: Any) -> dict[str, int]:
-        """Extract token usage from an OpenAI-compatible response.
+        """提取信息（_extract_usage = 原函数名）。
 
-        Handles both dict-based (raw JSON) and object-based (SDK Pydantic)
-        responses.  Provider-specific ``cached_tokens`` fields are normalised
-        under a single key; see the priority chain inside for details.
+        【中文名称】提取信息
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenAICompatProvider._extract_usage` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        response: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
-        # --- resolve usage object ---
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         usage_obj = None
         response_map = cls._maybe_mapping(response)
         if response_map is not None:
@@ -932,13 +1536,13 @@ class OpenAICompatProvider(LLMProvider):
         else:
             return {}
 
-        # --- cached_tokens (normalised across providers) ---
-        # Try nested paths first (dict), fall back to attribute (SDK object).
-        # Priority order ensures the most specific field wins.
+        # 中文说明：这一段围绕Provider、令牌、缓存处理，注意输入、输出和异常路径。
+        # 中文说明：这一段围绕路径处理，注意输入、输出和异常路径。
+        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         for path in (
-            ("prompt_tokens_details", "cached_tokens"),  # OpenAI/Zhipu/MiniMax/Qwen/Mistral/xAI
-            ("cached_tokens",),                          # StepFun/Moonshot (top-level)
-            ("prompt_cache_hit_tokens",),                # DeepSeek/SiliconFlow
+            ("prompt_tokens_details", "cached_tokens"),  # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+            ("cached_tokens",),                          # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+            ("prompt_cache_hit_tokens",),                # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
         ):
             cached = cls._get_nested_int(usage_map, path)
             if not cached and usage_obj:
@@ -951,10 +1555,20 @@ class OpenAICompatProvider(LLMProvider):
 
     @staticmethod
     def _get_nested_int(obj: Any, path: tuple[str, ...]) -> int:
-        """Drill into *obj* by *path* segments and return an ``int`` value.
+        """执行辅助逻辑（_get_nested_int = 原函数名）。
 
-        Supports both dict-key access and attribute access so it works
-        uniformly with raw JSON dicts **and** SDK Pydantic models.
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenAICompatProvider._get_nested_int` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        obj: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        path: 文件或路径信息，代码会按安全边界读取或写入。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
         """
         current = obj
         for segment in path:
@@ -967,6 +1581,21 @@ class OpenAICompatProvider(LLMProvider):
         return int(current or 0) if current is not None else 0
 
     def _parse(self, response: Any) -> LLMResponse:
+        """解析数据（_parse = 原函数名）。
+
+        【中文名称】解析数据
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenAICompatProvider._parse` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        response: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         if isinstance(response, str):
             return LLMResponse(content=response, finish_reason="stop")
 
@@ -995,7 +1624,7 @@ class OpenAICompatProvider(LLMProvider):
             finish_reason = str(choice0.get("finish_reason") or "stop")
 
             raw_tool_calls: list[Any] = []
-            # StepFun: fallback to reasoning field when content is empty
+            # 中文说明：兜底。
             if not content and msg0.get("reasoning") and self._spec and self._spec.reasoning_as_content:
                 content = self._extract_text_content(msg0.get("reasoning"))
             reasoning_content = msg0.get("reasoning_content")
@@ -1084,6 +1713,21 @@ class OpenAICompatProvider(LLMProvider):
 
     @classmethod
     def _parse_chunks(cls, chunks: list[Any]) -> LLMResponse:
+        """解析数据（_parse_chunks = 原函数名）。
+
+        【中文名称】解析数据
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenAICompatProvider._parse_chunks` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        chunks: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
         tc_bufs: dict[int, dict[str, Any]] = {}
@@ -1091,7 +1735,21 @@ class OpenAICompatProvider(LLMProvider):
         usage: dict[str, int] = {}
 
         def _accum_tc(tc: Any, idx_hint: int) -> None:
-            """Accumulate one streaming tool-call delta into *tc_bufs*."""
+            """执行辅助逻辑（_accum_tc = 原函数名）。
+
+            【中文名称】执行辅助逻辑
+
+            【功能说明】
+            这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+            在阅读 `OpenAICompatProvider._accum_tc` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            tc: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+            idx_hint: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             tc_index: int = _get(tc, "index") if _get(tc, "index") is not None else idx_hint
             buf = tc_bufs.setdefault(tc_index, {
                 "id": "", "name": "", "arguments": "",
@@ -1117,7 +1775,20 @@ class OpenAICompatProvider(LLMProvider):
                 buf["fn_prov"] = fn_prov
 
         def _accum_legacy_function_call(function_call: Any) -> None:
-            """Accumulate legacy ``delta.function_call`` streaming chunks."""
+            """调用服务（_accum_legacy_function_call = 原函数名）。
+
+            【中文名称】调用服务
+
+            【功能说明】
+            这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+            在阅读 `OpenAICompatProvider._accum_legacy_function_call` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+            【参数说明】
+            function_call: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+            【返回值】
+            返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+            """
             if not function_call:
                 return
             buf = tc_bufs.setdefault(0, {
@@ -1185,9 +1856,9 @@ class OpenAICompatProvider(LLMProvider):
             if delta:
                 _accum_legacy_function_call(getattr(delta, "function_call", None))
 
-        # Some providers (e.g. Zhipu/GLM) reuse the same tool_call id for
-        # parallel tool calls in streaming mode. Deduplicate before building
-        # the response so downstream tool messages don't collide.
+        # 中文说明：这一段围绕Provider、工具、调用处理，注意输入、输出和异常路径。
+        # 中文说明：工具调用。
+        # 中文说明：这一段围绕消息、工具、流式输出、响应处理，注意输入、输出和异常路径。
         _seen_tc_ids: set[str] = set()
         for b in tc_bufs.values():
             if not b["id"] or b["id"] in _seen_tc_ids:
@@ -1214,6 +1885,21 @@ class OpenAICompatProvider(LLMProvider):
 
     @classmethod
     def _extract_error_metadata(cls, e: Exception) -> dict[str, Any]:
+        """提取信息（_extract_error_metadata = 原函数名）。
+
+        【中文名称】提取信息
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenAICompatProvider._extract_error_metadata` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        cls: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        e: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         response = getattr(e, "response", None)
         headers = getattr(response, "headers", None)
         payload = (
@@ -1267,6 +1953,22 @@ class OpenAICompatProvider(LLMProvider):
         spec: ProviderSpec | None = None,
         api_base: str | None = None,
     ) -> LLMResponse:
+        """处理事件（_handle_error = 原函数名）。
+
+        【中文名称】处理事件
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenAICompatProvider._handle_error` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        e: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        spec: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        api_base: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         body = (
             getattr(e, "doc", None)
             or getattr(e, "body", None)
@@ -1294,9 +1996,9 @@ class OpenAICompatProvider(LLMProvider):
             **OpenAICompatProvider._extract_error_metadata(e),
         )
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
+    # 中文说明：这一段围绕API处理，注意输入、输出和异常路径。
+    # ---- 中文分隔线：下面进入同一主题的下一组逻辑 ----
 
     async def chat(
         self,
@@ -1308,6 +2010,27 @@ class OpenAICompatProvider(LLMProvider):
         reasoning_effort: str | None = None,
         tool_choice: str | dict[str, Any] | None = None,
     ) -> LLMResponse:
+        """异步执行辅助逻辑（chat = 原函数名）。
+
+        【中文名称】执行辅助逻辑
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenAICompatProvider.chat` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        messages: 消息数据，可能来自用户、频道、模型或工具调用。
+        tools: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        max_tokens: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        temperature: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        reasoning_effort: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        tool_choice: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         await self._ensure_client()
         try:
             if self._should_use_responses_api(model, reasoning_effort):
@@ -1321,9 +2044,9 @@ class OpenAICompatProvider(LLMProvider):
                     return result
                 except Exception as responses_error:
                     if self._spec and self._spec.name == "github_copilot":
-                        # Copilot gateway exposes GPT-5/o-series only via /responses;
-                        # falling back to /chat/completions cannot succeed and would
-                        # hide the real error.
+                        # 中文说明：这一段围绕响应处理，注意输入、输出和异常路径。
+                        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+                        # 中文说明：这一段围绕错误处理，注意输入、输出和异常路径。
                         raise
                     if self._api_type == "responses":
                         raise
@@ -1352,6 +2075,30 @@ class OpenAICompatProvider(LLMProvider):
         on_thinking_delta: Callable[[str], Awaitable[None]] | None = None,
         on_tool_call_delta: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> LLMResponse:
+        """异步流式处理（chat_stream = 原函数名）。
+
+        【中文名称】流式处理
+
+        【功能说明】
+        这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+        在阅读 `OpenAICompatProvider.chat_stream` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+        【参数说明】
+        self: 当前对象或类本身，用于访问配置、客户端和共享状态。
+        messages: 消息数据，可能来自用户、频道、模型或工具调用。
+        tools: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        model: 模型名称或模型配置，用于选择具体 LLM 能力。
+        max_tokens: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        temperature: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        reasoning_effort: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        tool_choice: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        on_content_delta: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        on_thinking_delta: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+        on_tool_call_delta: 该函数的输入参数，具体含义可结合调用处和类型标注理解。
+
+        【返回值】
+        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+        """
         await self._ensure_client()
         idle_timeout_s = int(os.environ.get("NANOBOT_STREAM_IDLE_TIMEOUT_S", "90"))
         try:
@@ -1365,6 +2112,20 @@ class OpenAICompatProvider(LLMProvider):
                     stream = await self._client.responses.create(**body)
 
                     async def _timed_stream():
+                        """异步流式处理（_timed_stream = 原函数名）。
+
+                        【中文名称】流式处理
+
+                        【功能说明】
+                        这是 Provider 实现 中的一个关键步骤。OpenAI 兼容接口 Provider 实现，负责把 nanobot 的统一 LLM 请求转换为具体服务商 API 调用。
+                        在阅读 `OpenAICompatProvider._timed_stream` 时，重点看它如何准备输入、调用下游能力、处理异常，并把结果整理给调用方。
+
+                        【参数说明】
+                        无显式参数。
+
+                        【返回值】
+                        返回值会交给上层流程继续使用；如果函数只产生副作用，则重点关注它修改的对象状态或发送的外部请求。
+                        """
                         stream_iter = stream.__aiter__()
                         while True:
                             try:
@@ -1396,9 +2157,9 @@ class OpenAICompatProvider(LLMProvider):
                     )
                 except Exception as responses_error:
                     if self._spec and self._spec.name == "github_copilot":
-                        # Copilot gateway exposes GPT-5/o-series only via /responses;
-                        # falling back to /chat/completions cannot succeed and would
-                        # hide the real error.
+                        # 中文说明：这一段围绕响应处理，注意输入、输出和异常路径。
+                        # 中文说明：这里解释当前实现细节，帮助初学者理解为什么需要这段处理。
+                        # 中文说明：这一段围绕错误处理，注意输入、输出和异常路径。
                         raise
                     if self._api_type == "responses":
                         raise
@@ -1411,10 +2172,10 @@ class OpenAICompatProvider(LLMProvider):
                 reasoning_effort, tool_choice,
             )
             if self._spec and self._spec.name == "zhipu" and tools and on_tool_call_delta:
-                # Z.AI/GLM keeps streaming tool-call arguments behind an
-                # explicit provider flag.  Pass it through the OpenAI SDK's
-                # extra_body escape hatch so the usual delta.tool_calls path
-                # can surface live file-edit progress.
+                # 中文说明：流式输出。
+                # 中文说明：这一段围绕Provider处理，注意输入、输出和异常路径。
+                # 中文说明：这一段围绕工具、调用、路径处理，注意输入、输出和异常路径。
+                # 中文说明：这一段围绕文件处理，注意输入、输出和异常路径。
                 kwargs.setdefault("extra_body", {})["tool_stream"] = True
             kwargs["stream"] = True
             kwargs["stream_options"] = {"include_usage": True}
@@ -1480,3 +2241,4 @@ class OpenAICompatProvider(LLMProvider):
 
     def get_default_model(self) -> str:
         return self.default_model
+
