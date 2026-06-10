@@ -60,6 +60,8 @@ class MemoryStore:
     """
 
     _DEFAULT_MAX_HISTORY = 1000
+    _INTERNAL_HISTORY_SESSION_PREFIXES = ("cron:", "dream:")
+    _INTERNAL_HISTORY_SESSION_KEYS = {"heartbeat"}
     _LEGACY_ENTRY_START_RE = re.compile(r"^\[(\d{4}-\d{2}-\d{2}[^\]]*)\]\s*")
     _LEGACY_TIMESTAMP_RE = re.compile(r"^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\]\s*")
     _LEGACY_RAW_MESSAGE_RE = re.compile(
@@ -254,8 +256,14 @@ class MemoryStore:
 
     # -- history.jsonl：追加写日志，JSONL 格式 -------------------------------
 
-    def append_history(self, entry: str, *, max_chars: int | None = None) -> int:
-        """向 ``history.jsonl`` 追加一条记录，并返回自增游标 ``cursor``。
+    def append_history(
+        self,
+        entry: str,
+        *,
+        max_chars: int | None = None,
+        session_key: str | None = None,
+    ) -> int:
+     """向 ``history.jsonl`` 追加一条记录，并返回自增游标 ``cursor``。
 
         关键行为：
 
@@ -265,6 +273,19 @@ class MemoryStore:
           “哪些历史已经处理过”
 
         ``max_chars`` 是兜底保险，防止调用方忘记限长后，把超大文本直接写进历史文件。
+        """Append *entry* to history.jsonl and return its auto-incrementing cursor.
+
+        Entries are passed through `strip_think` to drop template-level leaks
+        (e.g. unclosed `<think` prefixes, `<channel|>` markers) before being
+        persisted. If the cleaned content is empty but the raw entry wasn't,
+        the record is persisted with an empty string rather than falling back
+        to the raw leak — otherwise `strip_think`'s guarantees would be
+        undone by history replay / consolidation downstream.
+
+        A defensive cap (*max_chars*, default ``_HISTORY_ENTRY_HARD_CAP``) is
+        applied as a final safety net: individual callers should cap their own
+        content more tightly; this default only exists to catch unintentional
+        large writes (e.g. an LLM echoing its input back as a "summary").
         """
         limit = max_chars if max_chars is not None else _HISTORY_ENTRY_HARD_CAP
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -291,6 +312,8 @@ class MemoryStore:
                     cursor,
                 )
             record = {"cursor": cursor, "timestamp": ts, "content": content}
+            if session_key:
+                record["session_key"] = session_key
             with open(self.history_file, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
             self._cursor_file.write_text(str(cursor), encoding="utf-8")
@@ -339,6 +362,36 @@ class MemoryStore:
     def read_unprocessed_history(self, since_cursor: int) -> list[dict[str, Any]]:
         """返回 ``cursor > since_cursor`` 的未处理历史。"""
         return [e for e, c in self._iter_valid_entries() if c > since_cursor]
+
+    @classmethod
+    def _is_internal_history_session(cls, session_key: str | None) -> bool:
+        if not session_key:
+            return False
+        return (
+            session_key in cls._INTERNAL_HISTORY_SESSION_KEYS
+            or session_key.startswith(cls._INTERNAL_HISTORY_SESSION_PREFIXES)
+        )
+
+    def read_recent_history_for_prompt(
+        self,
+        since_cursor: int,
+        *,
+        session_key: str | None,
+        unified_session: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Return unprocessed history entries safe to inject into a turn prompt."""
+        entries = self.read_unprocessed_history(since_cursor=since_cursor)
+        if session_key is None:
+            return entries
+        if not unified_session:
+            return [e for e in entries if e.get("session_key") == session_key]
+
+        return [
+            entry
+            for entry in entries
+            if (entry_session := entry.get("session_key")) == session_key
+            or not self._is_internal_history_session(entry_session)
+        ]
 
     def compact_history(self) -> None:
         """如果历史条数超限，就丢弃最旧记录。"""
@@ -512,13 +565,22 @@ class MemoryStore:
             )
         return "\n".join(lines)
 
-    def raw_archive(self, messages: list[dict], *, max_chars: int | None = None) -> None:
+    def raw_archive(
+        self,
+        messages: list[dict],
+        *,
+        max_chars: int | None = None,
+        session_key: str | None = None,
+    ) -> None:
         """降级兜底：当 LLM 摘要失败时，直接把原始消息归档到 history。"""
+
+        """Fallback: dump raw messages to history.jsonl without LLM summarization."""
         limit = max_chars if max_chars is not None else _RAW_ARCHIVE_MAX_CHARS
         formatted = truncate_text(self._format_messages(messages), limit)
         self.append_history(
             f"[RAW] {len(messages)} messages\n"
-            f"{formatted}"
+            f"{formatted}",
+            session_key=session_key,
         )
         logger.warning(
             "Memory consolidation degraded: raw-archived {} messages", len(messages)
@@ -598,6 +660,7 @@ class Consolidator:
         get_tool_definitions: Callable[[], list[dict[str, Any]]],
         max_completion_tokens: int = 4096,
         consolidation_ratio: float = 0.5,
+        unified_session: bool = False,
     ):
         self.store = store
         self.provider = provider
@@ -606,6 +669,7 @@ class Consolidator:
         self.context_window_tokens = context_window_tokens
         self.max_completion_tokens = max_completion_tokens
         self.consolidation_ratio = consolidation_ratio
+        self.unified_session = unified_session
         self._build_messages = build_messages
         self._get_tool_definitions = get_tool_definitions
         self._locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
@@ -713,7 +777,7 @@ class Consolidator:
             len(chunk),
             replay_max_messages,
         )
-        summary = await self.archive(chunk)
+        summary = await self.archive(chunk, session_key=session.key)
         session.last_consolidated = end_idx
         self.sessions.save(session)
         return summary
@@ -745,6 +809,8 @@ class Consolidator:
             sender_id=None,
             session_summary=summary,
             session_metadata=session.metadata,
+            session_key=session.key,
+            unified_session=self.unified_session,
         )
         return estimate_prompt_tokens_chain(
             self.provider,
@@ -772,8 +838,15 @@ class Consolidator:
         except Exception:
             return truncate_text(text, budget * 4)
 
-    async def archive(self, messages: list[dict]) -> str | None:
+    async def archive(
+        self,
+        messages: list[dict],
+        *,
+        session_key: str | None = None,
+    ) -> str | None:
         """调用 LLM 摘要一批旧消息，并把摘要写入 history。
+
+        """Summarize messages via LLM and append to history.jsonl.
 
         成功返回摘要文本；没有内容可归档时返回 ``None``。
         """
@@ -800,11 +873,15 @@ class Consolidator:
             if response.finish_reason == "error":
                 raise RuntimeError(f"LLM returned error: {response.content}")
             summary = response.content or "[no summary]"
-            self.store.append_history(summary, max_chars=_ARCHIVE_SUMMARY_MAX_CHARS)
+            self.store.append_history(
+                summary,
+                max_chars=_ARCHIVE_SUMMARY_MAX_CHARS,
+                session_key=session_key,
+            )
             return summary
         except Exception:
             logger.warning("Consolidation LLM call failed, raw-dumping to history")
-            self.store.raw_archive(messages)
+            self.store.raw_archive(messages, session_key=session_key)
             return None
 
     async def maybe_consolidate_by_tokens(
@@ -887,10 +964,14 @@ class Consolidator:
                     source,
                     len(chunk),
                 )
-                summary = await self.archive(chunk)
+                summary = await self.archive(chunk, session_key=session.key)
                 # 无论摘要成功还是失败，都推进 last_consolidated：
                 # 失败时 archive() 已经做了 raw_archive 兜底，
                 # 下次再处理同一段只会产生重复 [RAW] 记录。
+                # Advance the cursor either way: on success the chunk was
+                # summarized; on failure archive() already raw-archived it as
+                # a breadcrumb. Re-archiving the same chunk on the next call
+                # would just emit duplicate [RAW] entries.
                 if summary:
                     last_summary = summary
                 session.last_consolidated = end_idx
@@ -953,7 +1034,7 @@ class Consolidator:
             last_active = session.updated_at
             summary: str | None = ""
             if archive_msgs:
-                summary = await self.archive(archive_msgs)
+                summary = await self.archive(archive_msgs, session_key=session_key)
 
             if summary and summary != "(nothing)":
                 session.metadata["_last_summary"] = {
